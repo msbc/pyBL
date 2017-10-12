@@ -1,3 +1,5 @@
+#! /usr/bin/env python
+
 #import h5py
 #from mayavi import mlab
 import numpy as np
@@ -312,3 +314,6 @@ def mkplots(sims=None, path=''):
         sdir = os.path.join(os.getcwd(), 'channel_maps')
         sim.mode_plot(save=True, channel_maps=True, cmopt={'sdir':sdir})
         os.chdir(cwd)
+
+if __name__ == '__main__':
+    mkplots(glob('Mach*stampede'))
