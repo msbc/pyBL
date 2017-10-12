@@ -316,4 +316,5 @@ def mkplots(sims=None, path=''):
         os.chdir(cwd)
 
 if __name__ == '__main__':
-    mkplots(glob('Mach*stampede'))
+    path = '~/tigress/BLayer'
+    mkplots(glob(os.path.join(path, 'Mach*stampede')), path=path)
