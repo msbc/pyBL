@@ -317,6 +317,6 @@ def mkplots(sims=None, path=''):
 
 if __name__ == '__main__':
     path = '/tigress/matt.coleman/BLayer'
-    sims = lob(os.path.join(path, 'Mach*stampede'))
+    sims = glob(os.path.join(path, 'Mach*stampede'))
     print(sims)
     mkplots(sims, path=path)
