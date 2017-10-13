@@ -152,7 +152,7 @@ class BLfile(object):
     def plot2d(self, data, fn=None, save=False, subsample=False, title=None,
                name=None, ext='pdf', popt={}, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt={}, fig=None, fopt={},
-               ax=None, log=False, aspect=1):
+               ax=None, log=False, aspect=1, sdir=None):
         '''Plot 2D sim data'''
         r = self.r[np.newaxis, :]
         phi = self.phi[:,np.newaxis]
@@ -212,10 +212,18 @@ class BLfile(object):
         if save or fn:
             if fn is None:
                 fn = self._prefix + '_plot.' + ext
+            if not sdir is None:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
             plt.savefig(fn)
             plt.close()
 
         return pcm
+
+    def main_plots(self, save=True, ext='png', sdir=None):
+        self.channel_map(save=save, ext=ext, sdir=os.path.join(sdir, 'channel_maps'))
+        self.plot2d('pseudo', save=save, ext=ext, sdir=os.path.join(sdir, '2d_plots'))
 
 class BLsim(object):
     def __init__(self, path, fmt=None):
@@ -248,15 +256,15 @@ class BLsim(object):
         if fn in self.filenames or fn in self.times:
             return BLfile(fn, sim_path=os.path.abspath(self.path))
 
-    def mode_data(self, plot=False, popt={}, channel_maps=False, cmopt={}):
+    def mode_data(self, plot=False, popt={}, main_plots=False, mpopt={}):
         out = np.zeros((self.times.size, self.r.size - 1))
         for i, fn in enumerate(self.filenames):
             helpers.update_progress(float(i) / len(self.filenames))
             bf = self.loadfile(fn)
-            if channel_maps:
-                _opt = {'sdir': os.path.join(self.path, 'channel_maps')}
-                _opt.update(cmopt)
-                bf.channel_map(save=True, **_opt)
+            if main_plots:
+                _opt = {}#'sdir': os.path.join(self.path, 'channel_maps')}
+                _opt.update(mpopt)
+                bf.main_plots(**_opt)
             out[bf.t] = bf.fft('pseudo')[-1].argmax(axis=0)
         helpers.update_progress(1)
         if plot:
@@ -264,9 +272,12 @@ class BLsim(object):
         return out
 
     def mode_plot(self, data=None, cb=True, title=None, cbl=None, vmin=0,
-                  vmax=20, channel_maps=False, cmopt={}, save=False, fn=None):
+                  vmax=20, main_plots=False, mpopt={}, save=False, fn=None,
+                  ext='pdf', sdir=None):
+        _mpopt = {'ext':ext, 'sdir':sdir}
+        _mpopt.update(mpopt)
         if data is None:
-            data = self.mode_data(channel_maps=channel_maps, cmopt=cmopt)
+            data = self.mode_data(main_plots=main_plots, mpopt=_mpopt)
         one = np.ones((self.times.size, self.r.size))
         r = self.r[np.newaxis, :] * one
         t = np.concatenate(self.times, [self.times[-1]+1])[:,np.newaxis] * one
@@ -291,7 +302,7 @@ class BLsim(object):
             plt.savefig(fn)
             plt.close()
 
-def mkplots(sims=None, path=''):
+def mkplots(sims=None, path='', ext='png'):
     if sims is None:
         sims = []
         tmp = [i for i in glob(os.path.join(path, '*')) if os.path.isdir(i)]
@@ -311,12 +322,14 @@ def mkplots(sims=None, path=''):
             os.chdir(tmp)
         else:
             os.chdir(sim.path)
-        sdir = os.path.join(os.getcwd(), 'channel_maps')
-        sim.mode_plot(save=True, channel_maps=True, cmopt={'sdir':sdir})
+        sdir = os.getcwd()
+        sim.mode_plot(save=True, main_plots=True, ext=ext, sdir=sdir)
         os.chdir(cwd)
 
 if __name__ == '__main__':
-    path = '/tigress/matt.coleman/BLayer'
-    sims = glob(os.path.join(path, 'Mach*stampede'))
+    path = os.path.expanduser('~/BLayer')
+    tmp = os.path.join(path, 'Mach{0:}stampede')
+    d = '[0-9]'
+    sims = glob(tmp.format(d)) + glob(tmp.format(d*2))
     print(sims)
     mkplots(sims, path=path)
