@@ -13,6 +13,8 @@ import gc
 from athena_read import athdf as athdf
 import os
 from glob import glob
+import sys
+import traceback
 
 import helpers
 
@@ -178,6 +180,12 @@ class BLfile(object):
         if zerocent:
             if cmap is None:
                 cmap = helpers.NCcmap
+            if vmin is None and vmax is None:
+                vmax = np.abs(data).max()
+            else:
+                vmax = max(vmax, abs(vmin))
+            vmin = -vmax
+
         if name:
             if title is None:
                 title = name
@@ -222,8 +230,25 @@ class BLfile(object):
         return pcm
 
     def main_plots(self, save=True, ext='png', sdir=None):
-        self.channel_map(save=save, ext=ext, sdir=os.path.join(sdir, 'channel_maps'))
-        self.plot2d('pseudo', save=save, ext=ext, sdir=os.path.join(sdir, '2d_plots'))
+        try:
+            self.channel_map(save=save, ext=ext, sdir=os.path.join(sdir, 'channel_maps'))
+        except KeyboardInterrupt:
+            raise
+        except:
+            print('Unable to plot channel map for {0:}.'.format(self.name))
+            print('-' * 60)
+            traceback.print_exc(file=sys.stdout)
+            print('-' * 60)
+        for var in ['pseudo']:
+            try:
+                self.plot2d(var, save=save, ext=ext, sdir=os.path.join(sdir, '2d_plots'))
+            except KeyboardInterrupt:
+                raise
+            except:
+                print('Unable to plot {1:} for {0:}.'.format(self.name, var))
+                print('-' * 60)
+                traceback.print_exc(file=sys.stdout)
+                print('-' * 60)
 
 class BLsim(object):
     def __init__(self, path, fmt=None):
