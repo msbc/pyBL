@@ -10,12 +10,17 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 #import math
 import gc
 #import psutil
-from athena_read import athdf as athdf
 import os
 from glob import glob
 import sys
 import traceback
+try:
+    from astropy.convolution.convolve import convolve_fft
+except ImportError:
+    print('Warning, cannot load "convolve_fft" from astropy. Using scipy equivlent which uses zero padding.')
+    from scipy.signal import fftconvolve
 
+from athena_read import athdf as athdf
 import helpers
 
 
@@ -57,6 +62,8 @@ class BLfile(object):
         self.athdf = athdf(fn)
         self.r = self.athdf['x1f']
         self.phi = self.athdf['x2f']
+        self.rc = .5 * (self.r[:-1] + self.r[1:])
+        self.phic = .5 * (self.phi[:-1] + self.phi[1:])
 
     def __getitem__(self, key):
         try:
@@ -80,6 +87,13 @@ class BLfile(object):
 
     def get2d(self, var):
         return self[var][0,:,:]
+
+    def _parse_data(self, data):
+        try:
+            data.shape
+        except AttributeError:
+            data = self.get2d(data)
+        return data
 
     def vel(self, i):
         return self['mom{0:}'.format(i)] / self['dens']
@@ -151,10 +165,62 @@ class BLfile(object):
             plt.savefig(fn)
             plt.close()
 
+    def phase(self, data='pseudo', smooth=None, mod=False):
+        try:
+            data.shape
+        except AttributeError:
+            data = self.get2d(data)
+        if not smooth is None:
+            data = self.smooth(data, smooth)
+        modes = self.fft(data)[1].argmax(axis=0)
+        sqr = data**2
+        loc = sqr.argmax(axis=0)
+        phase = self.phic[loc]
+        phase -= .5 * (1 - np.sign(data[loc,np.arange(data.shape[1])])) * np.pi
+        phase %= 2 * np.pi
+        if mod:
+            phase %= 2. * np.pi / modes
+        return phase
+
+    def smooth(self, data, width=64):
+        data = self._parse_data(data)
+        try:
+            len(width)
+        except TypeError:
+            width = width, 1
+        try:
+            return convolve_fft(data, np.ones(width), boundary='wrap')
+        except NameError:
+            return fftconvolve(data, np.ones(width), mode='same')
+
+    def phase_plot(self, data='pseudo', fn=None, save=False, ext='pdf',
+                   sdir=None, fig=None, ax=None, fopt={}, smooth=None, mod=False):
+        data = self._parse_data(data)
+        if len(data.shape) > 1:
+            data = self.phase(data, smooth=smooth)
+        if fig is None and ax is None:
+            fig = plt.figure(**fopt)
+        plt.plot(self.rc, data)
+        plt.ylim(0, 2 * np.pi)
+        plt.xlabel('Radius')
+        plt.ylabel('Phase')
+
+        #save fig
+        if save or fn:
+            if fn is None:
+                fn = self._prefix + '_phase_plot.' + ext
+            if not sdir is None:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+            plt.savefig(fn)
+            plt.close()
+
+
     def plot2d(self, data, fn=None, save=False, subsample=False, title=None,
                name=None, ext='pdf', popt={}, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt={}, fig=None, fopt={},
-               ax=None, log=False, aspect=1, sdir=None):
+               ax=None, log=False, aspect=1, sdir=None, smooth=None):
         '''Plot 2D sim data'''
         r = self.r[np.newaxis, :]
         phi = self.phi[:,np.newaxis]
@@ -166,6 +232,8 @@ class BLfile(object):
             if name is None:
                 name = data
             data = self.get2d(data)
+        if not smooth is None:
+            data = self.smooth(data, smooth)
 
         #parse/set options and defaults
         if subsample:
