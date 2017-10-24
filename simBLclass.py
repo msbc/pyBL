@@ -305,7 +305,7 @@ class BLsim(object):
             data = self.mode_data(main_plots=main_plots, mpopt=_mpopt)
         one = np.ones((self.times.size, self.r.size))
         r = self.r[np.newaxis, :] * one
-        t = np.concatenate(self.times, np.array([self.times.max() + 1.]))[:,np.newaxis] * one
+        t = np.concatenate((self.times, np.array([self.times[-1] + 1.])))[:,np.newaxis] * one
         t -= .5
         cmap = plt.get_cmap(lut = vmax - vmin + 1)
         pcm = plt.pcolormesh(t, r, data, vmin=vmin, vmax=vmax, cmap=cmap)
