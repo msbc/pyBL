@@ -141,7 +141,7 @@ class BLfile(object):
         ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(5))
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
         if title:
-            plt.title(title)
+            plt.title(helpers.sanitize_lbl(title))
         plt.xlabel(r'Mode ($m$)')
         plt.ylabel('Radius ($R$)')
         if cb:
@@ -275,7 +275,7 @@ class BLfile(object):
         #start plotting
         pcm = plt.pcolormesh(x, y, data, **_popt)
         if title:
-            plt.title(title)
+            plt.title(helpers.sanitize_lbl(title))
         if cb:
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -383,7 +383,7 @@ class BLsim(object):
         if title is None:
             title = self.name
         if title:
-            plt.title(title)
+            plt.title(helpers.sanitize_lbl(title))
         if cb:
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="5%", pad=0.05)

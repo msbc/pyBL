@@ -5,7 +5,7 @@ import numpy as np
 import matplotlib
 import sys
 import os
-#import re
+import re
 #import glob
 from scipy.stats import scoreatpercentile as percentile
 #from scipy.stats import linregress
