@@ -368,16 +368,23 @@ class BLsim(object):
 
     def mode_plot(self, data=None, cb=True, title=None, cbl=None, vmin=0,
                   vmax=20, main_plots=False, mpopt={}, save=False, fn=None,
-                  ext='pdf', sdir=None):
+                  ext='pdf', sdir=None, fig=None, fopt={}, ax=None):
         _mpopt = {'ext':ext, 'sdir':sdir}
         _mpopt.update(mpopt)
         if data is None:
             data = self.mode_data(main_plots=main_plots, mpopt=_mpopt)
-        one = np.ones((self.times.size, self.r.size))
+        one = np.ones((self.times.size + 1, self.r.size))
         r = self.r[np.newaxis, :] * one
         t = np.concatenate((self.times, np.array([self.times[-1] + 1.])))[:,np.newaxis] * one
         t -= .5
         cmap = plt.get_cmap(lut = vmax - vmin + 1)
+        if fig is None and ax is None:
+            fig = plt.figure(**fopt)
+        if ax:
+            plt.sca(ax)
+        else:
+            ax = plt.gca()
+        fig = plt.gcf()
         pcm = plt.pcolormesh(t, r, data, vmin=vmin, vmax=vmax, cmap=cmap)
         ax = plt.gca()
         if title is None:
@@ -394,7 +401,7 @@ class BLsim(object):
         if save or fn:
             if fn is None:
                 fn = self.name + '_ST_mode.' + ext
-            plt.savefig(fn)
+            fig.savefig(fn)
             plt.close()
 
 def mkplots(sims=None, path='', ext='png'):
