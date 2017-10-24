@@ -31,7 +31,7 @@ _dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer', '/perse
 _dirs = map(os.path.expanduser, _dirs)
 _dirs += [os.path.join(d, 'Mach8stampede') for d in _dirs]
 _data_base = '/scratch/gpfs/sashaph/BLayer'
-_file_fmt = 'BL.out2.%5.5d.athdf'
+_file_fmts = ['BL.out2.%5.5d.athdf', 'disk.out1.%5.5d.athdf']
 
 class BLfile(object):
     def __init__(self, fn, sim_path=None):
@@ -39,7 +39,7 @@ class BLfile(object):
         try:
             if fn == int(fn):
                 self.t = fn
-                fn = _file_fmt % fn
+                fn = [i % fn for i in _file_fmts if os.path.isfile(i % fn)][0]
         except ValueError:
             pass
         if (sim_path is None) and (not os.path.isfile(fn)):
@@ -319,10 +319,10 @@ class BLfile(object):
                 print('-' * 60)
 
 class BLsim(object):
-    def __init__(self, path, fmt=None):
-        if fmt is None:
-            fmt = _file_fmt
-        self._fmt = fmt
+    def __init__(self, path, fmts=None):
+        if fmts is None:
+            fmts = _file_fmts
+        self._fmts = fmts
         self.name = os.path.split(os.path.abspath(path))[-1]
         if path == self.name and not os.path.isdir(path):
             for d in _dirs:
@@ -333,8 +333,10 @@ class BLsim(object):
         if not os.path.isdir(path):
             raise IOError('Simulation directory "{0:}" not found.'.format(path))
         self.path = path
-        tmp = fmt.split('%')[0] + '*.' + fmt.split('d.')[-1]
-        self.filenames = [os.path.split(i)[-1] for i in glob(os.path.join(path, tmp))]
+        tmp = [fmt.split('%')[0] + '*.' + fmt.split('d.')[-1] for fmt in fmts]
+        self.filenames = []
+        for search in tmp:
+            self.filenames += [os.path.split(i)[-1] for i in glob(os.path.join(path, search))]
         self.times = np.array([int(i.split('.')[2]) for i in self.filenames])
         if not (self.times == np.arange(self.times.size, dtype=int)).all():
             Warning('Incomplete dataset.')
