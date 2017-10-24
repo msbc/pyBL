@@ -200,10 +200,10 @@ class BLfile(object):
             data = self.phase(data, smooth=smooth)
         if fig is None and ax is None:
             fig = plt.figure(**fopt)
-        plt.plot(self.rc, data)
-        plt.ylim(0, 2 * np.pi)
+        plt.plot(self.rc, data / np.pi)
+        plt.ylim(0, 2)
         plt.xlabel('Radius')
-        plt.ylabel('Phase')
+        plt.ylabel(r'Phase$/\pi$')
 
         #save fig
         if save or fn:
