@@ -391,7 +391,7 @@ class BLsim(object):
             if 'matt' in tmp or 'colema' in tmp:
                 save = True
         if save:
-            np.save(self._mode_fn, data, pickle=False)
+            np.save(self._mode_fn, data, allow_pickle=True)
         self._mode_data = data
         return None
 
@@ -635,7 +635,7 @@ def mkplots(sims=None, path='', ext='png'):
             print('Finnished Simulation {0:}'.format(sim.name))
         except KeyboardInterrupt:
             raise
-        except RuntimeError:
+        except:
             os.chdir(cwd)
             name = getattr(sim, 'name', sim)
             print('\n!!! Error\nUnable To finish Simulation {0:}.'.format(name))
