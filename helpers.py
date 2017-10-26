@@ -15,6 +15,11 @@ from scipy.stats import scoreatpercentile as percentile
 #from operator import itemgetter
 #import time
 from NCcmap import NCcmap
+try:
+    from astropy.convolution.convolve import convolve_fft
+except ImportError:
+    print('Warning, cannot load "convolve_fft" from astropy. Using scipy equivlent which uses zero padding.')
+    from scipy.signal import fftconvolve
 
 def sanitize_lbl(name):
   '''sanitize_lbl(label):
@@ -47,13 +52,17 @@ def c_correlate(a, b):
   out = fftcorrelate(da, db)/norm
   return out
 
-def fftcorrelate(a, b, mode='same'):
-  '''Usage: fftcorrelate(a, b, mode='same')
-  Uses fast Fourier transforms to correlate 'a' and 'b'.
+def fftcorrelate(a, b):
+  '''Usage: fftcorrelate(a, b)
+  Uses fast Fourier transforms to correlate 'a' and 'b'.'''
 
-  See scipy.signal.fftconvolve documentation for info on optional keyword 'mode'.'''
   a = np.conj(np.flipud(a))
-  out = scipy.signal.fftconvolve(a, b, mode=mode)
+  assert(np.isfinite(a).all())
+  assert(np.isfinite(b).all())
+  try:
+      out = convolve_fft(a, b, boundary='wrap', normalize_kernel=False, nan_treatment='fill')
+  except NameError:
+      out = scipy.signal.fftconvolve(a, b, mode='same')
   return np.flipud(out)
 
 def update_progress(progress):
