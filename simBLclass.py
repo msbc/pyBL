@@ -644,8 +644,8 @@ if __name__ == '__main__':
     path = os.path.expanduser('~/BLayer')
     tmp = os.path.join(path, 'Mach{0:}stampede')
     d = '[0-9]'
-    #sims = glob(tmp.format(d)) + glob(tmp.format(d*2))
-    #print(sims)
-    path = '/home/mcoleman/data/perseus_data/'
-    sims = None
+    sims = glob(tmp.format(d)) + glob(tmp.format(d*2))
+    print(sims)
+    #path = '/home/mcoleman/data/perseus_data/'
+    #sims = None
     mkplots(sims, path=path)
