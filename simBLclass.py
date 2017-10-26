@@ -302,6 +302,7 @@ class BLfile(object):
             if cbl:
                 cb.set_label(cbl)
 
+        plt.sca(ax)
         #save fig
         if save or fn:
             if fn is None:
@@ -313,7 +314,6 @@ class BLfile(object):
             plt.savefig(fn)
             plt.close()
 
-        plt.sca(ax)
         return pcm
 
     def main_plots(self, save=True, ext='png', sdir=None):
@@ -338,7 +338,7 @@ class BLfile(object):
                 print('-' * 60)
 
 class BLsim(object):
-    def __init__(self, path, fmts=None, mmax=None):
+    def __init__(self, path, fmts=None, mmax=100, mode_data=None):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
@@ -363,12 +363,16 @@ class BLsim(object):
         tmp = self.loadfile(self.filenames[0])
         for attr in ['r', 'phi', 'rc', 'phic']:
             setattr(self, attr, getattr(tmp, attr))
-        self._mode_data = None
+        self._mode_data = mode_data
         self._mmax = mmax
         self._mode_fn = os.path.join(path, 'mode_data.npy')
-        if os.path.isfile(self._mode_fn):
-            self._mode_data = np.load(self._mode_fn)
-            self._mmax = self._mode_data.shape[1] - 1
+        if self._mode_data is None:
+            if os.path.isfile(self._mode_fn):
+                print('Loading file "{0:}"'.format(self._mode_fn))
+                self._mode_data = np.load(self._mode_fn)
+                self._mmax = self._mode_data.shape[1] - 1
+        else:
+            self._mmax = mode_data.shape[1] - 1
         if self._mmax is None:
             self._mloc = (None, None)
         else:
@@ -381,13 +385,13 @@ class BLsim(object):
         if fn in self.filenames or fn in self.times:
             return BLfile(fn, sim_path=os.path.abspath(self.path))
 
-    def _store_mode(self, data, save=None):
+    def _store_mode(self, data, save=True):
         if save is None:
             tmp = os.path.abspath(self.path).lower()
             if 'matt' in tmp or 'colema' in tmp:
                 save = True
         if save:
-            np.save(self._mode_fn, data)
+            np.save(self._mode_fn, data, pickle=False)
         self._mode_data = data
         return None
 
@@ -511,8 +515,12 @@ class BLsim(object):
             if cbl:
                 cb.set_label(cbl)
         if save or fn:
+            if log:
+                log = 'log'
+            else:
+                log = 'lin'
             if fn is None:
-                fn = self.name + '_mode-time_r={0:.2e}.'.format(r) + ext
+                fn = self.name + '_mode-time_r={0:.2e}_{1:}.'.format(r, log) + ext
             fig.savefig(fn)
             plt.close()
 
@@ -560,7 +568,7 @@ class BLsim(object):
         pcm = plt.pcolormesh(r, phi, data, **_popt)
         plt.colorbar()
 
-    def prop_speed(self, t1, t2=None, dt=2 * np.pi, plot=False, fig=True, smooth=False):
+    def prop_speed(self, t1, t2=None, dt=2 * np.pi, plot=False, fig=True, smooth=False, f=.9):
         if t2 is None:
             t2 = t1 + 1
         cc = self.cross_corr(t1, t2)
@@ -570,7 +578,10 @@ class BLsim(object):
             cc = _smooth(cc, smooth)
         out = np.empty(cc.shape[-1])
         for ir in xrange(out.size):
-            out[ir] = self.phic[argrelextrema(cc[:,ir], np.greater, mode='wrap')[0].min()]
+            tmp = cc[:,ir]
+            loc = np.where(tmp < f * tmp.max())
+            tmp[loc] = 0
+            out[ir] = self.phic[argrelextrema(tmp, np.greater, mode='wrap')[0].min()]
         out /= (t2 - t1) * dt
 
         if plot:
@@ -598,32 +609,43 @@ class BLsim(object):
 
 def mkplots(sims=None, path='', ext='png'):
     if sims is None:
-        sims = []
-        tmp = [i for i in glob(os.path.join(path, '*')) if os.path.isdir(i)]
-        for i in tmp:
-            try:
-                sims.append(BLsim(i))
-            except:
-                print '"{0:}" is not a simulation'.format(i)
+        sims = [i for i in glob(os.path.join(path, '*')) if os.path.isdir(i)]
     cwd = os.getcwd()
     for sim in sims:
-        if not hasattr(sim, 'path'):
-            sim = BLsim(os.path.join(path, sim))
-        if path:
-            tmp = os.path.split(sim.path)[-1]
-            if not os.path.isdir(tmp):
-                os.mkdir(tmp)
-            os.chdir(tmp)
-        else:
-            os.chdir(sim.path)
-        sdir = os.getcwd()
-        sim.mode_plot(save=True, main_plots=True, ext=ext, sdir=sdir)
-        os.chdir(cwd)
+        try:
+            if not hasattr(sim, 'name'):
+                sim = BLsim(sim)
+            print('\nPlotting Simulation {0:}'.format(sim.name))
+            if not hasattr(sim, 'path'):
+                sim = BLsim(os.path.join(path, sim))
+            if path:
+                tmp = os.path.split(sim.path)[-1]
+                if not os.path.isdir(tmp):
+                    os.mkdir(tmp)
+                os.chdir(tmp)
+            else:
+                os.chdir(sim.path)
+            sdir = os.getcwd()
+            opt = dict(save=True, ext=ext, sdir=sdir)
+            sim.mode_plot(main_plots=True, **opt)
+            for r in [.95,1,1.1,1.5,2,3]:
+                sim.mt_plot(r, log=True, **opt)
+                sim.mt_plot(r, log=False, vmin=0, **opt)
+            os.chdir(cwd)
+            print('Finnished Simulation {0:}'.format(sim.name))
+        except KeyboardInterrupt:
+            raise
+        except RuntimeError:
+            os.chdir(cwd)
+            name = getattr(sim, 'name', sim)
+            print('\n!!! Error\nUnable To finish Simulation {0:}.'.format(name))
 
 if __name__ == '__main__':
     path = os.path.expanduser('~/BLayer')
     tmp = os.path.join(path, 'Mach{0:}stampede')
     d = '[0-9]'
-    sims = glob(tmp.format(d)) + glob(tmp.format(d*2))
-    print(sims)
+    #sims = glob(tmp.format(d)) + glob(tmp.format(d*2))
+    #print(sims)
+    path = '/home/mcoleman/data/perseus_data/'
+    sims = None
     mkplots(sims, path=path)
