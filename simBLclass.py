@@ -358,9 +358,10 @@ class BLsim(object):
         self.times = []
         for search in tmp:
             self.filenames += [os.path.split(i)[-1] for i in glob(os.path.join(path, search))]
+        self.filenames = sorted(self.filenames)
         tmp = self._readable(self.filenames[-1])
         while tmp is False:
-            self.filenames.pop(-1)
+            print('Discarding {0:}'.format(self.filenames.pop(-1)))
             tmp = self._readable(self.filenames[-1])
         self.times = np.array([int(i.split('.')[2]) for i in self.filenames])
         if not (self.times == np.arange(self.times.size, dtype=int)).all():
