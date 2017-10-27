@@ -355,12 +355,17 @@ class BLsim(object):
         self.path = path
         tmp = [fmt.split('%')[0] + '*.' + fmt.split('d.')[-1] for fmt in fmts]
         self.filenames = []
+        self.times = []
         for search in tmp:
             self.filenames += [os.path.split(i)[-1] for i in glob(os.path.join(path, search))]
+        tmp = self._readable(self.filenames[-1])
+        while tmp is False:
+            self.filenames.pop(-1)
+            tmp = self._readable(self.filenames[-1])
         self.times = np.array([int(i.split('.')[2]) for i in self.filenames])
         if not (self.times == np.arange(self.times.size, dtype=int)).all():
             Warning('Incomplete dataset.')
-        tmp = self.loadfile(self.filenames[0])
+        #tmp = self.loadfile(self.filenames[0])
         for attr in ['r', 'phi', 'rc', 'phic']:
             setattr(self, attr, getattr(tmp, attr))
         self._mode_data = mode_data
@@ -377,6 +382,15 @@ class BLsim(object):
             self._mloc = (None, None)
         else:
             self._mloc = (slice(None, self._mmax + 1))
+
+    def _readable(self, t):
+        try:
+            out = self.loadfile(t)
+        except IOError:
+            return False
+        if out is None:
+            out = False
+        return out
 
     def __repr__(self):
         return '<BLsim "{0:}">'.format(self.name)
