@@ -99,7 +99,7 @@ class BLfile(object):
         if ext == 'athdf':
             return athdf(fn)
         if ext == 'npy':
-            return np.load(fn)
+            return np.load(fn)[()]
         raise IOError('Cannot identify file type of "{0:}"'.format(self.fn))
 
     def __getitem__(self, key):
@@ -563,7 +563,7 @@ class BLsim(object):
         out = np.empty(d1.shape)
         for ir in xrange(d1.shape[1]):
             #out[:,ir] = helpers.fftcorrelate(d2[:,ir], d1[:,ir])
-            out[:,ir] = helpers.c_correlate(d2[:,ir], d1[:,ir])
+            out[:,ir] = helpers.c_correlate(d1[:,ir], d2[:,ir])
         #if norm:
             #out /= np.abs(out).max(axis=0)[np.newaxis,:]
             #out /= np.sqrt(.5 * d1**2 + .5 * d2**2).max(axis=0)[np.newaxis,:]
