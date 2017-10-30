@@ -32,7 +32,11 @@ _dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer', '/perse
 _dirs = map(os.path.expanduser, _dirs)
 _dirs += [os.path.join(d, 'Mach8stampede') for d in _dirs]
 _data_base = '/scratch/gpfs/sashaph/BLayer'
-_file_fmts = ['BL.out2.%5.5d.athdf', 'disk.out1.%5.5d.athdf']
+_pre = ['BL', 'disk', 'mock']
+_i = map(str, range(1,5))
+_ext = ['athdf', 'npy']
+#_file_fmts = ['BL.out2.%5.5d.athdf', 'disk.out1.%5.5d.athdf']
+_file_fmts = ['.'.join([a, 'out' + b, '%5.5d', c]) for a in _pre for b in _i for c in _ext]
 
 def smooth(data, width=64):
     try:
@@ -91,7 +95,7 @@ class BLfile(object):
     def _parse_file(self, fn=None):
         if fn is None:
             fn = self.fn
-        ext = fn.plot('.')[-1]
+        ext = fn.split('.')[-1]
         if ext == 'athdf':
             return athdf(fn)
         if ext == 'npy':
