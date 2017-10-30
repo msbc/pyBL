@@ -82,15 +82,15 @@ class BLfile(object):
             self._prefix = os.path.split(sim_path)[-1] + '_{0:05d}'.format(self.t)
         else:
             self.name = os.path.split(fn)[-1]
-        self.athdf = athdf(fn)
-        self.r = self.athdf['x1f']
-        self.phi = self.athdf['x2f']
+        self.data = athdf(fn)
+        self.r = self.data['x1f']
+        self.phi = self.data['x2f']
         self.rc = .5 * (self.r[:-1] + self.r[1:])
         self.phic = .5 * (self.phi[:-1] + self.phi[1:])
 
     def __getitem__(self, key):
         try:
-            return self.athdf[key]
+            return self.data[key]
         except KeyError:
             if key[:3] == 'vel' and len(key) == 4:
                 return self.vel(key[3])
@@ -539,7 +539,9 @@ class BLsim(object):
             fig.savefig(fn)
             plt.close()
 
-    def cross_corr(self, t1, t2, var='pseudo', dt=2 * np.pi, plot=False, norm=True):
+    def cross_corr(self, t1, t2=None, var='pseudo', dt=2 * np.pi, plot=False, norm=True):
+        if t2 is None:
+            t2 = t1 + 1
         t1 = self.loadfile(t1)
         t2 = self.loadfile(t2)
         d1 = t1.get2d(var)
