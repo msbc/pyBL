@@ -1,3 +1,5 @@
 *.pyc
 Mach*stampede
 .dropbox.attr
+*.athdf
+*.npy
