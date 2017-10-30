@@ -82,11 +82,21 @@ class BLfile(object):
             self._prefix = os.path.split(sim_path)[-1] + '_{0:05d}'.format(self.t)
         else:
             self.name = os.path.split(fn)[-1]
-        self.data = athdf(fn)
+        self.data = self._parse_file()
         self.r = self.data['x1f']
         self.phi = self.data['x2f']
         self.rc = .5 * (self.r[:-1] + self.r[1:])
         self.phic = .5 * (self.phi[:-1] + self.phi[1:])
+
+    def _parse_file(self, fn=None):
+        if fn is None:
+            fn = self.fn
+        ext = fn.plot('.')[-1]
+        if ext == 'athdf':
+            return athdf(fn)
+        if ext == 'npy':
+            return np.load(fn)
+        raise IOError('Cannot identify file type of "{0:}"'.format(self.fn))
 
     def __getitem__(self, key):
         try:
