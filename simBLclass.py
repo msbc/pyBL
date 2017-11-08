@@ -372,7 +372,7 @@ class BLfile(object):
                 print('-' * 60)
 
 class BLsim(object):
-    def __init__(self, path, fmts=None, mmax=100, mode_data=None, dt=None):
+    def __init__(self, path, fmts=None, mmax=100, mode_phase=None, dt=None):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
@@ -406,17 +406,16 @@ class BLsim(object):
         #tmp = self.loadfile(self.filenames[0])
         for attr in ['r', 'phi', 'rc', 'phic']:
             setattr(self, attr, getattr(tmp, attr))
-        self._mode_data = mode_data
-        self._mode_phase = None
+        self._mode_phase = mode_phase
         self._mmax = mmax
-        self._mode_fn = os.path.join(path, 'mode_data.npy')
-        if self._mode_data is None:
+        self._mode_fn = os.path.join(path, 'mode_phase.npy')
+        if self._mode_phase is None:
             if os.path.isfile(self._mode_fn):
                 print('Loading file "{0:}"'.format(self._mode_fn))
-                self._mode_data = np.load(self._mode_fn)
-                self._mmax = self._mode_data.shape[1] - 1
+                self._mode_phase = np.load(self._mode_fn)
+                self._mmax = self._mode_phase.shape[2] - 1
         else:
-            self._mmax = mode_data.shape[1] - 1
+            self._mmax = mode_phase.shape[2] - 1
         if self._mmax is None:
             self._mloc = (None, None)
         else:
@@ -445,7 +444,7 @@ class BLsim(object):
                 save = True
         if save:
             np.save(self._mode_fn, data, allow_pickle=True)
-        self._mode_data = data
+        self._mode_phase = data
         return None
 
     def rloc(self, r):
@@ -454,41 +453,16 @@ class BLsim(object):
     def philoc(self, phi):
         return np.abs(phi - self.phic).argmin()
 
-    def all_mode_data(self):
-        if not self._mode_data is None:
-            return self._mode_data
-        self._store_mode(np.array([self.loadfile(i).fft('pseudo')[-1][self._mloc] for i in self.times]))
-        return self._mode_data
-
-    def mode_data(self, plot=False, popt={}, main_plots=False, mpopt={}):
-        out = np.zeros((self.times.size, self.r.size - 1))
-        full = []
-        for i, fn in enumerate(self.filenames):
-            helpers.update_progress(float(i) / len(self.filenames))
-            bf = self.loadfile(fn)
-            if main_plots:
-                _opt = {}#'sdir': os.path.join(self.path, 'channel_maps')}
-                _opt.update(mpopt)
-                bf.main_plots(**_opt)
-            tmp = bf.fft('pseudo')[-1]
-            full.append(tmp[self._mloc])
-            out[bf.t] = tmp.argmax(axis=0)
-        helpers.update_progress(1)
-        self._store_mode(np.array(full))
-        if plot:
-            mode_plot(out, **popt)
-        return out
-
     def mode_plot(self, data=None, cb=True, title=None, cbl=None, vmin=0,
                   vmax=20, main_plots=False, mpopt={}, save=False, fn=None,
                   ext='pdf', sdir=None, fig=None, fopt={}, ax=None):
         _mpopt = {'ext':ext, 'sdir':sdir}
         _mpopt.update(mpopt)
         if data is None:
-            if self._mode_data is None or main_plots:
-                data = self.mode_data(main_plots=main_plots, mpopt=_mpopt)
+            if self._mode_phase is None or main_plots:
+                data = self.mode_phase(main_plots=main_plots, mpopt=_mpopt)[0]
             else:
-                data = self._mode_data.argmax(axis=1)
+                data = self._mode_phase[0].argmax(axis=1)
         one = np.ones((self.times.size + 1, self.r.size))
         r = self.r[np.newaxis, :] * one
         t = np.concatenate((self.times, np.array([self.times[-1] + 1.])))[:,np.newaxis] * one
@@ -537,19 +511,19 @@ class BLsim(object):
                 cbl=None, popt={}, log=True):
         ir = np.abs(self.rc - r).argmin()
         r = self.rc[ir]
-        _all = self.all_mode_data()
-        data = _all[:,:,ir].T
+        _amp = self.mode_phase()[0]
+        data = _amp[:,:,ir].T
 
         if 'smart' in [vmin, vmax]:
-            smart = helpers.smartlim(_all[:,:mmax+1,:])
+            smart = helpers.smartlim(_amp[:,:mmax+1,:])
             if vmin == 'smart':
                 vmin = smart[0]
             if vmax == 'smart':
                 vmax = smart[1]
         if vmin == 'min':
-            vmin = _all[:,:mmax+1,:].min()
+            vmin = _amp[:,:mmax+1,:].min()
         if vmax == 'max':
-            vmax = _all[:,:mmax+1,:].max()
+            vmax = _amp[:,:mmax+1,:].max()
         if vmin == 'auto':
             vmin = max(data.min(), 1e-6)
         _opt = {'vmin': vmin, 'vmax': vmax, 'interpolation': 'nearest'}
@@ -627,77 +601,6 @@ class BLsim(object):
             t1.plot2d(out, title=title, vmax=1.1, phi_shift=np.pi, save=save, fn=fn)
         return out
 
-    def rect_cc_plot(self, t1, t2, var='pseudo', fn=None, save=False, ext='pdf',
-                     sdir=None, fig=None, ax=None, fopt={}, vmin=None,
-                     vmax=1.1, cb=True, cbl=None, popt={}, log=True, cmap=None):
-        data = self.cross_corr(t1, t2, var=var).T
-
-        if zerocent is None and not log:
-            zerocent = helpers.isZeroCent(data)
-        if zerocent:
-            if cmap is None:
-                cmap = helpers.NCcmap
-            if vmin is None and vmax is None:
-                vmax = np.abs(data).max()
-            elif vmin is None:
-                vmin = -abs(vmax)
-            else:
-                vmax = abs(vmin)
-            vmin = -vmax
-        _popt = dict(cmap=cmap, vmin=vmin, vmax=vmax)
-        if log:
-            _popt['norm'] = mpl.colors.LogNorm()
-        _popt.update(popt)
-
-        one = np.ones(data.shape)
-        r = self.r[:, np.newaxis] * one
-        phi = self.phi[np.newaxis, :] * one
-        pcm = plt.pcolormesh(r, phi, data, **_popt)
-        plt.colorbar()
-
-    def _old_prop_speed(self, t1, t2=None, dt=None, cc=None, plot=False, fig=True, smooth=False, f=.9):
-        if t2 is None:
-            t2 = t1 + 1
-        try:
-            tmp = t2 - t1
-        except:
-            tmp = None
-        if not hasattr(t1, 'data'):
-            t1 = self.loadfile(t1)
-        if not hasattr(t2, 'data'):
-            t2 = self.loadfile(t2)
-        if dt is None:
-            try:
-                dt = t2.data['t'] - t1.data['t']
-            except KeyError:
-                if not tmp is None:
-                    dt = tau * tmp
-                else:
-                    dt = tau
-        if cc is None:
-            cc = self.cross_corr(t1, t2)
-        if not smooth is False:
-            if smooth is True or smooth is None:
-                smooth = 64
-            cc = _smooth(cc, smooth)
-        out = np.empty(cc.shape[-1])
-        for ir in xrange(out.size):
-            tmp = cc[:,ir]
-            loc = np.where(tmp < f * tmp.max())
-            tmp[loc] = 0
-            tmp = self.phic[argrelextrema(tmp, np.greater, mode='wrap')]
-            out[ir] = ((tmp + np.pi) % tau).min()
-        out /= dt
-
-        if plot:
-            if fig is True:
-                fig = plt.figure()
-            plt.plot(self.rc, out, lw=1)
-            plt.xlabel('Radius')
-            plt.ylabel(r'$\Omega_p$')
-
-        return out
-
     def Omega_seq(self, t0, t, **kwargs):
         kwargs['plot'] = True
         for i in t:
@@ -708,11 +611,28 @@ class BLsim(object):
             plt.ylim(.5,1)
         plt.legend(t)
 
-    def mode_phase(self):
-        if not self._mode_phase is None:
+    def mode_phase(self, mmax=None, main_plots=False, mpopt={}):
+        if mmax is None:
+            mmax = self._mmax
+        if not self._mode_phase is None and not main_plots:
             return self._mode_phase
-        out = np.array([self.loadfile(i).mode_phase() for i in self.times])
-        out = out[:,0], out[:,1]
+        if main_plots:
+            out = []
+            _opt = {}
+            _opt.update(mpopt)
+            for i, fn in enumerate(self.filenames):
+                helpers.update_progress(float(i) / len(self.filenames))
+                bf = self.loadfile(fn)
+                bf.main_plots(**_opt)
+                out.append(bf.mode_phase())
+            if not self._mode_phase is None:
+                return self._mode_phase
+            out = np.array(out)
+        else:
+            out = np.array([self.loadfile(i).mode_phase() for i in self.times])
+        out = np.array([out[:,0], out[:,1]])
+        if not mmax is None:
+            out = out[:,:,:mmax+1,:]
         self._mode_phase = out
         return out
 
