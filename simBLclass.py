@@ -25,6 +25,8 @@ from athena_read import athdf as athdf
 import helpers
 
 
+tau = 2 * np.pi
+
 #mpl.rc('text', usetex=True)
 #mpl.rcParams['text.latex.preamble'] = [r"\usepackage{amssymb,amsmath}"]
 
@@ -53,8 +55,8 @@ def smooth(data, width=64):
 _smooth = smooth
 
 class BLfile(object):
-    def __init__(self, fn, sim_path=None):
-        self.t = None
+    def __init__(self, fn, sim_path=None, t=None):
+        self.t = t
         try:
             if fn == int(fn):
                 if not sim_path is None:
@@ -86,6 +88,7 @@ class BLfile(object):
             self._prefix = os.path.split(sim_path)[-1] + '_{0:05d}'.format(self.t)
         else:
             self.name = os.path.split(fn)[-1]
+        self.t_str = '%.04g' % self.t
         self.data = self._parse_file()
         self.r = self.data['x1f']
         self.phi = self.data['x2f']
@@ -165,7 +168,7 @@ class BLfile(object):
         if log:
             _popt['norm'] = mpl.colors.LogNorm()
         if title is None:
-            title = self.name
+            title = self.name + ' ' + self.t_str
         _popt.update(popt)
 
         loc = (slice(None,mmax+1), slice(None))
@@ -214,9 +217,9 @@ class BLfile(object):
         loc = sqr.argmax(axis=0)
         phase = self.phic[loc]
         phase -= .5 * (1 - np.sign(data[loc,np.arange(data.shape[1])])) * np.pi
-        phase %= 2 * np.pi
+        phase %= tau
         if mod:
-            phase %= 2. * np.pi / modes
+            phase %= tau / modes
         return phase
 
     def smooth(self, data, width=64):
@@ -249,10 +252,10 @@ class BLfile(object):
     def plot2d(self, data, fn=None, save=False, subsample=False, title=None,
                name=None, ext='pdf', popt={}, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt={}, fig=None, fopt={},
-               ax=None, log=False, aspect=1, sdir=None, smooth=None):
+               ax=None, log=False, aspect=1, sdir=None, smooth=None, phi_shift=0):
         '''Plot 2D sim data'''
         r = self.r[np.newaxis, :]
-        phi = self.phi[:,np.newaxis]
+        phi = self.phi[:,np.newaxis] + phi_shift
         x = r * np.cos(phi)
         y = r * np.sin(phi)
         _popt = {}
@@ -288,7 +291,8 @@ class BLfile(object):
 
         if name:
             if title is None:
-                title = name
+                #title = self.name + ' ' + self.t_str + ' ' + name
+                title = self.name + ' ' + name
             if save and fn is None:
                 fn = self._prefix + '_' + name + '_plot.' + ext
 
@@ -330,6 +334,22 @@ class BLfile(object):
 
         return pcm
 
+    def mode_phase(self, mmax=30):
+        ft = self.fft('pseudo', mag=False)[1][:mmax+1,:]
+        phi = -np.angle(ft)
+        a = np.abs(ft)
+        tmp = np.ma.array(a, mask=a - .5 * a.max(axis=0)[np.newaxis, :] > 0)
+        m = tmp.mean(axis=0)
+        s = tmp.std(axis=0)
+        loc = np.where(a - (m + 3 * s)[np.newaxis, :] > 0)
+        #modes = np.array(sorted(set(loc[0])))
+        #md = {modes[i]: i for i in range(len(modes))}
+        amp = np.ones(a.shape) * np.nan
+        ang = amp.copy()
+        amp[loc] = a[loc]
+        ang[loc] = phi[loc]
+        return amp, ang
+
     def main_plots(self, save=True, ext='png', sdir=None):
         try:
             self.channel_map(save=save, ext=ext, sdir=os.path.join(sdir, 'channel_maps'))
@@ -352,7 +372,7 @@ class BLfile(object):
                 print('-' * 60)
 
 class BLsim(object):
-    def __init__(self, path, fmts=None, mmax=100, mode_data=None):
+    def __init__(self, path, fmts=None, mmax=100, mode_data=None, dt=None):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
@@ -378,12 +398,16 @@ class BLsim(object):
             print('Discarding {0:}'.format(self.filenames.pop(-1)))
             tmp = self._readable(self.filenames[-1])
         self.times = np.array([int(i.split('.')[2]) for i in self.filenames])
+        if dt is None:
+            dt = tmp.data.get('t', tau * self.times[-1]) / self.times[-1]
+        self.dt = dt
         if not (self.times == np.arange(self.times.size, dtype=int)).all():
             Warning('Incomplete dataset.')
         #tmp = self.loadfile(self.filenames[0])
         for attr in ['r', 'phi', 'rc', 'phic']:
             setattr(self, attr, getattr(tmp, attr))
         self._mode_data = mode_data
+        self._mode_phase = None
         self._mmax = mmax
         self._mode_fn = os.path.join(path, 'mode_data.npy')
         if self._mode_data is None:
@@ -482,9 +506,11 @@ class BLsim(object):
             plt.axvline(101.5, c='k', ls=':', lw=1)
         ax = plt.gca()
         if title is None:
-            title = self.name
+            title = self.name + ' dominant mode'
         if title:
             plt.title(helpers.sanitize_lbl(title))
+        plt.xlabel('Time')
+        plt.ylabel('Radius')
         if cb:
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -507,12 +533,23 @@ class BLsim(object):
             plt.close()
 
     def mt_plot(self, r, fn=None, mmax=30, save=False, ext='pdf', sdir=None,
-                fig=None, ax=None, fopt={}, vmin=1e-5, vmax=10, cb=True,
+                fig=None, ax=None, fopt={}, vmin='smart', vmax='max', cb=True,
                 cbl=None, popt={}, log=True):
         ir = np.abs(self.rc - r).argmin()
         r = self.rc[ir]
-        data = self.all_mode_data()[:,:,ir].T
+        _all = self.all_mode_data()
+        data = _all[:,:,ir].T
 
+        if 'smart' in [vmin, vmax]:
+            smart = helpers.smartlim(_all[:,:mmax+1,:])
+            if vmin == 'smart':
+                vmin = smart[0]
+            if vmax == 'smart':
+                vmax = smart[1]
+        if vmin == 'min':
+            vmin = _all[:,:mmax+1,:].min()
+        if vmax == 'max':
+            vmax = _all[:,:mmax+1,:].max()
         if vmin == 'auto':
             vmin = max(data.min(), 1e-6)
         _opt = {'vmin': vmin, 'vmax': vmax, 'interpolation': 'nearest'}
@@ -553,22 +590,41 @@ class BLsim(object):
             fig.savefig(fn)
             plt.close()
 
-    def cross_corr(self, t1, t2=None, var='pseudo', dt=2 * np.pi, plot=False, norm=True):
+    def cross_corr(self, t1, t2=None, var='pseudo', dt=None, plot=False,
+                   norm=True, save=False, ext='png'):
         if t2 is None:
             t2 = t1 + 1
-        t1 = self.loadfile(t1)
-        t2 = self.loadfile(t2)
+        try:
+            tmp = t2 - t1
+        except:
+            tmp = None
+        if not hasattr(t1, 'data'):
+            t1 = self.loadfile(t1)
+        if not hasattr(t2, 'data'):
+            t2 = self.loadfile(t2)
+        if dt is None:
+            try:
+                dt = t2.data['t'] - t1.data['t']
+            except KeyError:
+                if not tmp is None:
+                    dt = tau * tmp
+                else:
+                    dt = tau
         d1 = t1.get2d(var)
         d2 = t2.get2d(var)
         out = np.empty(d1.shape)
         for ir in xrange(d1.shape[1]):
             #out[:,ir] = helpers.fftcorrelate(d2[:,ir], d1[:,ir])
-            out[:,ir] = helpers.c_correlate(d1[:,ir], d2[:,ir])
+            out[:,ir] = helpers.c_correlate(d2[:,ir], d1[:,ir])
         #if norm:
             #out /= np.abs(out).max(axis=0)[np.newaxis,:]
             #out /= np.sqrt(.5 * d1**2 + .5 * d2**2).max(axis=0)[np.newaxis,:]
         if plot:
-            t1.plot2d(out, title='{0:d}, {1:d}'.format(t1.t, t2.t), vmax=1.1)
+            title = 'cross_corr({0:d}, {1:d})'.format(t1.t, t2.t)
+            fn = None
+            if save:
+                fn = self.name + '_cc_{:d}-{:d}.'.format(t1.t, t2.t) + ext
+            t1.plot2d(out, title=title, vmax=1.1, phi_shift=np.pi, save=save, fn=fn)
         return out
 
     def rect_cc_plot(self, t1, t2, var='pseudo', fn=None, save=False, ext='pdf',
@@ -599,10 +655,27 @@ class BLsim(object):
         pcm = plt.pcolormesh(r, phi, data, **_popt)
         plt.colorbar()
 
-    def prop_speed(self, t1, t2=None, dt=2 * np.pi, plot=False, fig=True, smooth=False, f=.9):
+    def _old_prop_speed(self, t1, t2=None, dt=None, cc=None, plot=False, fig=True, smooth=False, f=.9):
         if t2 is None:
             t2 = t1 + 1
-        cc = self.cross_corr(t1, t2)
+        try:
+            tmp = t2 - t1
+        except:
+            tmp = None
+        if not hasattr(t1, 'data'):
+            t1 = self.loadfile(t1)
+        if not hasattr(t2, 'data'):
+            t2 = self.loadfile(t2)
+        if dt is None:
+            try:
+                dt = t2.data['t'] - t1.data['t']
+            except KeyError:
+                if not tmp is None:
+                    dt = tau * tmp
+                else:
+                    dt = tau
+        if cc is None:
+            cc = self.cross_corr(t1, t2)
         if not smooth is False:
             if smooth is True or smooth is None:
                 smooth = 64
@@ -612,8 +685,9 @@ class BLsim(object):
             tmp = cc[:,ir]
             loc = np.where(tmp < f * tmp.max())
             tmp[loc] = 0
-            out[ir] = self.phic[argrelextrema(tmp, np.greater, mode='wrap')[0].min()]
-        out /= (t2 - t1) * dt
+            tmp = self.phic[argrelextrema(tmp, np.greater, mode='wrap')]
+            out[ir] = ((tmp + np.pi) % tau).min()
+        out /= dt
 
         if plot:
             if fig is True:
@@ -633,6 +707,48 @@ class BLsim(object):
         if yl[1] > 1:
             plt.ylim(.5,1)
         plt.legend(t)
+
+    def mode_phase(self):
+        if not self._mode_phase is None:
+            return self._mode_phase
+        out = np.array([self.loadfile(i).mode_phase() for i in self.times])
+        out = out[:,0], out[:,1]
+        self._mode_phase = out
+        return out
+
+    def prop_speed(self, dt=None):
+        if dt is None:
+            dt = self.dt
+        data = self.mode_phase()
+        dphi = np.gradient(data[1], axis=0) / dt
+        return dphi % 1
+
+    def _r_phase_plotter(self, r, data, ret_m=False):
+        ir = self.rloc(r)
+        #data = self.mode_phase()
+        modes = []
+        for i in xrange(data.shape[1]):
+            if np.isfinite(data[:,i,ir]).any():
+                plt.plot(data[:,i,ir], lw=1)
+                modes.append(i)
+        plt.legend(['$m=%d$' % m for m in modes])
+        plt.xlabel('Time step')
+        #plt.ylabel('Phase')
+        plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
+        if ret_m:
+            return modes
+
+    def r_phase(self, r, ret_m=False):
+        plt.figure()
+        m = self._r_phase_plotter(r, self.mode_phase()[1], ret_m=ret_m)
+        plt.ylabel('Phase')
+        return m
+
+    def r_speed(self, r, ret_m=False):
+        plt.figure()
+        m = self._r_phase_plotter(r, self.prop_speed(), ret_m=ret_m)
+        plt.ylabel('Speed')
+        return m
 
 ######################
 # End of BLsim class #
@@ -659,6 +775,11 @@ def mkplots(sims=None, path='', ext='png'):
             sdir = os.getcwd()
             opt = dict(save=True, ext=ext, sdir=sdir)
             sim.mode_plot(main_plots=True, **opt)
+            rdir = os.path.join(sdir, 'modes_at_r')
+            if not os.path.isdir(rdir):
+                os.mkdir(rdir)
+            #opt['sdir'] = rdir
+            os.chdir(rdir)
             for r in [.95,1,1.1,1.5,2,3]:
                 sim.mt_plot(r, log=True, **opt)
                 sim.mt_plot(r, log=False, vmin=0, **opt)
