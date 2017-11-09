@@ -372,7 +372,7 @@ class BLfile(object):
                 print('-' * 60)
 
 class BLsim(object):
-    def __init__(self, path, fmts=None, mmax=100, mode_phase=None, dt=None):
+    def __init__(self, path, fmts=None, mmax=30, mode_phase=None, dt=None):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
@@ -624,16 +624,14 @@ class BLsim(object):
                 helpers.update_progress(float(i) / len(self.filenames))
                 bf = self.loadfile(fn)
                 bf.main_plots(**_opt)
-                out.append(bf.mode_phase())
+                out.append(bf.mode_phase(mmax=mmax))
             if not self._mode_phase is None:
                 return self._mode_phase
             out = np.array(out)
         else:
-            out = np.array([self.loadfile(i).mode_phase() for i in self.times])
+            out = np.array([self.loadfile(i).mode_phase(mmax=mmax) for i in self.times])
         out = np.array([out[:,0], out[:,1]])
-        if not mmax is None:
-            out = out[:,:,:mmax+1,:]
-        self._mode_phase = out
+        self._store_mode(out)
         return out
 
     def prop_speed(self, dt=None):
