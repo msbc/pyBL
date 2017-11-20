@@ -180,7 +180,9 @@ class mock_sim(bl.BLsim):
         plt.gca().set_color_cycle(None)
         cs = plt.rcParams['axes.prop_cycle']()
         for m in modes:
-            plt.axhline(speeds[m], ls=':', lw=1, **cs.next())
-            #plt.plot(ti, t * speeds[m], 'k:', lw=1)
+            try:
+                plt.axhline(speeds[m], ls=':', lw=1, **cs.next())
+            except IndexError:
+                pass
         plt.ylim(*yl)
         plt.xlabel('Time / $%.4f$' % dt)

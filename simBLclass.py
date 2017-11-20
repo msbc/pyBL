@@ -7,6 +7,7 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from scipy.stats import scoreatpercentile as percentile
 #import math
 import gc
 #import psutil
@@ -39,6 +40,27 @@ _i = map(str, range(1,5))
 _ext = ['athdf', 'npy']
 #_file_fmts = ['BL.out2.%5.5d.athdf', 'disk.out1.%5.5d.athdf']
 _file_fmts = ['.'.join([a, 'out' + b, '%5.5d', c]) for a in _pre for b in _i for c in _ext]
+
+def and_neighbor(data, n=1, axis=0, pad=True):
+    loc = (slice(None),) * axis
+    base = data.copy()
+    if pad:
+        pad = data[loc + (-1,)][loc + (np.newaxis,)]
+        base = np.concatenate((base,) + (pad,) * n, axis=axis)
+    out = np.ones_like(base, dtype=bool)
+    for i in xrange(-n, n+1):
+        out = np.logical_and(out, np.roll(base, n, axis=axis))
+    return out[loc + (slice(0,data.shape[axis]),)]
+
+def mod_grad(data, mod=1, axis=0):
+    loc = (slice(None),) * axis
+    out = np.zeros_like(data)
+    tmp = (data[loc + (slice(1, None),)] - data[loc + (slice(None, -1),)]) % mod
+    out[loc + (slice(1, None),)] = .5 * tmp
+    out[loc + (slice(None, -1),)] += .5 * tmp
+    out[loc + (0,)] *= 2
+    out[loc + (-1,)] *= 2
+    return out
 
 def smooth(data, width=64):
     try:
@@ -276,6 +298,22 @@ class BLfile(object):
             data = data[loc]
         if log:
             _popt['norm'] = mpl.colors.LogNorm()
+        # parse smart lim options
+        tmp = {}
+        if '%' in [vmin[-1], vmax[-1]]:
+            if '%' == vmin[-1]:
+                tmp['low'] = float(vmin[:-1])
+                vmin = 'smart'
+            if '%' == vmax[-1]:
+                tmp['high'] = float(vmax[:-1])
+                vmax = 'smart'
+        if 'smart' in [vmin, vmax]:
+            tmp = helpers.smartlim(data, **tmp)
+            if vmin == 'smart':
+                vmin = tmp[0]
+            if vmax == 'smart':
+                vmax = tmp
+        # check if zero centered data
         if zerocent is None and not log:
             zerocent = helpers.isZeroCent(data)
         if zerocent:
@@ -338,17 +376,18 @@ class BLfile(object):
         ft = self.fft('pseudo', mag=False)[1][:mmax+1,:]
         phi = -np.angle(ft)
         a = np.abs(ft)
-        tmp = np.ma.array(a, mask=a - .5 * a.max(axis=0)[np.newaxis, :] > 0)
-        m = tmp.mean(axis=0)
-        s = tmp.std(axis=0)
-        loc = np.where(a - (m + 3 * s)[np.newaxis, :] > 0)
+        #tmp = np.ma.array(a, mask=a - .5 * a.max(axis=0)[np.newaxis, :] > 0)
+        #m = tmp.mean(axis=0)
+        #s = tmp.std(axis=0)
+        #loc = np.where(a - (m + 3 * s)[np.newaxis, :] > 0)
         #modes = np.array(sorted(set(loc[0])))
         #md = {modes[i]: i for i in range(len(modes))}
-        amp = np.ones(a.shape) * np.nan
-        ang = amp.copy()
-        amp[loc] = a[loc]
-        ang[loc] = phi[loc]
-        return amp, ang
+        #amp = np.ones(a.shape) * np.nan
+        #ang = amp.copy()
+        #amp[loc] = a[loc]
+        #ang[loc] = phi[loc]
+        #return amp, ang
+        return a, phi
 
     def main_plots(self, save=True, ext='png', sdir=None):
         try:
@@ -408,6 +447,7 @@ class BLsim(object):
             setattr(self, attr, getattr(tmp, attr))
         self._mode_phase = mode_phase
         self._mmax = mmax
+        self._mode_mask = None
         self._mode_fn = os.path.join(path, 'mode_phase.npy')
         if self._mode_phase is None:
             if os.path.isfile(self._mode_fn):
@@ -638,19 +678,92 @@ class BLsim(object):
         if dt is None:
             dt = self.dt
         data = self.mode_phase()
-        dphi = np.gradient(data[1], axis=0) / dt
+        #dphi = np.gradient(data[1] / dt, axis=0)
+        dphi = mod_grad(data[1] / dt, axis=0)
         return dphi % 1
 
-    def _r_phase_plotter(self, r, data, ret_m=False):
+    def mode_mask(self, data=None, info=False, amin=1e-3):
+        amp = self.mode_phase()[0].copy()
+        if self._mode_mask is None:
+            #Max = amp.max(axis=1)[:, np.newaxis, :]
+            mask = np.zeros_like(amp, dtype=bool)
+            mask[:,0,:] = True # always mask out m=0
+            _mask = mask.copy()
+            keep_going = 1
+            #mask = np.logical_or(mask, amp - .5 * Max > 0)
+            # now recursively mask out signal
+            mask = np.logical_or(mask, amp -  percentile(amp, 90, axis=1)[:, np.newaxis, :]> 0)
+            while keep_going:
+                mamp = np.ma.array(amp, mask=mask)
+                if keep_going == 1:
+                    mask = _mask.copy()
+                #M = mamp.max(axis=1).data[:, np.newaxis, :]
+                m = mamp.mean(axis=1).data[:, np.newaxis, :] # mean of masked data
+                s = mamp.std(axis=1).data[:, np.newaxis, :] # standard deviation
+                tmp = np.logical_and(amp > amin, m + 3. * s - amp < 0) # signal
+                #tmp = np.logical_or(mask, tmp)
+                if (mask == tmp).all():
+                    keep_going = False
+                else:
+                    keep_going += 1
+                mask = tmp.copy()
+                if keep_going > 20:
+                    print 'Break'
+                    break
+            if info:
+                mamp = np.ma.array(amp, mask=mask)
+                m = mamp.mean(axis=1).data
+                s = mamp.std(axis=1).data
+                _info = {'mean': m, 'std': s}
+            mask = np.logical_not(mask)
+            mask[:,0,:] = True
+            #mask = and_neighbor(mask, n=1, axis=0)
+            #mask = and_neighbor(mask, n=1, axis=2)
+            self._mode_mask = mask
+        else:
+            mask = self._mode_mask
+            if info:
+                tmp = np.logical_not(mask)
+                tmp[:,0,:] = True
+                mamp = np.ma.array(amp, mask=tmp)
+                m = mamp.mean(axis=1).data
+                s = mamp.std(axis=1).data
+                _info = {'mean': m, 'std': s}
+        if not data is None:
+            out = data.copy()
+            out[np.where(mask)] = np.nan
+            #out[np.where(mask)] = data[np.where(mask)]
+            if info:
+                _info['data'] = out
+            else:
+                return out
+        if info:
+            _info['mask'] = mask
+            return _info
+        return mask
+
+    def _r_phase_plotter(self, r, data, ret_m=False, tlim=None):
+        if tlim is None:
+            tlim = self.times.size // 10
         ir = self.rloc(r)
         #data = self.mode_phase()
         modes = []
         for i in xrange(data.shape[1]):
-            if np.isfinite(data[:,i,ir]).any():
+            tmp = data[:,i,ir].copy()
+            if tlim:
+                tmp = tmp[tlim:]
+            j = 0
+            while np.isfinite(tmp).any() and j < 5:
+                tmp = np.gradient(tmp)
+                j += 1
+            if np.isfinite(tmp).any():
                 plt.plot(data[:,i,ir], lw=1)
                 modes.append(i)
         plt.legend(['$m=%d$' % m for m in modes])
-        plt.xlabel('Time step')
+        if self.dt:
+            plt.xlabel('Time / $%.4f$' % self.dt)
+        else:
+            plt.xlabel('Time step')
         #plt.ylabel('Phase')
         plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
         if ret_m:
@@ -658,14 +771,27 @@ class BLsim(object):
 
     def r_phase(self, r, ret_m=False):
         plt.figure()
-        m = self._r_phase_plotter(r, self.mode_phase()[1], ret_m=ret_m)
+        m = self._r_phase_plotter(r, self.mode_mask(self.mode_phase()[1]), ret_m=ret_m)
         plt.ylabel('Phase')
         return m
 
     def r_speed(self, r, ret_m=False):
         plt.figure()
-        m = self._r_phase_plotter(r, self.prop_speed(), ret_m=ret_m)
+        m = self._r_phase_plotter(r, self.mode_mask(self.prop_speed()), ret_m=ret_m)
         plt.ylabel('Speed')
+        return m
+
+    def r_amp(self, r, ret_m=False):
+        plt.figure()
+        info = self.mode_mask(self.mode_phase()[0], info=True)
+        m = self._r_phase_plotter(r, info['data'], ret_m=ret_m)
+        ir = self.rloc(r)
+        ls = '-'
+        for i in [0,1,3]:
+            y = info['mean'][:,ir] + i * info['std'][:,ir]
+            plt.plot(y, c='k', ls=ls, lw=1)
+            ls = ':'
+        plt.ylabel('Amplitude')
         return m
 
 ######################
