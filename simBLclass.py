@@ -300,19 +300,25 @@ class BLfile(object):
             _popt['norm'] = mpl.colors.LogNorm()
         # parse smart lim options
         tmp = {}
-        if '%' in [vmin[-1], vmax[-1]]:
+
+        try:
             if '%' == vmin[-1]:
                 tmp['low'] = float(vmin[:-1])
                 vmin = 'smart'
+        except TypeError:
+            pass
+        try:
             if '%' == vmax[-1]:
                 tmp['high'] = float(vmax[:-1])
                 vmax = 'smart'
+        except TypeError:
+            pass
         if 'smart' in [vmin, vmax]:
             tmp = helpers.smartlim(data, **tmp)
             if vmin == 'smart':
                 vmin = tmp[0]
             if vmax == 'smart':
-                vmax = tmp
+                vmax = tmp[1]
         # check if zero centered data
         if zerocent is None and not log:
             zerocent = helpers.isZeroCent(data)
@@ -679,8 +685,8 @@ class BLsim(object):
             dt = self.dt
         data = self.mode_phase()
         #dphi = np.gradient(data[1] / dt, axis=0)
-        dphi = mod_grad(data[1] / dt, axis=0)
-        return dphi % 1
+        dphi = mod_grad(data[1], axis=0, mod=tau)
+        return dphi / tau / dt
 
     def mode_mask(self, data=None, info=False, amin=1e-3):
         amp = self.mode_phase()[0].copy()
