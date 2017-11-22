@@ -286,6 +286,7 @@ def athdf(filename, data=None, quantities=None, level=0, subsample=False,
     quantities = [str(q) for q in quantities if q != 'x1f' and q != 'x2f' and q != 'x3f' \
         and q != 'x1v' and q != 'x2v' and q != 'x3v']
 
+
     # Get metadata describing file layout
     num_blocks = f.attrs['NumMeshBlocks']
     dataset_names = f.attrs['DatasetNames'][:]
@@ -316,6 +317,7 @@ def athdf(filename, data=None, quantities=None, level=0, subsample=False,
         data[q] = np.zeros((nx3,nx2,nx1))
     if not subsample and not fast_restrict and max_level > level:
       restricted_data = np.zeros((lx3,lx2,lx1), dtype=bool)
+    data['t'] = f.attrs['Time']
 
     # Populate coordinate arrays
     for d in range(1,4):
@@ -485,7 +487,7 @@ def athdf(filename, data=None, quantities=None, level=0, subsample=False,
                     vol = vol_func(x1m, x1p, x2m, x2p, x3m, x3p)
                     for q in quantities:
                       data[q][k,j,i] /= vol
-                    
+
     #f.close()
 
   return data
