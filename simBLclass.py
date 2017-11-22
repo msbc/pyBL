@@ -686,7 +686,8 @@ class BLsim(object):
         data = self.mode_phase()
         #dphi = np.gradient(data[1] / dt, axis=0)
         dphi = mod_grad(data[1], axis=0, mod=tau)
-        return dphi / tau / dt
+        m = np.arange(dphi.shape[1]) + 1.
+        return dphi / dt / m[np.newaxis,:,np.newaxis]
 
     def mode_mask(self, data=None, info=False, amin=1e-3):
         amp = self.mode_phase()[0].copy()
@@ -799,6 +800,10 @@ class BLsim(object):
             ls = ':'
         plt.ylabel('Amplitude')
         return m
+
+    def plot2d(self, t, *args, **kwargs):
+        f = self.loadfile(t)
+        return f.plot2d(*args, **kwargs)
 
 ######################
 # End of BLsim class #
