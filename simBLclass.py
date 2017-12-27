@@ -8,6 +8,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.stats import scoreatpercentile as percentile
+from scipy.signal import gaussian
 #import math
 import gc
 #import psutil
@@ -156,6 +157,67 @@ class BLfile(object):
         except AttributeError:
             data = self.get2d(data)
         return data
+
+    def rhoWeight(self, data):
+        data = self._parse_data(data)
+        dens = self.get2d('dens')
+        return (dens * data).sum(axis=0) / dens.sum(axis=0)
+
+    def __dv2(self):
+        out = self.get2d('vel2')
+        return out - out.mean(axis=0)[np.newaxis, :]
+
+    def deltaVal(self, data):
+        data = self._parse_data(data)
+        return data - self.rhoWeight(data)
+
+    def Rstress(self):
+        return self.get2d('mom1') * self.dv2()
+
+    def CL(self):
+        return self.rc**2 * (self.get2d('mom1') * self.get2d('vel2')).mean(axis=0) * tau
+
+    #BRS12 ApJ 760:22
+    def CL20(self):
+        return tau * self.rc**2 * self.get2d('dens').mean(axis=0) * self.rhoWeight(self.deltaVal('vel1') * self.deltaVal('vel2'))
+
+    def CL24(self):
+        return tau * self.rc**2 * self.get2d('dens').mean(axis=0) * self.rhoWeight(np.abs(self.deltaVal('vel1') * self.deltaVal('vel2')))
+
+    def CL25(self, Op, M=None):
+        if M is None:
+            M = self.M
+        s = 1. / M
+        dens = self.get2d('dens')
+        Mdens = dens.mean(axis=0)
+        return self.rc * s**3 * tau * np.mean((dens - Mdens[np.newaxis, :])**2, axis=0) / (dens.mean(axis=0) * (self.Ok() - Op))
+
+    def CS(self):
+        dens = self.get2d('dens')
+        Mdens = dens.mean(axis=0)
+        dv2 = self.get2d('vel2') - self.Oloc() * self.rc
+        return tau * self.rc**2 * Mdens * self.rhoWeight(dv2 * self.get2d('vel1'))
+
+    def CA(self):
+        dens = self.get2d('dens')
+        Mdens = dens.mean(axis=0)
+        return tau * self.rc**3 * Mdens * self.Oloc() * self.rhoWeight('vel1')
+
+    def CLplot(self, Op, M=None):
+        cl = self.CL(), self.CL20(), self.CL24(), self.CL25(Op, M), self.CS(), self.CA()
+        lbls = ['BRS12 Eqn %d' % i for i in [19,20,24,25]] + ['BRS13 $C_S$','BRS13 $C_A$']
+        for i in cl:
+            plt.plot(self.rc, i)
+        plt.axhline(0, ls=':', lw=1, c='k')
+        plt.legend(lbls)
+        plt.xlabel('R')
+        plt.ylabel('$C_L$')
+
+    def Ok(self):
+        return self.rc**-1.5
+
+    def Oloc(self):
+        return self.rhoWeight('vel2') / self.rc
 
     def vel(self, i):
         return self['mom{0:}'.format(i)] / self['dens']
@@ -417,7 +479,8 @@ class BLfile(object):
                 print('-' * 60)
 
 class BLsim(object):
-    def __init__(self, path, fmts=None, mmax=30, mode_phase=None, dt=None):
+    def __init__(self, path, fmts=None, mmax=30, mode_phase=None, dt=None,
+                 kern=True):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
@@ -466,6 +529,22 @@ class BLsim(object):
             self._mloc = (None, None)
         else:
             self._mloc = (slice(None, self._mmax + 1))
+        self._kern = None
+        if kern is True:
+            kern = 5
+        if not hasattr(kern, '__iter__'):
+            if kern:
+                n = self.phic.size
+                kern = gaussian(n, n / tau / kern)
+                kern = kern[n // 2:]
+        if np.any(kern):
+            self._kern = np.atleast_2d(kern)
+
+    @property
+    def kern(self):
+        if self._mode_phase is None:
+            return None
+        return 1.
 
     def _readable(self, t):
         try:
@@ -508,7 +587,7 @@ class BLsim(object):
             if self._mode_phase is None or main_plots:
                 data = self.mode_phase(main_plots=main_plots, mpopt=_mpopt)[0]
             else:
-                data = self._mode_phase[0].argmax(axis=1)
+                data = self.mode_phase()[0].argmax(axis=1)
         one = np.ones((self.times.size + 1, self.r.size))
         r = self.r[np.newaxis, :] * one
         t = np.concatenate((self.times, np.array([self.times[-1] + 1.])))[:,np.newaxis] * one
@@ -661,7 +740,7 @@ class BLsim(object):
         if mmax is None:
             mmax = self._mmax
         if not self._mode_phase is None and not main_plots:
-            return self._mode_phase
+            return self._mode_phase * self.kern
         if main_plots:
             out = []
             _opt = {}
@@ -678,7 +757,7 @@ class BLsim(object):
             out = np.array([self.loadfile(i).mode_phase(mmax=mmax) for i in self.times])
         out = np.array([out[:,0], out[:,1]])
         self._store_mode(out)
-        return out
+        return out * self.kern
 
     def prop_speed(self, dt=None):
         if dt is None:
@@ -687,7 +766,7 @@ class BLsim(object):
         #dphi = np.gradient(data[1] / dt, axis=0)
         dphi = mod_grad(data[1], axis=0, mod=tau)
         m = np.arange(dphi.shape[1]) + 1.
-        return dphi / dt / m[np.newaxis,:,np.newaxis]
+        return dphi / dt / (m[np.newaxis,:,np.newaxis] - 1)
 
     def mode_mask(self, data=None, info=False, amin=1e-3):
         amp = self.mode_phase()[0].copy()
@@ -776,20 +855,23 @@ class BLsim(object):
         if ret_m:
             return modes
 
-    def r_phase(self, r, ret_m=False):
-        plt.figure()
+    def r_phase(self, r, ret_m=False, fig=True):
+        if fig is True:
+            plt.figure()
         m = self._r_phase_plotter(r, self.mode_mask(self.mode_phase()[1]), ret_m=ret_m)
         plt.ylabel('Phase')
         return m
 
-    def r_speed(self, r, ret_m=False):
-        plt.figure()
+    def r_speed(self, r, ret_m=False, fig=True):
+        if fig is True:
+            plt.figure()
         m = self._r_phase_plotter(r, self.mode_mask(self.prop_speed()), ret_m=ret_m)
         plt.ylabel('Speed')
         return m
 
-    def r_amp(self, r, ret_m=False):
-        plt.figure()
+    def r_amp(self, r, ret_m=False, fig=True):
+        if fig is True:
+            plt.figure()
         info = self.mode_mask(self.mode_phase()[0], info=True)
         m = self._r_phase_plotter(r, info['data'], ret_m=ret_m)
         ir = self.rloc(r)

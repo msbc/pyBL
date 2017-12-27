@@ -52,7 +52,7 @@ class _time_step(_base):
     def _gen_patern(self):
         out = 0
         for i in xrange(self.modes.size):
-            out += self.modes[i] * self.unitwave(i, self.phases[i] + self.t * self.speeds[i])
+            out += self.modes[i] * self.unitwave(i, self.phases[i] + self.t * self.speeds[i] / float(i))
         if self.noise:
             out += self.noise * np.random.randn(self.nphi, self.nr)
         return out
