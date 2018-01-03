@@ -3,3 +3,4 @@ Mach*stampede
 .dropbox.attr
 *.athdf
 *.npy
+test/*
