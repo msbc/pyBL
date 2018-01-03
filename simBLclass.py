@@ -507,7 +507,9 @@ class BLsim(object):
             tmp = self._readable(self.filenames[-1])
         self.times = np.array([int(i.split('.')[2]) for i in self.filenames])
         if dt is None:
-            dt = tmp.data.get('t', tau * self.times[-1]) / self.times[-1]
+            if 't' in tmp.data and not 'Time' in tmp.data:
+                tmp.data['Time'] = tmp.data['t']
+            dt = tmp.data.get('Time', tau * self.times[-1]) / self.times[-1]
         self.dt = dt
         if not (self.times == np.arange(self.times.size, dtype=int)).all():
             Warning('Incomplete dataset.')
