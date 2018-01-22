@@ -23,7 +23,7 @@ except ImportError:
     from scipy.signal import fftconvolve
 from scipy.signal import argrelextrema
 
-from athena_read import athdf as athdf
+import athena_read as ar
 import helpers
 
 
@@ -123,7 +123,7 @@ class BLfile(object):
             fn = self.fn
         ext = fn.split('.')[-1]
         if ext == 'athdf':
-            return athdf(fn)
+            return ar.athdf(fn)
         if ext == 'npy':
             return np.load(fn)[()]
         raise IOError('Cannot identify file type of "{0:}"'.format(self.fn))
@@ -477,6 +477,222 @@ class BLfile(object):
                 print('-' * 60)
                 traceback.print_exc(file=sys.stdout)
                 print('-' * 60)
+
+    def FFT_errors(self, vmin='smart', vmax='max', mmax=None):
+        pfft = self.fft('pseudo', mag=0)[1]
+        afft = (self.get2d('FT-Re') + 1j * self.get2d('FT-Im'))[:225]
+        loc = slice(None)
+        if not mmax is None:
+            loc = slice(None, mmax + 1)
+        amp = np.abs(afft)
+        n = self.rc.size * self.phic.size
+        norm = np.median(np.abs(pfft) / amp)
+        if norm > np.sqrt(n):
+            norm = n
+        elif int(norm + .5) == 1:
+            norm = 1
+        afft *= norm
+        amp *= norm
+        print "norm:", norm, "post-norm:", np.median(np.abs(pfft)/np.abs(afft))
+        dmag = (np.abs(pfft) - amp) / np.abs(pfft)
+        dth = np.angle(pfft) - np.angle(afft)
+        _opt = dict(interpolation='nearest', norm=mpl.colors.LogNorm())
+        fig = plt.figure(figsize=(8,8))
+        #fig, axs = plt.subplots(1, 3, figsize=(12,4))
+
+        #plt.figure()
+        #plt.sca(axs[0])
+        plt.subplot(221)
+        data = abs(dmag)
+        opt = {}
+        opt.update(_opt)
+        if 'smart' in [vmin, vmax]:
+            tmp = helpers.smartlim(data[loc])
+        if vmin == 'smart':
+            opt['vmin'] = tmp[0]
+        else:
+            opt['vmin'] = vmin
+        if vmax == 'smart':
+            opt['vmax'] = tmp[1]
+        elif vmax == 'max':
+            opt['vmax'] = data[loc].max()
+        else:
+            opt['vmax'] = vmax
+        im = plt.imshow(data, **opt)
+        cb = plt.colorbar(im)
+        plt.xlabel('r index')
+        plt.ylabel('mode')
+        cb.set_label(r'$\left|\Delta|{\rm FFT}|/|{\rm FFT})|\right|$')
+        ylim = plt.ylim(None, mmax)
+
+        #plt.figure()
+        #plt.sca(axs[1])
+        plt.subplot(222)
+        data = abs(dth)
+        del(opt)
+        opt1 = {}
+        opt1.update(_opt)
+        if 'smart' in [vmin, vmax]:
+            tmp = helpers.smartlim(data[loc])
+        if vmin == 'smart':
+            opt1['vmin'] = tmp[0]
+        else:
+            opt1['vmin'] = vmin
+        if vmax == 'smart':
+            opt1['vmax'] = tmp[1]
+        elif vmax == 'max':
+            opt1['vmax'] = data[loc].max()
+        else:
+            opt1['vmax'] = vmax
+        im1 = plt.imshow(data, **opt1)
+        cb1 = plt.colorbar(im1)
+        plt.xlabel('r index')
+        plt.ylabel('mode')
+        cb1.set_label(r'$\left|\Delta\theta\right|$')
+        plt.ylim(*ylim)
+        #return None
+
+        #plt.figure()
+        #plt.sca(axs[2])
+        plt.subplot(223)
+        data = amp
+        del(cb,cb1,opt1,vmin,vmax)
+        opt2 = {}
+        opt2.update(_opt)
+        if 0:
+            if 'smart' in [vmin, vmax]:
+                tmp = helpers.smartlim(data[loc])
+            if vmin == 'smart':
+                opt2['vmin'] = tmp[0]
+            else:
+                opt2['vmin'] = vmin
+            if vmax == 'smart':
+                opt2['vmax'] = tmp[1]
+            else:
+                opt2['vmax'] = vmax
+        #opt2['vmin'] = helpers.smartlim(data[loc])[0]
+        #opt2['vmax'] = data[loc].max()
+        print opt2
+        im2 = plt.imshow(data,interpolation='nearest', norm=mpl.colors.LogNorm(),
+                         vmin=helpers.smartlim(data[loc])[0], vmax=data[loc].max())#, vmin=helpers.smartlim(data[loc])[0], **opt2)
+        cb2 = plt.colorbar(im2)
+        plt.xlabel('r index')
+        plt.ylabel('mode')
+        cb2.set_label(r'$\left|{\rm FFT}\right|$')
+        plt.ylim(*ylim)
+
+        ax = plt.subplot(224)
+        self.plot2d('pseudo', ax=ax)
+
+
+class BLsliceFile(object):
+    def __init__(self, fn):
+        self.prefix, self.block, self.var, self.index, self.ext = fn.split('.')
+        if self.ext == 'vtk':
+            x1, x2, x3, data = ar.vtk(fn)
+        elif self.ext == 'tab':
+            x1, x2, x3, data = ar.tab(fn)
+        else:
+            raise ValueError('Cannot parse filetype ' + ext)
+        self.r = x1
+        self.phi = x2
+        if x1.size > 1:
+            self.rc = .5 * (self.r[:-1] + self.r[1:])
+        else:
+            self.rc = self.r
+        if x2.size > 1:
+            self.phic = .5 * (self.phi[:-1] + self.phi[1:])
+        else:
+            self.phic = self.phi
+        self._x3 = x3
+        self.data = data
+        self.axes = [x3, x2, x1]
+
+class BLslice(object):
+    def __init__(self, name, index, block_order=None, ifmt='%05d', prefix=None, ext='vtk', direction=None):
+        ext = ext.lstrip('.')
+        if type(index) == int:
+            index = ifmt % index
+        if prefix:
+            prefix = np.atleast_1d(prefix)
+        else:
+            prefix = _pre[:]
+        for p in prefix:
+            qry = '.'.join([p, 'block[0-9]*', name, index, ext])
+            #print qry
+            files = glob(qry)
+            if files:
+                break
+        if not files:
+            raise IOError('Cannot find slice files')
+        files = map(BLsliceFile, files)
+        f0 = files[0]
+        if direction is None:
+            direction = [i.size > 1 for i in f0.axes].index(True)
+        else:
+            direction = 3 - direction
+        files = {i.block: i for i in files}
+        if block_order is None:
+            block_order = sorted(files.keys(), key=lambda x:files[x].axes[direction][0])
+        self.block_order = block_order
+        data = {}
+        self.axes = None
+        for i, b in enumerate(block_order):
+            f = files[b]
+            if self.axes is None:
+                self.axes = [i.copy() for i in f.axes]
+            else:
+                tmp = [self.axes[direction], f.axes[direction]]
+                if tmp[0][-1] != tmp[1][0]:
+                    raise ValueError('Missing gaps in block reconstruction.')
+                tmp[1] = tmp[1][1:]
+                self.axes[direction] = np.concatenate(tmp)
+            for var in f.data:
+                if var in data:
+                    data[var] = np.concatenate((data[var], f.data[var]), axis=direction)
+                else:
+                    data[var] = f.data[var]
+        self.data = data
+        self.r = self.axes[2]
+        self.phi = self.axes[1]
+        self.direction = 3 - direction
+        self._dir = direction
+        self.files = files
+        if direction == 1:
+            self.rc = .5 * (self.r[:-1] + self.r[1:])
+            self.phic = self.phi
+        else:
+            self.phic = .5 * (self.phi[:-1] + self.phi[1:])
+            self.rc = self.r
+
+class BLmodes(object):
+    def __init__(self, index, mrng=None, mfmt='%02d'):
+        Re = 'user_out_var0'
+        Im = 'user_out_var1'
+        if mrng is None:
+            qry = '*.block[0-9]*.mode[0-9]*.[0-9]*.*'
+            mrng = np.array([int(i.split('.')[2][4:]) for i in glob(qry)])
+            mrng = mrng.min(), mrng.max()
+        mrng = np.atleast_1d(mrng).astype(int)
+        if len(mrng) == 1:
+            mrng = [0, mring[0]]
+        modes = range(mrng[0], mrng[1] + 1)
+        self.modes = modes
+        data = None
+        for m in modes:
+            s = BLslice('mode' + mfmt % m, index)
+            if data is None:
+                tmp = list(s.data[Re].shape)
+                tmp[1] = len(modes)
+                self.axes = s.axes
+                self.axes[1] = modes
+                self.rc = s.rc
+                data = np.empty(tmp, dtype=np.complex)
+            data[0, m, :] = s.data[Re][0, 0, :]
+            data[0, m, :].imag = s.data[Im][0, 0, :]
+        self.data = data
+
+
 
 class BLsim(object):
     def __init__(self, path, fmts=None, mmax=30, mode_phase=None, dt=None,
