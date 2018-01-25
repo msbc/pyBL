@@ -1,5 +1,7 @@
 #! /usr/bin/env python
 
+from __future__ import absolute_import, division, print_function
+from builtins import (bytes, str, open, super, range, zip, round, input, int, pow, object)
 #import h5py
 #from mayavi import mlab
 import numpy as np
@@ -22,9 +24,10 @@ except ImportError:
     print('Warning, cannot load "convolve_fft" from astropy. Using scipy equivlent which uses zero padding.')
     from scipy.signal import fftconvolve
 from scipy.signal import argrelextrema
+import time
 
-import athena_read as ar
-import helpers
+from . import athena_read as ar
+from . import helpers
 
 
 tau = 2 * np.pi
@@ -32,15 +35,16 @@ tau = 2 * np.pi
 #mpl.rc('text', usetex=True)
 #mpl.rcParams['text.latex.preamble'] = [r"\usepackage{amssymb,amsmath}"]
 
-_dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer', '/perseus/scratch/gpfs/sashaph/BLayer', ]
-_dirs = map(os.path.expanduser, _dirs)
+_dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer', '/perseus/scratch/gpfs/sashaph/BLayer', '~/BLayer', '~/BLayer/fft_tests']
+_dirs = list(map(os.path.expanduser, _dirs))
 _dirs += [os.path.join(d, 'Mach8stampede') for d in _dirs]
 _data_base = '/scratch/gpfs/sashaph/BLayer'
 _pre = ['BL', 'disk', 'mock']
 _i = map(str, range(1,5))
 _ext = ['athdf', 'npy']
 #_file_fmts = ['BL.out2.%5.5d.athdf', 'disk.out1.%5.5d.athdf']
-_file_fmts = ['.'.join([a, 'out' + b, '%5.5d', c]) for a in _pre for b in _i for c in _ext]
+_int_fmt = '%5.5d'
+_file_fmts = ['.'.join([a, 'out' + b, _int_fmt, c]) for a in _pre for b in _i for c in _ext]
 
 def and_neighbor(data, n=1, axis=0, pad=True):
     loc = (slice(None),) * axis
@@ -77,278 +81,154 @@ def smooth(data, width=64):
 
 _smooth = smooth
 
-class BLfile(object):
-    def __init__(self, fn, sim_path=None, t=None):
+def _findAbsPath(fn, sim_path=None):
+    if (sim_path is None) and (not os.path.isfile(fn)):
+        for d in _dirs:
+            tmp = os.path.join(d, fn)
+            if os.path.isfile(tmp):
+                fn = tmp
+                break
+    elif sim_path:
+        fn = os.path.join(sim_path, fn)
+    return fn
+
+def _parse_file(fn):
+    ext = fn.split('.')[-1]
+    if ext == 'athdf':
+        return ar.athdf(fn)
+    if ext == 'npy':
+        return np.load(fn)[()]
+    raise IOError('Cannot identify file type of "{0:}"'.format(fn))
+
+class BLfile(dict):
+    def __init__(self, fn, sim_path=None, t=None, trim=True, data=None,
+                 defvar=None, ai_data={}, sim=None):
         self.t = t
-        try:
-            if fn == int(fn):
-                if not sim_path is None:
-                    fmts = [os.path.join(sim_path, i) for i in _file_fmts]
-                else:
-                    fmts = _file_fmts
-                self.t = fn
-                try:
-                    fn = [i % fn for i in fmts if os.path.isfile(i % fn)][0]
-                except IndexError:
-                    tmp = ' or '.join([i % fn for i in fmts])
-                    raise IOError('Cannot find file(s) ' + tmp)
-        except ValueError:
-            pass
-        if (sim_path is None) and (not os.path.isfile(fn)):
-            for d in _dirs:
-                tmp = os.path.join(d, fn)
-                if os.path.isfile(tmp):
-                    fn = tmp
+        self.sim = sim
+        self._ai_data = ai_data
+        self.fn = _findAbsPath(fn, sim_path)
+        self.path = os.path.split(self.fn)[0]
+        if data is None:
+            self.data = self._parse_file()
+        else:
+            self.data = data
+        if self.t is None:
+            for i in ['Time', 'time', 'T', 't']:
+                if i in self.data:
+                    self.t = self.data[i]
                     break
-        elif sim_path:
-            fn = os.path.join(sim_path, fn)
-        self.fn = fn
         if self.t is None:
             self.t = int(os.path.split(fn)[1].split('.')[2])
+        if not 'Time' in self:
+            self['Time'] = self.t
         self._prefix = '.'.join(os.path.split(fn)[-1].split('.')[:-1])
-        if sim_path and not self.t is None:
-            self.name = os.path.split(sim_path)[-1] + ' {0:05d}'.format(self.t)
-            self._prefix = os.path.split(sim_path)[-1] + '_{0:05d}'.format(self.t)
-        else:
-            self.name = os.path.split(fn)[-1]
+        #if sim_path and not self.t is None:
+        #    self.name = os.path.split(sim_path)[-1] + ' {0:05d}'.format(self.t)
+        #    self._prefix = os.path.split(sim_path)[-1] + '_{0:05d}'.format(self.t)
+        #else:
+        self.name = os.path.split(fn)[-1]
         self.t_str = '%.04g' % self.t
-        self.data = self._parse_file()
+        self._Qtrim = trim
+        if trim:
+            self.update({i: self._trim(self.data[i]) for i in self.data})
+        else:
+            self.update(self.data)
         self.r = self.data['x1f']
         self.phi = self.data['x2f']
         self.rc = .5 * (self.r[:-1] + self.r[1:])
         self.phic = .5 * (self.phi[:-1] + self.phi[1:])
-
-    def _parse_file(self, fn=None):
-        if fn is None:
-            fn = self.fn
-        ext = fn.split('.')[-1]
-        if ext == 'athdf':
-            return ar.athdf(fn)
-        if ext == 'npy':
-            return np.load(fn)[()]
-        raise IOError('Cannot identify file type of "{0:}"'.format(self.fn))
-
-    def __getitem__(self, key):
-        try:
-            return self.data[key]
-        except KeyError:
-            if key[:3] == 'vel' and len(key) == 4:
-                return self.vel(key[3])
-            if hasattr(self, key):
-                try:
-                    out = getattr(self, key)()
-                    if out.shape == self['dens'].shape:
-                        return out
-                except AttributeError, TypeError:
-                    pass
-        raise KeyError('Unable to parse {0:}'.format(key))
+        self._shape = self.phic.size, self.rc.size
+        self._default_var = defvar
 
     def __repr__(self):
         path, fn = os.path.split(self.fn)
         meh, head = os.path.split(path)
-        return '<BLfile {0:}>'.format(os.path.join(head, fn))
+        my_class = repr(self.__class__).split("'")[1].split('.')[-1]
+        return '<{0:} {1:}>'.format(my_class, os.path.join(head, fn))
 
-    def get2d(self, var):
-        return self[var][0,:,:]
+    @property
+    def _defvar(self):
+        for i in [self._default_var, 'pseudo', 'dens', 'FT-mag', 'FT-Re']:
+            try:
+                if not self[i] is None:
+                    return i
+            except KeyError:
+                pass
+        for i in self:
+            try:
+                if self[i].shape == self._shape:
+                    return i
+            except KeyError:
+                pass
+        return None
+
+    def _trim(self, data):
+        data = np.atleast_1d(data)
+        while 1 in data.shape:
+            i = data.shape.index(1)
+            loc = [slice(None)] * i + [0]
+            loc += [slice(None)] * (len(data.shape) - len(loc))
+            loc = tuple(loc)
+            data = data[loc]
+        return data
+
+    def _parse_file(self, fn=None):
+        if fn is None:
+            fn = self.fn
+        return _parse_file(fn)
 
     def _parse_data(self, data):
         try:
             data.shape
+            if self._Qtrim:
+                return self._trim(data)
+            return data
         except AttributeError:
-            data = self.get2d(data)
-        return data
+            return self[data]
 
-    def rhoWeight(self, data):
-        data = self._parse_data(data)
-        dens = self.get2d('dens')
-        return (dens * data).sum(axis=0) / dens.sum(axis=0)
+    def _special_keys(self, key):
+        raise NotImplementedError
 
-    def __dv2(self):
-        out = self.get2d('vel2')
-        return out - out.mean(axis=0)[np.newaxis, :]
-
-    def deltaVal(self, data):
-        data = self._parse_data(data)
-        return data - self.rhoWeight(data)
-
-    def Rstress(self):
-        return self.get2d('mom1') * self.dv2()
-
-    def CL(self):
-        return self.rc**2 * (self.get2d('mom1') * self.get2d('vel2')).mean(axis=0) * tau
-
-    #BRS12 ApJ 760:22
-    def CL20(self):
-        return tau * self.rc**2 * self.get2d('dens').mean(axis=0) * self.rhoWeight(self.deltaVal('vel1') * self.deltaVal('vel2'))
-
-    def CL24(self):
-        return tau * self.rc**2 * self.get2d('dens').mean(axis=0) * self.rhoWeight(np.abs(self.deltaVal('vel1') * self.deltaVal('vel2')))
-
-    def CL25(self, Op, M=None):
-        if M is None:
-            M = self.M
-        s = 1. / M
-        dens = self.get2d('dens')
-        Mdens = dens.mean(axis=0)
-        return self.rc * s**3 * tau * np.mean((dens - Mdens[np.newaxis, :])**2, axis=0) / (dens.mean(axis=0) * (self.Ok() - Op))
-
-    def CS(self):
-        dens = self.get2d('dens')
-        Mdens = dens.mean(axis=0)
-        dv2 = self.get2d('vel2') - self.Oloc() * self.rc
-        return tau * self.rc**2 * Mdens * self.rhoWeight(dv2 * self.get2d('vel1'))
-
-    def CA(self):
-        dens = self.get2d('dens')
-        Mdens = dens.mean(axis=0)
-        return tau * self.rc**3 * Mdens * self.Oloc() * self.rhoWeight('vel1')
-
-    def CLplot(self, Op, M=None):
-        cl = self.CL(), self.CL20(), self.CL24(), self.CL25(Op, M), self.CS(), self.CA()
-        lbls = ['BRS12 Eqn %d' % i for i in [19,20,24,25]] + ['BRS13 $C_S$','BRS13 $C_A$']
-        for i in cl:
-            plt.plot(self.rc, i)
-        plt.axhline(0, ls=':', lw=1, c='k')
-        plt.legend(lbls)
-        plt.xlabel('R')
-        plt.ylabel('$C_L$')
-
-    def Ok(self):
-        return self.rc**-1.5
-
-    def Oloc(self):
-        return self.rhoWeight('vel2') / self.rc
-
-    def vel(self, i):
-        return self['mom{0:}'.format(i)] / self['dens']
-
-    def pseudo(self):
-        return self['mom1'] / np.sqrt(self['dens'])
-
-    def fft(self, data, axis=-2, mag=True):
+    def _parse_self(self, key):
         try:
-            data.shape
-        except AttributeError:
-            data = self.get2d(data)
-        sp = np.fft.rfft(data, axis=axis)
-        nu = np.fft.rfftfreq(self.phi.size)
-        if mag:
-            sp = np.absolute(sp)
-        return nu, sp
+            out = self._special_keys(key)
+            if not out is None:
+                return out
+        except NotImplementedError:
+            pass
+        if hasattr(self, key):
+            try:
+                out = getattr(self, key)()
+                if out.shape == self._shape:
+                    return out
+            except (AttributeError, TypeError):
+                pass
+        raise KeyError('Unable to parse {0:}'.format(key))
 
-    def channel_map(self, var='pseudo', save=False, fn=None, mmax=30, log=True,
-                    fig=None, ax=None, aspect=None, fopt={}, popt={}, cbl=None,
-                    title=None, vmin=1e-1, vmax=None, cb=True, cbopt={},
-                    sdir=None, ext='pdf'):
-        _popt = dict(vmin=vmin, vmax=vmax)
-        if fig is None and ax is None:
-            fig = plt.figure(**fopt)
-        if ax:
-            plt.sca(ax)
-        else:
-            ax = plt.gca()
-        if aspect:
-            ax.set_aspect(aspect)
-        if log:
-            _popt['norm'] = mpl.colors.LogNorm()
-        if title is None:
-            title = self.name + ' ' + self.t_str
-        _popt.update(popt)
-
-        loc = (slice(None,mmax+1), slice(None))
-        ft = (self.fft(self.get2d(var))[-1]**2)[loc]
-        one = np.ones((ft.shape[0] + 1, self.r.size))
-        mode = (np.arange(ft.shape[0] + 1)[:, np.newaxis] - .5) * one
-        r = self.r[np.newaxis, :] * one
-
-        pcm = plt.pcolormesh(mode, r, ft, **_popt)
-        ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(5))
-        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
-        if title:
-            plt.title(helpers.sanitize_lbl(title))
-        plt.xlabel(r'Mode ($m$)')
-        plt.ylabel('Radius ($R$)')
-        if cb:
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="5%", pad=0.05)
-            cb = plt.colorbar(pcm, cax=cax, **cbopt)
-            cb.ax.yaxis.set_offset_position('left')
-            if cbl is None:
-                cbl = r'$\left|a_m\right|^2$'
-            if cbl:
-                cb.set_label(cbl)
-
-        #save fig
-        if save or fn:
-            if fn is None:
-                fn = self._prefix + '_channel_map.' + ext
-                if not sdir is None:
-                    if not os.path.isdir(sdir):
-                        os.mkdir(sdir)
-                    fn = os.path.join(sdir, fn)
-            plt.savefig(fn)
-            plt.close()
-
-    def phase(self, data='pseudo', smooth=None, mod=False):
+    def __getitem__(self, key):
         try:
-            data.shape
-        except AttributeError:
-            data = self.get2d(data)
-        if not smooth is None:
-            data = self.smooth(data, smooth)
-        modes = self.fft(data)[1].argmax(axis=0)
-        sqr = data**2
-        loc = sqr.argmax(axis=0)
-        phase = self.phic[loc]
-        phase -= .5 * (1 - np.sign(data[loc,np.arange(data.shape[1])])) * np.pi
-        phase %= tau
-        if mod:
-            phase %= tau / modes
-        return phase
+            return super().__getitem__(key)
+        except KeyError:
+            return self._parse_self(key)
 
-    def smooth(self, data, width=64):
-        return smooth(self._parse_data(data), width=width)
+    def rloc(self, r):
+        return np.abs(r - self.rc).argmin()
 
-    def phase_plot(self, data='pseudo', fn=None, save=False, ext='pdf',
-                   sdir=None, fig=None, ax=None, fopt={}, smooth=None, mod=False):
-        data = self._parse_data(data)
-        if len(data.shape) > 1:
-            data = self.phase(data, smooth=smooth)
-        if fig is None and ax is None:
-            fig = plt.figure(**fopt)
-        plt.plot(self.rc, data / np.pi)
-        plt.ylim(0, 2)
-        plt.xlabel('Radius')
-        plt.ylabel(r'Phase$/\pi$')
-
-        #save fig
-        if save or fn:
-            if fn is None:
-                fn = self._prefix + '_phase_plot.' + ext
-            if not sdir is None:
-                if not os.path.isdir(sdir):
-                    os.mkdir(sdir)
-                fn = os.path.join(sdir, fn)
-            plt.savefig(fn)
-            plt.close()
-
-
-    def plot2d(self, data, fn=None, save=False, subsample=False, title=None,
+    def plot2d(self, data=None, fn=None, save=False, subsample=False, title=None,
                name=None, ext='pdf', popt={}, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt={}, fig=None, fopt={},
-               ax=None, log=False, aspect=1, sdir=None, smooth=None, phi_shift=0):
+               ax=None, log=False, aspect=1, sdir=None, smooth=None, phi_shift=0, r_cut=None):
         '''Plot 2D sim data'''
         r = self.r[np.newaxis, :]
         phi = self.phi[:,np.newaxis] + phi_shift
         x = r * np.cos(phi)
         y = r * np.sin(phi)
         _popt = {}
-        try:
-            data.shape
-        except AttributeError:
-            if name is None:
-                name = data
-            data = self.get2d(data)
+        if data is None:
+            data = self._defvar
+        if data == 'pseudo' and r_cut is None:
+            r_cut = .85
+        data = self._parse_data(data)
         if not smooth is None:
             data = self.smooth(data, smooth)
 
@@ -376,7 +256,10 @@ class BLfile(object):
         except TypeError:
             pass
         if 'smart' in [vmin, vmax]:
-            tmp = helpers.smartlim(data, **tmp)
+            rloc = slice(None)
+            if r_cut:
+                rloc = slice(self.rloc(r_cut), None)
+            tmp = helpers.smartlim(data[:, rloc], **tmp)
             if vmin == 'smart':
                 vmin = tmp[0]
             if vmax == 'smart':
@@ -440,8 +323,108 @@ class BLfile(object):
 
         return pcm
 
+    def smooth(self, data, width=64):
+        return smooth(self._parse_data(data), width=width)
+
+class BLaux(BLfile):
+
+    def channel_map(self, var=None, save=False, fn=None, mmax=30, log=True,
+                    fig=None, ax=None, aspect=None, fopt={}, popt={}, cbl=None,
+                    title=None, vmin=1e-1, vmax=None, cb=True, cbopt={},
+                    sdir=None, ext='pdf'):
+        if var is None:
+            var = self._defvar
+        _popt = dict(vmin=vmin, vmax=vmax)
+        if fig is None and ax is None:
+            fig = plt.figure(**fopt)
+        if ax:
+            plt.sca(ax)
+        else:
+            ax = plt.gca()
+        if aspect:
+            ax.set_aspect(aspect)
+        if log:
+            _popt['norm'] = mpl.colors.LogNorm()
+        if title is None:
+            title = self.name + ' ' + self.t_str
+        _popt.update(popt)
+
+        loc = (slice(None,mmax+1), slice(None))
+        ft = (np.abs(self.fft(self._parse_data(var)))**2)[loc]
+        one = np.ones((ft.shape[0] + 1, self.r.size))
+        mode = (np.arange(ft.shape[0] + 1)[:, np.newaxis] - .5) * one
+        r = self.r[np.newaxis, :] * one
+
+        pcm = plt.pcolormesh(mode, r, ft, **_popt)
+        ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(5))
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        if title:
+            plt.title(helpers.sanitize_lbl(title))
+        plt.xlabel(r'Mode ($m$)')
+        plt.ylabel('Radius ($R$)')
+        if cb:
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            cb = plt.colorbar(pcm, cax=cax, **cbopt)
+            cb.ax.yaxis.set_offset_position('left')
+            if cbl is None:
+                cbl = r'$\left|a_m\right|^2$'
+            if cbl:
+                cb.set_label(cbl)
+
+        #save fig
+        if save or fn:
+            if fn is None:
+                fn = self._prefix + '_channel_map.' + ext
+                if not sdir is None:
+                    if not os.path.isdir(sdir):
+                        os.mkdir(sdir)
+                    fn = os.path.join(sdir, fn)
+            plt.savefig(fn)
+            plt.close()
+
+    def phase(self, data='pseudo', smooth=None, mod=False):
+        try:
+            data.shape
+        except AttributeError:
+            data = self._parse_data(data)
+        if not smooth is None:
+            data = self.smooth(data, smooth)
+        modes = np.abs(self.fft(data)).argmax(axis=0)
+        sqr = data**2
+        loc = sqr.argmax(axis=0)
+        phase = self.phic[loc]
+        phase -= .5 * (1 - np.sign(data[loc,np.arange(data.shape[1])])) * np.pi
+        phase %= tau
+        if mod:
+            phase %= tau / modes
+        return phase
+
+    def phase_plot(self, data='pseudo', fn=None, save=False, ext='pdf',
+                   sdir=None, fig=None, ax=None, fopt={}, smooth=None, mod=False):
+        data = self._parse_data(data)
+        if len(data.shape) > 1:
+            data = self.phase(data, smooth=smooth)
+        if fig is None and ax is None:
+            fig = plt.figure(**fopt)
+        plt.plot(self.rc, data / np.pi)
+        plt.ylim(0, 2)
+        plt.xlabel('Radius')
+        plt.ylabel(r'Phase$/\pi$')
+
+        #save fig
+        if save or fn:
+            if fn is None:
+                fn = self._prefix + '_phase_plot.' + ext
+            if not sdir is None:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+            plt.savefig(fn)
+            plt.close()
+
     def mode_phase(self, mmax=30):
-        ft = self.fft('pseudo', mag=False)[1][:mmax+1,:]
+        ft = self.fft('pseudo')[:mmax+1,:]
         phi = -np.angle(ft)
         a = np.abs(ft)
         #tmp = np.ma.array(a, mask=a - .5 * a.max(axis=0)[np.newaxis, :] > 0)
@@ -479,8 +462,8 @@ class BLfile(object):
                 print('-' * 60)
 
     def FFT_errors(self, vmin='smart', vmax='max', mmax=None):
-        pfft = self.fft('pseudo', mag=0)[1]
-        afft = (self.get2d('FT-Re') + 1j * self.get2d('FT-Im'))[:225]
+        pfft = self.fft('pseudo')
+        afft = (self['FT-Re'] + 1j * self['FT-Im'])[:225]
         loc = slice(None)
         if not mmax is None:
             loc = slice(None, mmax + 1)
@@ -493,7 +476,7 @@ class BLfile(object):
             norm = 1
         afft *= norm
         amp *= norm
-        print "norm:", norm, "post-norm:", np.median(np.abs(pfft)/np.abs(afft))
+        print("norm:", norm, "post-norm:", np.median(np.abs(pfft)/np.abs(afft)))
         dmag = (np.abs(pfft) - amp) / np.abs(pfft)
         dth = np.angle(pfft) - np.angle(afft)
         _opt = dict(interpolation='nearest', norm=mpl.colors.LogNorm())
@@ -572,7 +555,7 @@ class BLfile(object):
                 opt2['vmax'] = vmax
         #opt2['vmin'] = helpers.smartlim(data[loc])[0]
         #opt2['vmax'] = data[loc].max()
-        print opt2
+        print(opt2)
         im2 = plt.imshow(data,interpolation='nearest', norm=mpl.colors.LogNorm(),
                          vmin=helpers.smartlim(data[loc])[0], vmax=data[loc].max())#, vmin=helpers.smartlim(data[loc])[0], **opt2)
         cb2 = plt.colorbar(im2)
@@ -584,8 +567,164 @@ class BLfile(object):
         ax = plt.subplot(224)
         self.plot2d('pseudo', ax=ax)
 
+class BLConsPrim(BLfile):
 
-class BLsliceFile(object):
+    def rhoWeight(self, data):
+        data = self._parse_data(data)
+        dens = self['dens']
+        return (dens * data).sum(axis=0) / dens.sum(axis=0)
+
+    def __dv2(self):
+        out = self['vel2']
+        return out - out.mean(axis=0)[np.newaxis, :]
+
+    def deltaVal(self, data):
+        data = self._parse_data(data)
+        return data - self.rhoWeight(data)
+
+    def Rstress(self):
+        return self['mom1'] * self.deltaVal('vel2')
+
+    def CL(self):
+        return self.rc**2 * (self['mom1'] * self['vel2']).mean(axis=0) * tau
+
+    #BRS12 ApJ 760:22
+    def CL20(self):
+        return tau * self.rc**2 * self['dens'].mean(axis=0) * self.rhoWeight(self.deltaVal('vel1') * self.deltaVal('vel2'))
+
+    def CL24(self):
+        return tau * self.rc**2 * self['dens'].mean(axis=0) * self.rhoWeight(np.abs(self.deltaVal('vel1') * self.deltaVal('vel2')))
+
+    def CL25(self, Op, M=None):
+        if M is None:
+            M = self.M
+        s = 1. / M
+        dens = self['dens']
+        Mdens = dens.mean(axis=0)
+        return self.rc * s**3 * tau * np.mean((dens - Mdens[np.newaxis, :])**2, axis=0) / (dens.mean(axis=0) * (self.Ok() - Op))
+
+    def CS(self):
+        dens = self['dens']
+        Mdens = dens.mean(axis=0)
+        dv2 = self['vel2'] - self.Oloc() * self.rc
+        return tau * self.rc**2 * Mdens * self.rhoWeight(dv2 * self['vel1'])
+
+    def CA(self):
+        dens = self['dens']
+        Mdens = dens.mean(axis=0)
+        return tau * self.rc**3 * Mdens * self.Oloc() * self.rhoWeight('vel1')
+
+    def CLplot(self, Op, M=None):
+        cl = self.CL(), self.CL20(), self.CL24(), self.CL25(Op, M), self.CS(), self.CA()
+        lbls = ['BRS12 Eqn %d' % i for i in [19,20,24,25]] + ['BRS13 $C_S$','BRS13 $C_A$']
+        for i in cl:
+            plt.plot(self.rc, i)
+        plt.axhline(0, ls=':', lw=1, c='k')
+        plt.legend(lbls)
+        plt.xlabel('R')
+        plt.ylabel('$C_L$')
+
+    def Ok(self):
+        return self.rc**-1.5
+
+    def Oloc(self):
+        return self.rhoWeight('vel2') / self.rc
+
+class BLcons(BLConsPrim):
+    def _special_keys(self, key):
+        if key[:3] == 'vel' and len(key) == 4:
+            return self.vel(key[3])
+        return None
+
+    def vel(self, i):
+        return self['mom{0:}'.format(i)] / self['dens']
+
+    def pseudo(self):
+        return self['mom1'] / np.sqrt(self['dens'])
+
+class BLprim(BLConsPrim):
+    def _special_keys(self, key):
+        if key[:3] == 'mom' and len(key) == 4:
+            return self.mom(key[3])
+        return None
+
+    def mom(self, i):
+        return self['vel{0:}'.format(i)] * self['dens']
+
+    def pseudo(self):
+        return self['vel1'] * np.sqrt(self['dens'])
+
+class BLFT(BLfile):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.data = {}
+        self.data.update(self)
+
+    def _trim(self, data):
+        data = super()._trim(data)
+        if len(data.shape) == 2:
+            a = data.min(axis=1)
+            b = data.max(axis=1)
+            i = a.size - 1
+            while a[i] == 0 and b[i] == 0 and i > 0:
+                i -= 1
+            try:
+                i = max(i, self._ai_data['meshblock']['nx2'] - 1)
+            except KeyError:
+                pass
+            data = data[slice(0, i + 1)].copy()
+        return data
+
+    def _special_keys(self, key):
+        if key == 'FT':
+            return self['FT-Re'] + 1j * self['FT-Im']
+        if key in ['mag', 'amp']:
+            return np.abs(self['FT'])
+        if key == 'angle':
+            return np.angle(self['FT'])
+        return None
+
+############################
+# End of BLfile subclasses #
+############################
+
+def loadBLfile(fn, **kwargs):
+    fn = _findAbsPath(fn, kwargs.get('sim_path', None))
+    data = _parse_file(fn)
+    ai_fn = kwargs.pop('athinput_fn', None)
+    ai_data = kwargs.pop('athinput_data', None)
+    if ai_fn is None:
+        tmp = glob('athinput.*')
+        if len(tmp) == 1:
+            ai_fn = tmp[0]
+    if ai_fn and ai_data is None:
+        ai_data = ar.athinput(ai_fn)
+    kind = None
+    if not ai_data is None:
+        kwargs['ai_data'] = ai_data
+        tmp = os.path.split(fn)[-1].split('.')
+        if tmp[0] == ai_data['job']['problem_id']:
+            outs = [i for i in ai_data.keys() if i[:6] == 'output']
+            for out in outs:
+                if ai_data[out].get('id', 'out' + out[6:]) == tmp[1]:
+                    kind = ai_data[out].get('variable', None)
+                    break
+    else:
+        if 'vel1' in data:
+            kind = 'prim'
+        if 'mom1' in data:
+            kind = 'cons'
+        if 'FT-Re' in data and 'FT-Im' in data:
+            kind = 'FT'
+    if kind == 'prim':
+        return BLprim(fn, data=data, **kwargs)
+    if kind == 'cons':
+        return BLcons(fn, data=data, **kwargs)
+    if kind in ['FT', 'FT-Range']:
+        return BLFT(fn, data=data, **kwargs)
+    return BLfile(fn, data=data, **kwargs)
+
+class _old_BLsliceFile(object):
     def __init__(self, fn):
         self.prefix, self.block, self.var, self.index, self.ext = fn.split('.')
         if self.ext == 'vtk':
@@ -608,7 +747,7 @@ class BLsliceFile(object):
         self.data = data
         self.axes = [x3, x2, x1]
 
-class BLslice(object):
+class _old_BLslice(object):
     def __init__(self, name, index, block_order=None, ifmt='%05d', prefix=None, ext='vtk', direction=None):
         ext = ext.lstrip('.')
         if type(index) == int:
@@ -665,10 +804,10 @@ class BLslice(object):
             self.phic = .5 * (self.phi[:-1] + self.phi[1:])
             self.rc = self.r
 
-class BLmodes(object):
+class _old_BLmodes(object):
     def __init__(self, index, mrng=None, mfmt='%02d'):
-        Re = 'user_out_var0'
-        Im = 'user_out_var1'
+        Re = 'FT-Re'
+        Im = 'FT-Im'
         if mrng is None:
             qry = '*.block[0-9]*.mode[0-9]*.[0-9]*.*'
             mrng = np.array([int(i.split('.')[2][4:]) for i in glob(qry)])
@@ -695,8 +834,7 @@ class BLmodes(object):
 
 
 class BLsim(object):
-    def __init__(self, path, fmts=None, mmax=30, mode_phase=None, dt=None,
-                 kern=True):
+    def __init__(self, path, fmts=None, fft_data=None, fft_time=None, athinput=None, mode_mask=None):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
@@ -711,58 +849,98 @@ class BLsim(object):
         if not os.path.isdir(path):
             raise IOError('Simulation directory "{0:}" not found.'.format(path))
         self.path = path
-        tmp = [fmt.split('%')[0] + '*.' + fmt.split('d.')[-1] for fmt in fmts]
-        self.filenames = []
-        self.times = []
-        for search in tmp:
-            self.filenames += [os.path.split(i)[-1] for i in glob(os.path.join(path, search))]
-        self.filenames = sorted(self.filenames)
-        tmp = self._readable(self.filenames[-1])
-        while tmp is False:
-            print('Discarding {0:}'.format(self.filenames.pop(-1)))
-            tmp = self._readable(self.filenames[-1])
-        self.times = np.array([int(i.split('.')[2]) for i in self.filenames])
-        if dt is None:
-            if 't' in tmp.data and not 'Time' in tmp.data:
-                tmp.data['Time'] = tmp.data['t']
-            dt = tmp.data.get('Time', tau * self.times[-1]) / self.times[-1]
-        self.dt = dt
-        if not (self.times == np.arange(self.times.size, dtype=int)).all():
-            Warning('Incomplete dataset.')
-        #tmp = self.loadfile(self.filenames[0])
-        for attr in ['r', 'phi', 'rc', 'phic']:
-            setattr(self, attr, getattr(tmp, attr))
-        self._mode_phase = mode_phase
-        self._mmax = mmax
-        self._mode_mask = None
-        self._mode_fn = os.path.join(path, 'mode_phase.npy')
-        if self._mode_phase is None:
-            if os.path.isfile(self._mode_fn):
-                print('Loading file "{0:}"'.format(self._mode_fn))
-                self._mode_phase = np.load(self._mode_fn)
-                self._mmax = self._mode_phase.shape[2] - 1
+        if athinput is None:
+            qry = os.path.join(path, 'athinput.*')
+            tmp = glob(qry)
+            if len(tmp) == 1:
+                athinput = tmp[0]
+        if os.path.isfile(athinput):
+            self.inputs = ar.athinput(athinput)
         else:
-            self._mmax = mode_phase.shape[2] - 1
-        if self._mmax is None:
-            self._mloc = (None, None)
+            self.inputs = {}
+        self.fileDict = {}
+        self.varDict = {}
+        axes = []
+        if not self.inputs:
+            searches = [fmt.split('%')[0] + '*.' + fmt.split('d.')[-1] for fmt in fmts]
+            raise NotImplementedError('Currently needs athinput.')
         else:
-            self._mloc = (slice(None, self._mmax + 1))
-        self._kern = None
-        if kern is True:
-            kern = 5
-        if not hasattr(kern, '__iter__'):
-            if kern:
-                n = self.phic.size
-                kern = gaussian(n, n / tau / kern)
-                kern = kern[n // 2:]
-        if np.any(kern):
-            self._kern = np.atleast_2d(kern)
+            mesh = self.inputs['mesh']
+            for i in [1, 2]:
+                x = 'x' + str(i)
+                nx = mesh['n' + x]
+                Dx = mesh[x + 'max'] - mesh[x + 'min']
+                if x + 'rat' in mesh:
+                    rat = mesh[x + 'rat']
+                    dx0 = (rat - 1.) / (rat**nx - 1.) * Dx
+                    xf = np.ones(nx + 1) * mesh[x + 'min']
+                    xf[1:] += (rat**np.arange(nx) * dx0).cumsum()
+                else:
+                    xf = (np.arange(nx + 1) * Dx / nx) + mesh[x + 'min']
+                axes.append(xf)
+            #raise RuntimeError
+            self.r = axes[0].copy()
+            self.rc = .5 * self.r[1:] + .5 * self.r[:-1]
+            self.phi = axes[1].copy()
+            self.phic = .5 * self.phi[1:] + .5 * self.phi[:-1]
+            outs = [i for i in self.inputs.keys() if i[:6] == 'output']
+            a = self.inputs['job']['problem_id']
+            c = '[0-9]*'
+            varlist = list(filter(None, [self.inputs[i].get('variable') for i in outs]))
+            for out in outs:
+                files = []
+                b = self.inputs[out].get('id', 'out' + out[6:])
+                searches = ['.'.join([a, b, c, ext]) for ext in _ext]
+                for search in searches:
+                    files += [os.path.split(i)[-1] for i in glob(os.path.join(path, search))]
+                self.fileDict[out] = sorted(files)
+                var = self.inputs[out].get('variable')
+                if varlist.count(var) == 1:
+                    self.varDict[var] = out
+
+        #for attr in ['r', 'phi', 'rc', 'phic']:
+        #    setattr(self, attr, getattr(tmp, attr))
+        self._fft_data = fft_data
+        self._fft_time = fft_time
+        self._mode_mask = mode_mask
+
+    def _load_fft_data(self):
+        try:
+            data = []
+            t = []
+            for fn in self.files('FT-Range'):
+                f = self.loadfile(fn)
+                data.append(f['FT'])
+                t.append(f.t)
+            data = np.array(data)
+            t = np.array(t)
+        except ValueError:
+            raise NotImplementedError
+            data = np.array([self.loadfile(f)['FT'] for f in self.files('FT')])
+        if self._fft_data is None:
+            self._fft_data = data
+        if self._fft_time is None:
+            self._fft_time = t
+        return data
 
     @property
-    def kern(self):
-        if self._mode_phase is None:
-            return None
-        return 1.
+    def fft(self):
+        if not self._fft_data is None:
+            return self._fft_data
+        return self._load_fft_data()
+
+    @property
+    def filenames(self):
+        return sum(self.fileDict.values(), [])
+
+    def files(self, key=None):
+        if key is None:
+            return self.filenames
+        if key in self.fileDict:
+            return self.fileDict[key]
+        if key in self.varDict:
+            return self.fileDict[self.varDict[key]]
+        raise ValueError('Cannot find "{0:}" files.'.format(key))
 
     def _readable(self, t):
         try:
@@ -776,10 +954,340 @@ class BLsim(object):
     def __repr__(self):
         return '<BLsim "{0:}">'.format(self.name)
 
-    def loadfile(self, fn):
-        if fn in self.filenames or fn in self.times:
-            return BLfile(fn, sim_path=os.path.abspath(self.path))
+    def _gen_fft_time(self):
+        t = None
+        if self._fft_data is None:
+            self._load_fft_data()
+            t = self._fft_time
+        if t is None:
+            if 'FT-Range' in self.varDict:
+                dt = self.inputs[self.varDict['FT-Range']]['dt']
+                t = np.arange(len(self.files('FT-Range'))) * dt
+            else:
+                raise NotImplementedError
+            if self._fft_time is None:
+                self._fft_time = t
+        return t
 
+    @property
+    def fft_time(self):
+        if not self._fft_time is None:
+            return self._fft_time
+        return self._gen_fft_time()
+
+    def rloc(self, r):
+        return np.abs(r - self.rc).argmin()
+
+    def loadfile(self, fn):
+        if fn in self.filenames:
+            return loadBLfile(fn, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
+
+    def mode_mask(self, data=None, info=False, amin=None):
+        if amin is None:
+            amin = 1e-3 / self.rc.size / self.phic.size
+        amp = np.abs(self.fft)
+        if self._mode_mask is None:
+            #Max = amp.max(axis=1)[:, np.newaxis, :]
+            mask = np.zeros_like(amp, dtype=bool)
+            one = np.ones_like(amp)
+            mask[:,0,:] = True # always mask out m=0
+            tmp = amp.copy()
+            tmp[:,0,:] = 0
+            mask = np.logical_or(mask, tmp == tmp.max(axis=1)[:, np.newaxis, :])
+            del(tmp)
+            _mask = mask.copy()
+            keep_going = 1
+            #mask = np.logical_or(mask, amp - .5 * Max > 0)
+            # now recursively mask out signal
+            mask = np.logical_or(mask, amp - percentile(amp, 95, axis=1)[:, np.newaxis, :]> 0)
+            while keep_going:
+                mamp = np.ma.array(amp, mask=mask)
+                if keep_going == 1:
+                    mask = _mask.copy()
+                #M = mamp.max(axis=1).data[:, np.newaxis, :]
+                m = mamp.mean(axis=1).data[:, np.newaxis, :] # mean of masked data
+                s = mamp.std(axis=1).data[:, np.newaxis, :] # standard deviation
+                tmp = np.logical_and(amp > amin, m + 3. * s - amp < 0) # signal
+                tmp = np.logical_or(_mask, tmp)
+                if (mask == tmp).all():
+                    keep_going = False
+                else:
+                    keep_going += 1
+                mask = tmp.copy()
+                if keep_going > 20:
+                    print('Break')
+                    break
+            if info:
+                mamp = np.ma.array(amp, mask=mask)
+                m = mamp.mean(axis=1).data
+                s = mamp.std(axis=1).data
+                _info = {'mean': m, 'std': s}
+            mask = np.logical_not(mask)
+            mask[:,0,:] = True
+            #mask = and_neighbor(mask, n=1, axis=0)
+            #mask = and_neighbor(mask, n=1, axis=2)
+            self._mode_mask = mask
+        else:
+            mask = self._mode_mask
+            if info:
+                tmp = np.logical_not(mask)
+                tmp[:,0,:] = True
+                mamp = np.ma.array(amp, mask=tmp)
+                m = mamp.mean(axis=1).data
+                s = mamp.std(axis=1).data
+                _info = {'mean': m, 'std': s}
+        if not data is None:
+            out = data.copy()
+            out[np.where(mask)] = np.nan
+            #out[np.where(mask)] = data[np.where(mask)]
+            if info:
+                _info['data'] = out
+            else:
+                return out
+        if info:
+            _info['mask'] = mask
+            return _info
+        return mask
+
+    def mode_phase(self):
+        DeprecationWarning('This function is deprecated.')
+        out = np.array([np.abs(self.fft), np.angle(self.fft)])
+        return out
+
+    def prop_speed(self, dt=None):
+        if dt is None:
+            for var in ['FT-Range', 'FT']:
+                if var in self.varDict:
+                    dt = self.inputs[self.varDict[var]]['dt']
+                    break
+        data = np.angle(self.fft)
+        #dphi = np.gradient(data[1] / dt, axis=0)
+        dphi = mod_grad(data, axis=0, mod=tau)
+        m = np.arange(dphi.shape[1])
+        return dphi / dt / (m[np.newaxis,:,np.newaxis])
+
+    def _r_phase_plotter(self, r, data, ret_m=False, tloc=None):
+        ir = self.rloc(r)
+        #data = self.mode_phase()
+        modes = []
+        for i in xrange(data.shape[1]):
+            tmp = data[:,i,ir].copy()
+            tmp = tmp[tloc]
+            j = 0
+            # make sure data covers 5 adjacent times
+            while np.isfinite(tmp).any() and j < 5:
+                tmp = np.gradient(tmp)
+                j += 1
+            if np.isfinite(tmp).any():
+                plt.plot(self.fft_time(), data[:,i,ir], lw=1)
+                modes.append(i)
+        plt.legend(['$m=%d$' % m for m in modes])
+        plt.xlabel('Time step')
+        #plt.ylabel('Phase')
+        plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
+        if ret_m:
+            return modes
+
+    def r_phase(self, r, ret_m=False, fig=True):
+        if fig is True:
+            plt.figure()
+        m = self._r_phase_plotter(r, self.mode_mask(np.angle(self.fft)), ret_m=ret_m)
+        plt.ylabel('Phase')
+        return m
+
+    def r_speed(self, r, ret_m=False, fig=True):
+        if fig is True:
+            plt.figure()
+        m = self._r_phase_plotter(r, self.mode_mask(self.prop_speed()), ret_m=ret_m)
+        plt.ylabel('Speed')
+        return m
+
+    def r_amp(self, r, ret_m=False, fig=True):
+        if fig is True:
+            plt.figure()
+        info = self.mode_mask(self.mode_phase()[0], info=True)
+        m = self._r_phase_plotter(r, info['data'], ret_m=ret_m)
+        ir = self.rloc(r)
+        ls = '-'
+        for i in [0,1,3]:
+            y = info['mean'][:,ir] + i * info['std'][:,ir]
+            plt.plot(y, c='k', ls=ls, lw=1)
+            ls = ':'
+        plt.ylabel('Amplitude')
+        return m
+
+    def mt_plot(self, r, fn=None, save=False, ext='pdf', sdir=None,
+                fig=None, ax=None, fopt={}, vmin='smart', vmax='max', cb=True,
+                cbl=None, popt={}, log=True):
+        #ir = np.abs(self.rc - r).argmin()
+        ir = self.rloc(r)
+        r = self.rc[ir]
+        _amp = np.abs(self.fft)
+        data = _amp[:,:,ir].T
+
+        if 'smart' in [vmin, vmax]:
+            smart = helpers.smartlim(_amp[:,:mmax+1,:])
+            if vmin == 'smart':
+                vmin = smart[0]
+            if vmax == 'smart':
+                vmax = smart[1]
+        if vmin == 'min':
+            vmin = _amp[:,:mmax+1,:].min()
+        if vmax == 'max':
+            vmax = _amp[:,:mmax+1,:].max()
+        if vmin == 'auto':
+            vmin = max(data.min(), 1e-6)
+        _opt = {'vmin': vmin, 'vmax': vmax, 'interpolation': 'nearest'}
+        if log:
+            _opt['norm'] =  mpl.colors.LogNorm()
+        _opt.update(popt)
+
+        if fig is None and ax is None:
+            fig = plt.figure(**fopt)
+        if ax:
+            plt.sca(ax)
+        else:
+            ax = plt.gca()
+        fig = plt.gcf()
+
+        plt.imshow(data, **_opt)
+        plt.ylim(None, mmax)
+        if self.name == 'test_run':
+            plt.axvline(101.5, c='k', ls=':', lw=1)
+        plt.xlabel('Time')
+        plt.ylabel('Mode')
+        ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
+        #plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:}$'.format(helpers.eformat(r, math=False)))
+        if cb:
+            cb = plt.colorbar()
+            if cbl is None:
+                cbl = r'$\left|a_m\right|^2$'
+            if cbl:
+                cb.set_label(cbl)
+        if save or fn:
+            if log:
+                log = 'log'
+            else:
+                log = 'lin'
+            if fn is None:
+                fn = self.name + '_mode-time_r={0:.2e}_{1:}.'.format(r, log) + ext
+            fig.savefig(fn)
+            plt.close()
+
+    def _r_phase_plotter(self, r, data, ret_m=False, tlim=None):
+        ir = self.rloc(r)
+        #data = self.mode_phase()
+        modes = []
+        for i in xrange(data.shape[1]):
+            tmp = data[:,i,ir].copy()
+            if tlim:
+                tmp = tmp[tlim:]
+            j = 0
+            while np.isfinite(tmp).any() and j < 5:
+                tmp = np.gradient(tmp)
+                j += 1
+            if np.isfinite(tmp).any():
+                plt.plot(self.fft_time / tau, data[:,i,ir], lw=1)
+                modes.append(i)
+        opt = {'loc': 0, 'frameon': False, 'handlelength': .7, 'prop': {'size':8}, 'ncol': 3}
+        plt.legend(['$%d$' % m for m in modes], **opt)
+        plt.xlabel(r'Time/$2\pi$')
+        #plt.ylabel('Phase')
+        plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
+        if ret_m:
+            return modes
+
+    def r_phase(self, r, ret_m=False, fig=True):
+        if fig is True:
+            plt.figure()
+        m = self._r_phase_plotter(r, self.mode_mask(self.mode_phase()[1]), ret_m=ret_m)
+        plt.ylabel('Phase')
+        return m
+
+    def r_speed(self, r, ret_m=False, fig=True):
+        if fig is True:
+            plt.figure()
+        m = self._r_phase_plotter(r, self.mode_mask(self.prop_speed()), ret_m=ret_m)
+        plt.ylabel('Speed')
+        return m
+
+    def r_amp(self, r, ret_m=False, fig=True):
+        if fig is True:
+            plt.figure()
+        info = self.mode_mask(self.mode_phase()[0], info=True)
+        m = self._r_phase_plotter(r, info['data'], ret_m=ret_m)
+        ir = self.rloc(r)
+        ls = '-'
+        for i in [0,1,3]:
+            y = info['mean'][:,ir] + i * info['std'][:,ir]
+            plt.plot(self.fft_time / tau, y, c='k', ls=ls, lw=1)
+            ls = ':'
+        plt.ylabel('Amplitude')
+        return m
+
+    def diagnostic(self, r=1.3, save=False, fn=None, ext='pdf', figsize=(8,8),
+                   sdir=None, subsample=None):
+        self.fft #make sure data is loaded
+        self.mode_mask()
+        fig = plt.figure(figsize=figsize)
+        gs = mpl.gridspec.GridSpec(2, 2, top=.9, bottom=.05, hspace=.2)
+
+        ax = plt.subplot(gs[0,0])
+        self.r_amp(r, fig=False)
+
+        ax = plt.subplot(gs[0,1])
+        self.r_speed(r, fig=False)
+
+        ax = plt.subplot(gs[1,0])
+        f = self.loadfile(self.files('cons')[-1])
+        f.plot2d('pseudo', ax=ax, vmin='smart', cbl=r'$v_r\sqrt{\rho}$', subsample=subsample)
+        fig.suptitle('Diagnostic for ' + helpers.sanitize_lbl(self.name))
+
+        ax = plt.subplot(gs[1,1])
+        #Get rid of ticks and axes
+        spines = [ax.spines[j] for j in ax.spines.keys()]
+        for spine in spines :
+            spine.set_color('none')
+        ax.xaxis.set_ticks([])
+        ax.yaxis.set_ticks([])
+        # the time is now
+        now = time.asctime() + ' ' + time.tzname[time.localtime().tm_isdst]
+        ax.text(.5, 1, now, ha='center', va='top')
+        info = {}
+        pars = []
+        def _add(key, val):
+            info[key] = val
+            pars.append(key)
+        # populate
+        _add('Name', self.name)
+        _add('$N_r$', self.rc.size)
+        _add(r'$N_\phi$', self.phic.size)
+        _add('$r$', '[{:g}, {:g}]'.format(self.r[0], self.r[-1]))
+        _add(r'$\mathcal{M}$', 1. / self.inputs['hydro']['iso_sound_speed'])
+        # print the stuff in a grid
+        j = 0
+        ncol = 3
+        for par in pars :
+            try :
+                txt = '{0:s}: {1:g}'.format(par, float(info[par]))
+            except (TypeError, ValueError) :
+                txt = '{0:s}: {1:}'.format(par, info[par])
+            ax.text(.03 + .35 * (j % ncol), 1. - .5 * .12 * (j // ncol + 2), txt)
+            j += 1
+        if save or fn:
+            if fn is None:
+                fn = self.name + '_diag.' + ext
+            if not sdir is None:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+            plt.savefig(fn)
+            plt.close()
+            return fn
+        return None
+
+class auxBLsim(BLsim):
     def _store_mode(self, data, save=True):
         if save is None:
             tmp = os.path.abspath(self.path).lower()
@@ -986,66 +1494,6 @@ class BLsim(object):
         m = np.arange(dphi.shape[1]) + 1.
         return dphi / dt / (m[np.newaxis,:,np.newaxis] - 1)
 
-    def mode_mask(self, data=None, info=False, amin=1e-3):
-        amp = self.mode_phase()[0].copy()
-        if self._mode_mask is None:
-            #Max = amp.max(axis=1)[:, np.newaxis, :]
-            mask = np.zeros_like(amp, dtype=bool)
-            mask[:,0,:] = True # always mask out m=0
-            _mask = mask.copy()
-            keep_going = 1
-            #mask = np.logical_or(mask, amp - .5 * Max > 0)
-            # now recursively mask out signal
-            mask = np.logical_or(mask, amp -  percentile(amp, 90, axis=1)[:, np.newaxis, :]> 0)
-            while keep_going:
-                mamp = np.ma.array(amp, mask=mask)
-                if keep_going == 1:
-                    mask = _mask.copy()
-                #M = mamp.max(axis=1).data[:, np.newaxis, :]
-                m = mamp.mean(axis=1).data[:, np.newaxis, :] # mean of masked data
-                s = mamp.std(axis=1).data[:, np.newaxis, :] # standard deviation
-                tmp = np.logical_and(amp > amin, m + 3. * s - amp < 0) # signal
-                #tmp = np.logical_or(mask, tmp)
-                if (mask == tmp).all():
-                    keep_going = False
-                else:
-                    keep_going += 1
-                mask = tmp.copy()
-                if keep_going > 20:
-                    print 'Break'
-                    break
-            if info:
-                mamp = np.ma.array(amp, mask=mask)
-                m = mamp.mean(axis=1).data
-                s = mamp.std(axis=1).data
-                _info = {'mean': m, 'std': s}
-            mask = np.logical_not(mask)
-            mask[:,0,:] = True
-            #mask = and_neighbor(mask, n=1, axis=0)
-            #mask = and_neighbor(mask, n=1, axis=2)
-            self._mode_mask = mask
-        else:
-            mask = self._mode_mask
-            if info:
-                tmp = np.logical_not(mask)
-                tmp[:,0,:] = True
-                mamp = np.ma.array(amp, mask=tmp)
-                m = mamp.mean(axis=1).data
-                s = mamp.std(axis=1).data
-                _info = {'mean': m, 'std': s}
-        if not data is None:
-            out = data.copy()
-            out[np.where(mask)] = np.nan
-            #out[np.where(mask)] = data[np.where(mask)]
-            if info:
-                _info['data'] = out
-            else:
-                return out
-        if info:
-            _info['mask'] = mask
-            return _info
-        return mask
-
     def _r_phase_plotter(self, r, data, ret_m=False, tlim=None):
         if tlim is None:
             tlim = self.times.size // 10
@@ -1061,7 +1509,7 @@ class BLsim(object):
                 tmp = np.gradient(tmp)
                 j += 1
             if np.isfinite(tmp).any():
-                plt.plot(data[:,i,ir], lw=1)
+                plt.plot(self.fft_time, data[:,i,ir], lw=1)
                 modes.append(i)
         plt.legend(['$m=%d$' % m for m in modes])
         if self.dt:
@@ -1096,7 +1544,7 @@ class BLsim(object):
         ls = '-'
         for i in [0,1,3]:
             y = info['mean'][:,ir] + i * info['std'][:,ir]
-            plt.plot(y, c='k', ls=ls, lw=1)
+            plt.plot(self.fft_time, y, c='k', ls=ls, lw=1)
             ls = ':'
         plt.ylabel('Amplitude')
         return m
