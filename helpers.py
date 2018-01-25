@@ -14,7 +14,7 @@ from scipy.stats import scoreatpercentile as percentile
 #from itertools import groupby
 #from operator import itemgetter
 #import time
-#from NCcmap import NCcmap
+from .NCcmap import NCcmap
 try:
     from astropy.convolution.convolve import convolve_fft
 except ImportError:
