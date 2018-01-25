@@ -1288,22 +1288,6 @@ class BLsim(object):
         return None
 
 class auxBLsim(BLsim):
-    def _store_mode(self, data, save=True):
-        if save is None:
-            tmp = os.path.abspath(self.path).lower()
-            if 'matt' in tmp or 'colema' in tmp:
-                save = True
-        if save:
-            np.save(self._mode_fn, data, allow_pickle=True)
-        self._mode_phase = data
-        return None
-
-    def rloc(self, r):
-        return np.abs(r - self.rc).argmin()
-
-    def philoc(self, phi):
-        return np.abs(phi - self.phic).argmin()
-
     def mode_plot(self, data=None, cb=True, title=None, cbl=None, vmin=0,
                   vmax=20, main_plots=False, mpopt={}, save=False, fn=None,
                   ext='pdf', sdir=None, fig=None, fopt={}, ax=None):
@@ -1451,107 +1435,6 @@ class auxBLsim(BLsim):
                 fn = self.name + '_cc_{:d}-{:d}.'.format(t1.t, t2.t) + ext
             t1.plot2d(out, title=title, vmax=1.1, phi_shift=np.pi, save=save, fn=fn)
         return out
-
-    def Omega_seq(self, t0, t, **kwargs):
-        kwargs['plot'] = True
-        for i in t:
-            self.prop_speed(t0, t0 + i, **kwargs)
-            kwargs['fig'] = False
-        yl = plt.ylim(.5,None)
-        if yl[1] > 1:
-            plt.ylim(.5,1)
-        plt.legend(t)
-
-    def mode_phase(self, mmax=None, main_plots=False, mpopt={}):
-        if mmax is None:
-            mmax = self._mmax
-        if not self._mode_phase is None and not main_plots:
-            return self._mode_phase * self.kern
-        if main_plots:
-            out = []
-            _opt = {}
-            _opt.update(mpopt)
-            for i, fn in enumerate(self.filenames):
-                helpers.update_progress(float(i) / len(self.filenames))
-                bf = self.loadfile(fn)
-                bf.main_plots(**_opt)
-                out.append(bf.mode_phase(mmax=mmax))
-            if not self._mode_phase is None:
-                return self._mode_phase
-            out = np.array(out)
-        else:
-            out = np.array([self.loadfile(i).mode_phase(mmax=mmax) for i in self.times])
-        out = np.array([out[:,0], out[:,1]])
-        self._store_mode(out)
-        return out * self.kern
-
-    def prop_speed(self, dt=None):
-        if dt is None:
-            dt = self.dt
-        data = self.mode_phase()
-        #dphi = np.gradient(data[1] / dt, axis=0)
-        dphi = mod_grad(data[1], axis=0, mod=tau)
-        m = np.arange(dphi.shape[1]) + 1.
-        return dphi / dt / (m[np.newaxis,:,np.newaxis] - 1)
-
-    def _r_phase_plotter(self, r, data, ret_m=False, tlim=None):
-        if tlim is None:
-            tlim = self.times.size // 10
-        ir = self.rloc(r)
-        #data = self.mode_phase()
-        modes = []
-        for i in xrange(data.shape[1]):
-            tmp = data[:,i,ir].copy()
-            if tlim:
-                tmp = tmp[tlim:]
-            j = 0
-            while np.isfinite(tmp).any() and j < 5:
-                tmp = np.gradient(tmp)
-                j += 1
-            if np.isfinite(tmp).any():
-                plt.plot(self.fft_time, data[:,i,ir], lw=1)
-                modes.append(i)
-        plt.legend(['$m=%d$' % m for m in modes])
-        if self.dt:
-            plt.xlabel('Time / $%.4f$' % self.dt)
-        else:
-            plt.xlabel('Time step')
-        #plt.ylabel('Phase')
-        plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
-        if ret_m:
-            return modes
-
-    def r_phase(self, r, ret_m=False, fig=True):
-        if fig is True:
-            plt.figure()
-        m = self._r_phase_plotter(r, self.mode_mask(self.mode_phase()[1]), ret_m=ret_m)
-        plt.ylabel('Phase')
-        return m
-
-    def r_speed(self, r, ret_m=False, fig=True):
-        if fig is True:
-            plt.figure()
-        m = self._r_phase_plotter(r, self.mode_mask(self.prop_speed()), ret_m=ret_m)
-        plt.ylabel('Speed')
-        return m
-
-    def r_amp(self, r, ret_m=False, fig=True):
-        if fig is True:
-            plt.figure()
-        info = self.mode_mask(self.mode_phase()[0], info=True)
-        m = self._r_phase_plotter(r, info['data'], ret_m=ret_m)
-        ir = self.rloc(r)
-        ls = '-'
-        for i in [0,1,3]:
-            y = info['mean'][:,ir] + i * info['std'][:,ir]
-            plt.plot(self.fft_time, y, c='k', ls=ls, lw=1)
-            ls = ':'
-        plt.ylabel('Amplitude')
-        return m
-
-    def plot2d(self, t, *args, **kwargs):
-        f = self.loadfile(t)
-        return f.plot2d(*args, **kwargs)
 
 ######################
 # End of BLsim class #
