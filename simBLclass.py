@@ -666,18 +666,21 @@ class BLFT(BLfile):
             a = data.min(axis=1)
             b = data.max(axis=1)
             i = a.size - 1
-            while a[i] == 0 and b[i] == 0 and i > 0:
-                i -= 1
-            try:
-                i = max(i, self._ai_data['meshblock']['nx2'] - 1)
-            except KeyError:
-                pass
+            if 0:
+                while a[i] == 0 and b[i] == 0 and i > 0:
+                    i -= 1
+                try:
+                    i = max(i, self._ai_data['meshblock']['nx2'] - 1)
+                except KeyError:
+                    pass
+            else:
+                i = self._ai_data['meshblock']['nx2'] - 1
             data = data[slice(0, i + 1)].copy()
         return data
 
     def _special_keys(self, key):
         if key == 'FT':
-            return self['FT-Re'] + 1j * self['FT-Im']
+            return (self['FT-Re'] - 1j * self['FT-Im']).astype('complex64')
         if key in ['mag', 'amp']:
             return np.abs(self['FT'])
         if key == 'angle':
@@ -903,6 +906,7 @@ class BLsim(object):
         self._fft_data = fft_data
         self._fft_time = fft_time
         self._mode_mask = mode_mask
+        self._sigmas = [0,3]
 
     def _load_fft_data(self):
         try:
@@ -978,15 +982,17 @@ class BLsim(object):
     def rloc(self, r):
         return np.abs(r - self.rc).argmin()
 
-    def loadfile(self, fn):
+    def loadfile(self, fn, index=None):
+        if not index is None:
+            fn = self.files(fn)[index]
         if fn in self.filenames:
             return loadBLfile(fn, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
 
     def mode_mask(self, data=None, info=False, amin=None):
-        if amin is None:
-            amin = 1e-3 / self.rc.size / self.phic.size
-        amp = np.abs(self.fft)
         if self._mode_mask is None:
+            if amin is None:
+                amin = 1e-3 / self.rc.size / self.phic.size
+            amp = np.abs(self.fft)
             #Max = amp.max(axis=1)[:, np.newaxis, :]
             mask = np.zeros_like(amp, dtype=bool)
             one = np.ones_like(amp)
@@ -1007,7 +1013,7 @@ class BLsim(object):
                 #M = mamp.max(axis=1).data[:, np.newaxis, :]
                 m = mamp.mean(axis=1).data[:, np.newaxis, :] # mean of masked data
                 s = mamp.std(axis=1).data[:, np.newaxis, :] # standard deviation
-                tmp = np.logical_and(amp > amin, m + 3. * s - amp < 0) # signal
+                tmp = np.logical_and(amp > amin, m + self._sigmas[-1] * s - amp < 0) # signal
                 tmp = np.logical_or(_mask, tmp)
                 if (mask == tmp).all():
                     keep_going = False
@@ -1032,6 +1038,7 @@ class BLsim(object):
             if info:
                 tmp = np.logical_not(mask)
                 tmp[:,0,:] = True
+                amp = np.abs(self.fft)
                 mamp = np.ma.array(amp, mask=tmp)
                 m = mamp.mean(axis=1).data
                 s = mamp.std(axis=1).data
@@ -1054,67 +1061,22 @@ class BLsim(object):
         out = np.array([np.abs(self.fft), np.angle(self.fft)])
         return out
 
-    def prop_speed(self, dt=None):
+    def prop_speed(self, dt=None, ir=None):
         if dt is None:
             for var in ['FT-Range', 'FT']:
                 if var in self.varDict:
                     dt = self.inputs[self.varDict[var]]['dt']
                     break
-        data = np.angle(self.fft)
+        m = np.arange(self.fft.shape[1])
+        if ir is None:
+            data = np.angle(self.fft)
+            m = m[np.newaxis,:,np.newaxis]
+        else:
+            data = np.angle(self.fft[:,:,ir])
+            m = m[np.newaxis,:]
         #dphi = np.gradient(data[1] / dt, axis=0)
         dphi = mod_grad(data, axis=0, mod=tau)
-        m = np.arange(dphi.shape[1])
-        return dphi / dt / (m[np.newaxis,:,np.newaxis])
-
-    def _r_phase_plotter(self, r, data, ret_m=False, tloc=None):
-        ir = self.rloc(r)
-        #data = self.mode_phase()
-        modes = []
-        for i in xrange(data.shape[1]):
-            tmp = data[:,i,ir].copy()
-            tmp = tmp[tloc]
-            j = 0
-            # make sure data covers 5 adjacent times
-            while np.isfinite(tmp).any() and j < 5:
-                tmp = np.gradient(tmp)
-                j += 1
-            if np.isfinite(tmp).any():
-                plt.plot(self.fft_time(), data[:,i,ir], lw=1)
-                modes.append(i)
-        plt.legend(['$m=%d$' % m for m in modes])
-        plt.xlabel('Time step')
-        #plt.ylabel('Phase')
-        plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
-        if ret_m:
-            return modes
-
-    def r_phase(self, r, ret_m=False, fig=True):
-        if fig is True:
-            plt.figure()
-        m = self._r_phase_plotter(r, self.mode_mask(np.angle(self.fft)), ret_m=ret_m)
-        plt.ylabel('Phase')
-        return m
-
-    def r_speed(self, r, ret_m=False, fig=True):
-        if fig is True:
-            plt.figure()
-        m = self._r_phase_plotter(r, self.mode_mask(self.prop_speed()), ret_m=ret_m)
-        plt.ylabel('Speed')
-        return m
-
-    def r_amp(self, r, ret_m=False, fig=True):
-        if fig is True:
-            plt.figure()
-        info = self.mode_mask(self.mode_phase()[0], info=True)
-        m = self._r_phase_plotter(r, info['data'], ret_m=ret_m)
-        ir = self.rloc(r)
-        ls = '-'
-        for i in [0,1,3]:
-            y = info['mean'][:,ir] + i * info['std'][:,ir]
-            plt.plot(y, c='k', ls=ls, lw=1)
-            ls = ':'
-        plt.ylabel('Amplitude')
-        return m
+        return dphi / (dt * m)
 
     def mt_plot(self, r, fn=None, save=False, ext='pdf', sdir=None,
                 fig=None, ax=None, fopt={}, vmin='smart', vmax='max', cb=True,
@@ -1175,23 +1137,49 @@ class BLsim(object):
             fig.savefig(fn)
             plt.close()
 
-    def _r_phase_plotter(self, r, data, ret_m=False, tlim=None):
+    def _r_phase_plotter(self, r, data, ret_m=False, tloc=None, sort=True, sdata=None):
         ir = self.rloc(r)
         #data = self.mode_phase()
         modes = []
+        handles = []
+        if len(data.shape) == 3:
+            rdata = data[:,:,ir]
+        else:
+            rdata = data
         for i in xrange(data.shape[1]):
-            tmp = data[:,i,ir].copy()
-            if tlim:
-                tmp = tmp[tlim:]
+            tmp = rdata[:,i].copy()
+            #tmp = tmp[tloc]
             j = 0
+            # make sure data covers 5 adjacent times
             while np.isfinite(tmp).any() and j < 5:
                 tmp = np.gradient(tmp)
                 j += 1
             if np.isfinite(tmp).any():
-                plt.plot(self.fft_time / tau, data[:,i,ir], lw=1)
                 modes.append(i)
-        opt = {'loc': 0, 'frameon': False, 'handlelength': .7, 'prop': {'size':8}, 'ncol': 3}
-        plt.legend(['$%d$' % m for m in modes], **opt)
+                handles.append(None)
+        order = modes[:]
+        if sort:
+            if sdata is None:
+                sdata = np.abs(self.fft[:,:,ir]).sum(axis=0)
+            order = sorted(modes, key=lambda m: sdata[m])
+        if len(modes) > 9:
+            colors1 = plt.cm.viridis(np.linspace(0., 1, 128))
+            colors2 = plt.cm.plasma(np.linspace(0, 1, 128))
+            colors = np.vstack((colors1, colors2))
+            mymap = mpl.colors.LinearSegmentedColormap.from_list('my_colormap', colors)
+        else:
+            mymap = plt.cm.viridis
+        norm = 1. / (len(modes) - 1.)
+        for m in order:
+            i = modes.index(m)
+            c = mymap(i * norm)
+            #print(i,m,sdata[m])
+            handles[i] = plt.plot(self.fft_time / tau, rdata[:,m], lw=1, c=c)[0]
+        opt = {'loc': 0, 'frameon': True, 'handlelength': .7, 'prop': {'size':8}, 'ncol': 3}
+        lbls = ['$%d$' % m for m in modes]
+        leg = plt.legend(handles, lbls, **opt)
+        for legobj in leg.legendHandles:
+            legobj.set_linewidth(2.0)
         plt.xlabel(r'Time/$2\pi$')
         #plt.ylabel('Phase')
         plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
@@ -1208,19 +1196,39 @@ class BLsim(object):
     def r_speed(self, r, ret_m=False, fig=True):
         if fig is True:
             plt.figure()
-        m = self._r_phase_plotter(r, self.mode_mask(self.prop_speed()), ret_m=ret_m)
+        ir = self.rloc(r)
+        mask = self.mode_mask()[:,:,ir]
+        speed = self.prop_speed(ir=ir)
+        data = speed.copy()
+        data[mask] = np.nan
+        speed = np.ma.array(speed, mask=mask)
+        sdata = speed.mean(axis=0) / speed.std(axis=0)
+        opt = dict(ret_m=ret_m, sdata=sdata)
+        m = self._r_phase_plotter(r, data, **opt)
+        ylim = list(plt.ylim())
+        ylim[0] = max(0, ylim[0])
+        ylim[1] = min(1, ylim[1])
+        plt.ylim(*ylim)
         plt.ylabel('Speed')
         return m
 
     def r_amp(self, r, ret_m=False, fig=True):
         if fig is True:
             plt.figure()
-        info = self.mode_mask(self.mode_phase()[0], info=True)
-        m = self._r_phase_plotter(r, info['data'], ret_m=ret_m)
         ir = self.rloc(r)
+        mask = self.mode_mask()[:,:,ir]
+        amp = np.abs(self.fft[:,:,ir])
+        data = amp.copy()
+        data[mask] = np.nan
+        m = self._r_phase_plotter(r, data, ret_m=ret_m)
+        mask = np.logical_not(mask)
+        mask[:,0] = True
+        data = np.ma.array(amp, mask=mask)
+        std = data.std(axis=1)
+        mean = data.mean(axis=1)
         ls = '-'
-        for i in [0,1,3]:
-            y = info['mean'][:,ir] + i * info['std'][:,ir]
+        for i in self._sigmas:
+            y = mean + i * std
             plt.plot(self.fft_time / tau, y, c='k', ls=ls, lw=1)
             ls = ':'
         plt.ylabel('Amplitude')
