@@ -906,7 +906,7 @@ class BLsim(object):
         self._fft_data = fft_data
         self._fft_time = fft_time
         self._mode_mask = mode_mask
-        self._sigmas = [0,3]
+        self._sigmas = [0,4]
 
     def _load_fft_data(self):
         try:
@@ -981,6 +981,9 @@ class BLsim(object):
 
     def rloc(self, r):
         return np.abs(r - self.rc).argmin()
+
+    def tloc(self, t):
+        return np.abs(t - self.fft_time).argmin()
 
     def loadfile(self, fn, index=None):
         if not index is None:
@@ -1189,7 +1192,10 @@ class BLsim(object):
     def r_phase(self, r, ret_m=False, fig=True):
         if fig is True:
             plt.figure()
-        m = self._r_phase_plotter(r, self.mode_mask(self.mode_phase()[1]), ret_m=ret_m)
+        ir = self.rloc(r)
+        mask = self.mode_mask()[:,:,ir]
+        data = np.ma.array(np.angle(self.fft[:,:,ir]), mask=mask)
+        m = self._r_phase_plotter(r, data, ret_m=ret_m)
         plt.ylabel('Phase')
         return m
 
@@ -1218,14 +1224,20 @@ class BLsim(object):
         ir = self.rloc(r)
         mask = self.mode_mask()[:,:,ir]
         amp = np.abs(self.fft[:,:,ir])
-        data = amp.copy()
-        data[mask] = np.nan
+        data = np.ma.array(amp, mask=mask)
+        #data[mask] = np.nan
         m = self._r_phase_plotter(r, data, ret_m=ret_m)
+        nt = self.fft_time.size
+        m0 = data[:nt//5].max()
+        m1 = data[nt//5:].max()
+        plt.ylim(0, None)
+        if m0 > 1.2 * m1:
+            plt.ylim(None, 1.1 * m1)
         mask = np.logical_not(mask)
         mask[:,0] = True
-        data = np.ma.array(amp, mask=mask)
-        std = data.std(axis=1)
-        mean = data.mean(axis=1)
+        tmp = np.ma.array(amp, mask=mask)
+        std = tmp.std(axis=1)
+        mean = tmp.mean(axis=1)
         ls = '-'
         for i in self._sigmas:
             y = mean + i * std
@@ -1234,25 +1246,123 @@ class BLsim(object):
         plt.ylabel('Amplitude')
         return m
 
-    def diagnostic(self, r=1.3, save=False, fn=None, ext='pdf', figsize=(8,8),
-                   sdir=None, subsample=None):
+    def _t_phase_plotter(self, data, ret_m=False, sort=True, sdata=None,
+                         modes=None, std=None, nm=None):
+        if modes is None:
+            modes = []
+            for i in xrange(data.shape[0]):
+                tmp = data[i,:].copy()
+                #tmp = tmp[tloc]
+                j = 0
+                # make sure data covers 5 adjacent r
+                while np.isfinite(tmp).any() and j < 5:
+                    tmp = np.gradient(tmp)
+                    j += 1
+                if np.isfinite(tmp).any():
+                    modes.append(i)
+        order = modes[:]
+        if sort:
+            if sdata is None:
+                sdata = data.mean(axis=1)
+            order = sorted(modes, key=lambda m: sdata[m])
+        if not nm is None:
+            order = order[-nm:]
+            modes = [m for m in modes if m in order]
+        handles = [None] * len(modes)
+        if len(modes) > 9:
+            colors1 = plt.cm.viridis(np.linspace(0., 1, 128))
+            colors2 = plt.cm.plasma(np.linspace(0, 1, 128))
+            colors = np.vstack((colors1, colors2))
+            mymap = mpl.colors.LinearSegmentedColormap.from_list('my_colormap', colors)
+        else:
+            mymap = plt.cm.viridis
+        norm = 1. / (len(modes) - 1.)
+        for m in order:
+            i = modes.index(m)
+            c = mymap(i * norm)
+            #print(i,m,sdata[m])
+            opt = dict(lw=1, c=c)
+            handles[i] = plt.plot(self.rc, data[m,:], **opt)[0]
+            if not std is None:
+                plt.plot(self.rc, data[m,:] - std[m,:], ls=':', **opt)
+                plt.plot(self.rc, data[m,:] + std[m,:], ls=':', **opt)
+        opt = {'loc': 0, 'frameon': True, 'handlelength': .7, 'prop': {'size':8}, 'ncol': 3}
+        lbls = ['$%d$' % m for m in modes]
+        leg = plt.legend(handles, lbls, **opt)
+        for legobj in leg.legendHandles:
+            legobj.set_linewidth(2.0)
+        plt.xlabel('Radius')
+        if ret_m:
+            return modes
+
+    def t_amp(self, t='mean', ret_m=False, fig=True, tmin=2e2*tau, nm=5):
+        if fig is True:
+            plt.figure()
+        if t == 'mean':
+            data = np.abs(self.fft[self.tloc(tmin):]).mean(axis=0)
+            title = '$t$ mean'
+            sdata = data.mean(axis=1)
+        else:
+            it = self.tloc(t)
+            data = np.abs(self.fft[it,:,:])
+            title = '$t={0:.2f}$'.format(t)
+            sdata = data.mean(axis=1)
+        m = self._t_phase_plotter(data, ret_m=ret_m, nm=nm, sdata=sdata)
+        plt.title(title)
+        plt.ylabel('Amplitude')
+        return m
+
+    def t_speed(self, t='mean', ret_m=False, fig=True, nm=5, tmin=2e2*tau):
+        if fig is True:
+            plt.figure()
+        speed = self.prop_speed()
+        std = None
+        if t == 'mean':
+            amp = np.abs(self.fft[self.tloc(tmin):])
+            data = np.average(speed[self.tloc(tmin):], axis=0, weights=amp)
+            std = np.sqrt(np.average((speed[self.tloc(tmin):] - data[np.newaxis,:,:])**2, axis=0, weights=amp))
+            sdata = amp.mean(axis=(0,2))
+            title = '$t$ mean'
+        else:
+            it = self.tloc(t)
+            data = speed[it]
+            sdata = np.abs(self.fft[it]).mean(axis=1)
+            title = '$t={0:.2f}$'.format(t)
+        m = self._t_phase_plotter(data, ret_m=ret_m, std=std, sdata=sdata, nm=nm)
+        plt.title(title)
+        plt.ylabel('Speed')
+        ylim = list(plt.ylim())
+        ylim[0] = max(0, ylim[0])
+        ylim[1] = min(1, ylim[1])
+        plt.ylim(*ylim)
+        return m
+
+    def diagnostic(self, rs=[.8,1.3], save=False, fn=None, ext='pdf', figsize=None,
+                   sdir=None, subsample=None, sz=4):
         self.fft #make sure data is loaded
         self.mode_mask()
+        rs = np.atleast_1d(rs)
+        nr = rs.size
+        nx = nr + 1
+        ny = 2
+        if figsize is None:
+            figsize = (nx * sz, ny * sz)
         fig = plt.figure(figsize=figsize)
-        gs = mpl.gridspec.GridSpec(2, 2, top=.9, bottom=.05, hspace=.2)
+        gs = mpl.gridspec.GridSpec(ny, nx, top=.9, bottom=.1, hspace=.3)
 
-        ax = plt.subplot(gs[0,0])
-        self.r_amp(r, fig=False)
+        for i, r in enumerate(rs):
+            ax = plt.subplot(gs[0,i])
+            self.r_amp(r, fig=False)
 
-        ax = plt.subplot(gs[0,1])
-        self.r_speed(r, fig=False)
+            ax = plt.subplot(gs[1,i])
+            self.r_speed(r, fig=False)
 
-        ax = plt.subplot(gs[1,0])
+        ax = plt.subplot(gs[0,nr])
         f = self.loadfile(self.files('cons')[-1])
         f.plot2d('pseudo', ax=ax, vmin='smart', cbl=r'$v_r\sqrt{\rho}$', subsample=subsample)
         fig.suptitle('Diagnostic for ' + helpers.sanitize_lbl(self.name))
 
-        ax = plt.subplot(gs[1,1])
+        ax = plt.subplot(gs[-1,-1])
         #Get rid of ticks and axes
         spines = [ax.spines[j] for j in ax.spines.keys()]
         for spine in spines :
