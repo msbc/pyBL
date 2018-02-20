@@ -4,3 +4,5 @@ Mach*stampede
 *.athdf
 *.npy
 test/*
+.DS_Store
+mov/*
