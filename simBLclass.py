@@ -100,12 +100,22 @@ def _parse_file(fn):
         return np.load(fn)[()]
     raise IOError('Cannot identify file type of "{0:}"'.format(fn))
 
+def intr(dr, data, axis=-1):
+    if axis == -1:
+        axis += len(data.shape)
+    loc = [np.newaxis] * axis + [slice(None)]
+    return (data * dr).sum(axis=axis)
+
 class BLfile(dict):
     def __init__(self, fn, sim_path=None, t=None, trim=True, data=None,
                  defvar=None, ai_data={}, sim=None):
         self.t = t
         self.sim = sim
         self._ai_data = ai_data
+        if not sim is None:
+            self.mach = sim.mach
+        elif not ai_data is None:
+            self.mach = 1. / ai_data['hydro']['iso_sound_speed']
         self.fn = _findAbsPath(fn, sim_path)
         self.path = os.path.split(self.fn)[0]
         if data is None:
@@ -134,6 +144,7 @@ class BLfile(dict):
         else:
             self.update(self.data)
         self.r = self.data['x1f']
+        self.dr = self.r[1:] - self.r[:-1]
         self.phi = self.data['x2f']
         self.rc = .5 * (self.r[:-1] + self.r[1:])
         self.phic = .5 * (self.phi[:-1] + self.phi[1:])
@@ -211,16 +222,33 @@ class BLfile(dict):
         except KeyError:
             return self._parse_self(key)
 
+    def intr(self, data, axis=-1):
+        data = self._parse_data(data)
+        return intr(self.dr, data, axis=axis)
+
+    def fft(self, data, axis=-2, mag=False):
+        try:
+            data.shape
+        except AttributeError:
+            data = self[data]
+        out = np.fft.rfft(data, axis=axis)
+        if mag:
+            out = np.absolute(out)
+        return out
+
     def rloc(self, r):
         return np.abs(r - self.rc).argmin()
 
     def plot2d(self, data=None, fn=None, save=False, subsample=False, title=None,
                name=None, ext='pdf', popt={}, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt={}, fig=None, fopt={},
-               ax=None, log=False, aspect=1, sdir=None, smooth=None, phi_shift=0, r_cut=None):
+               ax=None, log=False, aspect=1, sdir=None, smooth=None,
+               phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False):
         '''Plot 2D sim data'''
         r = self.r[np.newaxis, :]
         phi = self.phi[:,np.newaxis] + phi_shift
+        if self.t and phi_dot:
+            phi -= phi_dot * self.t
         x = r * np.cos(phi)
         y = r * np.sin(phi)
         _popt = {}
@@ -300,7 +328,7 @@ class BLfile(dict):
         #start plotting
         pcm = plt.pcolormesh(x, y, data, **_popt)
         if title:
-            plt.title(helpers.sanitize_lbl(title))
+            plt.title(helpers.sanitize_lbl(title.format(**self.__dict__)))
         if cb:
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size="5%", pad=0.05)
@@ -320,11 +348,27 @@ class BLfile(dict):
                 fn = os.path.join(sdir, fn)
             plt.savefig(fn)
             plt.close()
+        if ret_fn:
+            return fn
 
         return pcm
 
     def smooth(self, data, width=64):
         return smooth(self._parse_data(data), width=width)
+
+    def ddr(self, data):
+        nm1 = len(data.shape) - 1
+        loc = [slice(None)] * nm1
+        left = loc + [slice(0,-1)]
+        right = loc + [slice(1,None)]
+        dr = (self.r[1:] - self.r[:1])[[np.newaxis] * nm1 + [slice(None)]]
+        out = np.zeros_like(data)
+        d = data[right] - data[left]
+        out[left] = .5 * d
+        out[right] += .5 * d
+        out[loc + [0]] *= 2
+        out[loc + [-1]] *= 2
+        return out
 
 class BLaux(BLfile):
 
@@ -597,7 +641,7 @@ class BLConsPrim(BLfile):
 
     def CL25(self, Op, M=None):
         if M is None:
-            M = self.M
+            M = self.mach
         s = 1. / M
         dens = self['dens']
         Mdens = dens.mean(axis=0)
@@ -614,12 +658,24 @@ class BLConsPrim(BLfile):
         Mdens = dens.mean(axis=0)
         return tau * self.rc**3 * Mdens * self.Oloc() * self.rhoWeight('vel1')
 
-    def CLplot(self, Op, M=None):
-        cl = self.CL(), self.CL20(), self.CL24(), self.CL25(Op, M), self.CS(), self.CA()
-        lbls = ['BRS12 Eqn %d' % i for i in [19,20,24,25]] + ['BRS13 $C_S$','BRS13 $C_A$']
+    def CLplot(self, Op=None, M=None, nm=6):
+        cl = [self.CL(),self.CL24()]
+        lbls = ['BRS12 Eqn %d' % i for i in [19,24]]
+        if not Op is None:
+            cl.append(self.CL25(Op, M))
+        cl += [self.CS(), self.CA()]
+        lbls += ['BRS13 $C_S$','BRS13 $C_A$']
+        tmp = self.Csm()
+        s = tmp.sum(axis=0)
+        loc = sorted(range(tmp.shape[0]), key=lambda x: 1/s[x])
+        for i in loc[:nm]:
+            cl.append(tmp[i])
+            lbls.append('by mode {0:}'.format(i))
         for i in cl:
             plt.plot(self.rc, i)
-        plt.axhline(0, ls=':', lw=1, c='k')
+        plt.plot(self.rc, tmp.sum(axis=0), 'k:')
+        lbls.append('sum')
+        plt.axhline(0, ls=':', lw=1, c='.5')
         plt.legend(lbls)
         plt.xlabel('R')
         plt.ylabel('$C_L$')
@@ -629,6 +685,81 @@ class BLConsPrim(BLfile):
 
     def Oloc(self):
         return self.rhoWeight('vel2') / self.rc
+
+    def pseudo(self):
+        err = 'Must be implemented in subclase of {0:}.'.format(self.__class__)
+        raise NotImplementedError(err)
+
+    def Rpseudo(self):
+        return self.rc[np.newaxis, :] * self.pseudo()
+
+    def CSm(self, delta=False):# dvm=None, dum=None, dSm=None, o=None):
+        rho = self['dens']
+        S = rho.mean(axis=0)[np.newaxis,:]
+        if delta:
+            norm = 1. / (self.phic.size - 1)
+            dvm = self.fft(self.deltaVal('vel1')) * norm
+            dum = self.fft(self.deltaVal('vel2')) * norm
+        else:
+            dvm = self.fft('vel1') / self.phic.size
+            dum = self.fft('vel2') / self.phic.size
+        if 0:#dvm is None or dum is None:
+            if dSm is None:
+                dSm = self.fft(rho)
+            if dvm is None:
+                dvm = self.dvm(dSm, S, o)
+            if dum is None:
+                dum = self.dum(dSm, S, o)
+        r = self.rc[np.newaxis, :]
+        return .5 * np.pi * r**2 * S * (np.conj(dvm) * dum + dvm * np.conj(dum))
+
+    def CSmPlot(self, nm=5, norm=1):
+        nm = 5
+        csm = np.real(self.CSm()) * norm
+        csm[0] = 0
+        cs = self.CS()
+        norm = self.intr(np.abs(csm))
+        modes = sorted(range(norm.shape[0]), key=lambda x: -norm[x])
+        plt.figure()
+        plt.plot(self.rc, cs, 'k-', label='$C_S$')
+        for m in modes[:nm]:
+            plt.plot(self.rc, csm[m], label=str(m))
+        plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls=':', label='sum')
+        plt.legend()
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.xlim(self.r[0], self.r[-1])
+        plt.xlabel('R')
+        plt.ylabel('$C_S$')
+        title = ''
+        try:
+            title = self.sim.name + ' '
+        except:
+            pass
+        title += 't=$%g' % (self.t / tau) + r'\times 2 \pi$'
+        plt.title(title)
+
+    def _dvm(self, dSm=None, S0=None, o=None):
+        if dSm is None:
+            dSm = self.fft('dens')
+        if S0 is None:
+            S0 = sdm[0][np.newaxis, :]
+        m = np.arange(dSm.shape[0])[:,np.newaxis]
+        s = 1. / self.mach
+        return s**2/o * (m / self.rc[np.newaxis, :]) * dSm / S0
+
+    def _dum(self, dSm=None, S0=None, o=None):
+        if dSm is None:
+            dSm = self.fft('dens')
+        if S0 is None:
+            S0 = sdm[0][np.newaxis, :]
+        s = 1. / self.mach
+        return s**2/o * (self.kr(dSm) - 1j / self.hs(S0)) * dSm / S0
+
+    def kr(self, dSm):
+        return self.ddr(dSm) / dSm
+
+    def hs(self, S0):
+        return -S0 / self.ddr(S0)
 
 class BLcons(BLConsPrim):
     def _special_keys(self, key):
@@ -695,9 +826,10 @@ def loadBLfile(fn, **kwargs):
     fn = _findAbsPath(fn, kwargs.get('sim_path', None))
     data = _parse_file(fn)
     ai_fn = kwargs.pop('athinput_fn', None)
-    ai_data = kwargs.pop('athinput_data', None)
+    ai_data = kwargs.pop('ai_data', None)
     if ai_fn is None:
-        tmp = glob('athinput.*')
+        path = kwargs.get('sim_path', '')
+        tmp = glob(os.path.join('athinput.*'))
         if len(tmp) == 1:
             ai_fn = tmp[0]
     if ai_fn and ai_data is None:
@@ -706,6 +838,7 @@ def loadBLfile(fn, **kwargs):
     if not ai_data is None:
         kwargs['ai_data'] = ai_data
         tmp = os.path.split(fn)[-1].split('.')
+        #print(tmp)
         if tmp[0] == ai_data['job']['problem_id']:
             outs = [i for i in ai_data.keys() if i[:6] == 'output']
             for out in outs:
@@ -725,6 +858,7 @@ def loadBLfile(fn, **kwargs):
         return BLcons(fn, data=data, **kwargs)
     if kind in ['FT', 'FT-Range']:
         return BLFT(fn, data=data, **kwargs)
+    raise RuntimeError
     return BLfile(fn, data=data, **kwargs)
 
 class _old_BLsliceFile(object):
@@ -837,7 +971,8 @@ class _old_BLmodes(object):
 
 
 class BLsim(object):
-    def __init__(self, path, fmts=None, fft_data=None, fft_time=None, athinput=None, mode_mask=None):
+    def __init__(self, path, fmts=None, fft_data=None, fft_time=None,
+                 athinput=None, mode_mask=None, main_modes=None):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
@@ -868,6 +1003,7 @@ class BLsim(object):
             searches = [fmt.split('%')[0] + '*.' + fmt.split('d.')[-1] for fmt in fmts]
             raise NotImplementedError('Currently needs athinput.')
         else:
+            self.mach = self.inputs['hydro']['iso_sound_speed']
             mesh = self.inputs['mesh']
             for i in [1, 2]:
                 x = 'x' + str(i)
@@ -883,6 +1019,7 @@ class BLsim(object):
                 axes.append(xf)
             #raise RuntimeError
             self.r = axes[0].copy()
+            self.dr = self.r[1:] - self.r[:-1]
             self.rc = .5 * self.r[1:] + .5 * self.r[:-1]
             self.phi = axes[1].copy()
             self.phic = .5 * self.phi[1:] + .5 * self.phi[:-1]
@@ -907,25 +1044,36 @@ class BLsim(object):
         self._fft_time = fft_time
         self._mode_mask = mode_mask
         self._sigmas = [0,4]
+        self._main_modes = main_modes
+
+        return None
+        # End init
 
     def _load_fft_data(self):
+        data = []
+        t = []
         try:
-            data = []
-            t = []
-            for fn in self.files('FT-Range'):
-                f = self.loadfile(fn)
-                data.append(f['FT'])
-                t.append(f.t)
-            data = np.array(data)
-            t = np.array(t)
+            files = self.files('FT-Range')
         except ValueError:
-            raise NotImplementedError
-            data = np.array([self.loadfile(f)['FT'] for f in self.files('FT')])
+            f = 'output3'
+            if self.inputs[f]['id'] == 'FT':
+                files = self.files(f)
+            else:
+                raise NotImplementedError
+        for fn in files:
+            f = self.loadfile(fn)
+            data.append(f['FT'])
+            t.append(f.t)
+        data = np.array(data)
+        t = np.array(t)
         if self._fft_data is None:
             self._fft_data = data
         if self._fft_time is None:
             self._fft_time = t
         return data
+
+    def intr(self, data, axis=-1):
+        return intr(self.dr, data, axis=axis)
 
     @property
     def fft(self):
@@ -1070,6 +1218,8 @@ class BLsim(object):
                 if var in self.varDict:
                     dt = self.inputs[self.varDict[var]]['dt']
                     break
+        if dt is None:
+            dt = self.inputs['output3']['dt']
         m = np.arange(self.fft.shape[1])
         if ir is None:
             data = np.angle(self.fft)
@@ -1140,7 +1290,22 @@ class BLsim(object):
             fig.savefig(fn)
             plt.close()
 
-    def _r_phase_plotter(self, r, data, ret_m=False, tloc=None, sort=True, sdata=None):
+    def main_modes(self, nm=None, skip_zero=True):
+        if self._main_modes is None:
+            fft = self.fft * self.rc[np.newaxis, np.newaxis, :]
+            nt = fft.shape[0]
+            a = self.intr(np.abs(fft[nt//2:]).sum(axis=0))
+            self._main_modes = sorted(range(a.size), key=lambda x: -a[x])
+        modes = self._main_modes[:]
+        if skip_zero:
+            try:
+                modes.remove(0)
+            except ValueError:
+                pass
+        return modes[:nm]
+
+    def _old_r_phase_plotter(self, r, data, ret_m=False, tloc=None, sort=True,
+                         sdata=None, order=None):
         ir = self.rloc(r)
         #data = self.mode_phase()
         modes = []
@@ -1160,11 +1325,12 @@ class BLsim(object):
             if np.isfinite(tmp).any():
                 modes.append(i)
                 handles.append(None)
-        order = modes[:]
-        if sort:
-            if sdata is None:
-                sdata = np.abs(self.fft[:,:,ir]).sum(axis=0)
-            order = sorted(modes, key=lambda m: sdata[m])
+        if order is None:
+            order = modes[:]
+            if sort:
+                if sdata is None:
+                    sdata = np.abs(self.fft[:,:,ir]).sum(axis=0)
+                order = sorted(modes, key=lambda m: sdata[m])
         if len(modes) > 9:
             colors1 = plt.cm.viridis(np.linspace(0., 1, 128))
             colors2 = plt.cm.plasma(np.linspace(0, 1, 128))
@@ -1199,7 +1365,7 @@ class BLsim(object):
         plt.ylabel('Phase')
         return m
 
-    def r_speed(self, r, ret_m=False, fig=True):
+    def _old_r_speed(self, r, ret_m=False, fig=True):
         if fig is True:
             plt.figure()
         ir = self.rloc(r)
@@ -1210,7 +1376,7 @@ class BLsim(object):
         speed = np.ma.array(speed, mask=mask)
         sdata = speed.mean(axis=0) / speed.std(axis=0)
         opt = dict(ret_m=ret_m, sdata=sdata)
-        m = self._r_phase_plotter(r, data, **opt)
+        m = self._old_r_phase_plotter(r, data, **opt)
         ylim = list(plt.ylim())
         ylim[0] = max(0, ylim[0])
         ylim[1] = min(1, ylim[1])
@@ -1218,7 +1384,7 @@ class BLsim(object):
         plt.ylabel('Speed')
         return m
 
-    def r_amp(self, r, ret_m=False, fig=True):
+    def _old_r_amp(self, r, ret_m=False, fig=True):
         if fig is True:
             plt.figure()
         ir = self.rloc(r)
@@ -1226,7 +1392,7 @@ class BLsim(object):
         amp = np.abs(self.fft[:,:,ir])
         data = np.ma.array(amp, mask=mask)
         #data[mask] = np.nan
-        m = self._r_phase_plotter(r, data, ret_m=ret_m)
+        m = self._old_r_phase_plotter(r, data, ret_m=ret_m)
         nt = self.fft_time.size
         m0 = data[:nt//5].max()
         m1 = data[nt//5:].max()
@@ -1245,6 +1411,59 @@ class BLsim(object):
             ls = ':'
         plt.ylabel('Amplitude')
         return m
+
+    def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None):
+        ir = self.rloc(r)
+        if modes is None:
+            modes = self.main_modes(nm=nm)[::-1]
+        if not add_modes is None:
+            add_modes = list(np.atleast_1d(add_modes))
+            modes += add_modes
+        handles = {}
+        if len(data.shape) == 3:
+            rdata = data[:,:,ir]
+        else:
+            rdata = data
+        for m in modes:
+            handles[m] = plt.plot(self.fft_time / tau, rdata[:,m], lw=1)[0]
+        opt = {'loc': 0, 'frameon': True, 'handlelength': .7, 'prop': {'size':8}, 'ncol': 3}
+        modes.sort()
+        handles = [handles[m] for m in modes]
+        lbls = ['$%d$' % m for m in modes]
+        leg = plt.legend(handles, lbls, **opt)
+        for legobj in leg.legendHandles:
+            legobj.set_linewidth(2.0)
+        plt.xlabel(r'Time/$2\pi$')
+        #plt.ylabel('Phase')
+        plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
+
+    def r_speed(self, r, fig=True, **kwarg):
+        if fig is True:
+            plt.figure()
+        ir = self.rloc(r)
+        data = self.prop_speed(ir=ir)
+        self._r_phase_plotter(r, data, **kwarg)
+        ylim = list(plt.ylim())
+        ylim[0] = max(0, ylim[0])
+        ylim[1] = min(1, ylim[1])
+        plt.ylim(*ylim)
+        plt.ylabel('Speed')
+        return None
+
+    def r_amp(self, r, fig=True, **kwarg):
+        if fig is True:
+            plt.figure()
+        ir = self.rloc(r)
+        data = np.abs(self.fft[:,:,ir])
+        self._r_phase_plotter(r, data, **kwarg)
+        nt = self.fft_time.size
+        m0 = data[:nt//5, 1:].max()
+        m1 = data[nt//5:, 1:].max()
+        plt.ylim(0, None)
+        if m0 > 1.2 * m1:
+            plt.ylim(None, 1.1 * m1)
+        plt.ylabel('Amplitude')
+        return None
 
     def _t_phase_plotter(self, data, ret_m=False, sort=True, sdata=None,
                          modes=None, std=None, nm=None):
@@ -1337,6 +1556,54 @@ class BLsim(object):
         plt.ylim(*ylim)
         return m
 
+    def plot2d(self, data, *args, **kwargs):
+        if len(args) == 1:
+            bf = args[1]
+        else:
+            pre = args[0]
+            tmp = []
+            for i in args[1:]:
+                try:
+                    tmp.extend(i)
+                except TypeError:
+                    tmp.append(i)
+            if len(tmp) == 1 and not tmp[0] is None:
+                bf = loadfile(pre, tmp[0])
+            else:
+                try:
+                    tmp[1] += 1
+                except (IndexError, TypeError):
+                    pass
+                out = []
+                for fn in self.files(pre)[slice(*tmp)]:
+                    bf = self.loadfile(fn)
+                    out.append(bf.plot2d(data, **kwargs))
+                return out
+        if not hasattr(bf, 'plot2d'):
+            bf = self.loadfile(bf)
+        return bf.plot2d(data, **kwargs)
+
+    def speed_shift(self, phi_dot=0, data='pseudo', base='cons', t0=None, t1=None,
+                    mkmov=False, mov_opt={}, sdir=None, **kwargs):
+        kwargs['phi_dot'] = phi_dot
+        kwargs['ret_fn'] = True
+        if not 'save' in kwargs:
+            kwargs['save'] = True
+            if not 'ext' in kwargs:
+                kwargs['ext'] = 'png'
+        if sdir is None:
+            sdir = '%g' % phi_dot
+        pwd = os.getcwd()
+        if sdir:
+            if not os.path.isdir(sdir):
+                os.makedirs(sdir)
+            os.chdir(sdir)
+        fns = self.plot2d(data, base, t0, t1, **kwargs)
+        if mkmov:
+            helpers.mkmov(fnames="")
+        os.chdir(pwd)
+
+
     def diagnostic(self, rs=[.8,1.3], save=False, fn=None, ext='pdf', figsize=None,
                    sdir=None, subsample=None, sz=4):
         self.fft #make sure data is loaded
@@ -1382,7 +1649,7 @@ class BLsim(object):
         _add('$N_r$', self.rc.size)
         _add(r'$N_\phi$', self.phic.size)
         _add('$r$', '[{:g}, {:g}]'.format(self.r[0], self.r[-1]))
-        _add(r'$\mathcal{M}$', 1. / self.inputs['hydro']['iso_sound_speed'])
+        _add(r'$\mathcal{M}$', 1. / self.mach)
         # print the stuff in a grid
         j = 0
         ncol = 3
@@ -1553,6 +1820,11 @@ class auxBLsim(BLsim):
                 fn = self.name + '_cc_{:d}-{:d}.'.format(t1.t, t2.t) + ext
             t1.plot2d(out, title=title, vmax=1.1, phi_shift=np.pi, save=save, fn=fn)
         return out
+
+def refreshSim(sim):
+    attr = ['fft_data', 'fft_time', 'main_modes', 'mode_mask']
+    opt = {i: getattr(sim, '_' + i) for i in attr}
+    return BLsim(sim.path, **opt)
 
 ######################
 # End of BLsim class #
