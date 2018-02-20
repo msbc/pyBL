@@ -6,6 +6,7 @@ import matplotlib
 import sys
 import os
 import re
+from subprocess import call
 #import glob
 from scipy.stats import scoreatpercentile as percentile
 #from scipy.stats import linregress
@@ -283,3 +284,43 @@ def smooth(x,window_len=11,window='hanning'):
 
     y=np.convolve(w/w.sum(),s,mode='valid')
     return y
+
+def which(program):
+    def is_exe(fpath):
+        return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
+
+    fpath, fname = os.path.split(program)
+    if fpath:
+        if is_exe(program):
+            return program
+    else:
+        for path in os.environ["PATH"].split(os.pathsep):
+            exe_file = os.path.join(path, program)
+            if is_exe(exe_file):
+                return exe_file
+
+    return None
+
+def mkmov(fnames, out=None, cmd=None, **kwargs):
+    _lin = ['avconv', 'ffmpeg']
+    _mac = ['avconvert']
+    _cmds = _lin + _mac
+    if out is None:
+        i = 0
+        tmp = ['movie', '', '.mp4']
+        while os.path.isfile(sum(tmp,'')):
+            tmp[1] = '{0:05d}'.format(i)
+            i += 1
+    while cmd is None and _cmds:
+        tmp = _cmds.pop(0)
+        if which(tmp):
+            cmd = tmp
+    if cmd is None:
+        raise RuntimeError('Cannot find executable.')
+    if cmd in _lin:
+        _opt = dict(i=fnames, vcodec='mpeg4')
+    elif cmd in _mac:
+        raise NotImplementedError
+    _opt.update(kwargs)
+    query = map(str, filter(None, sum(map(list, _opt.items()), [cmd])))
+    call(query)
