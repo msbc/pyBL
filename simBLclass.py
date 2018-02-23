@@ -67,6 +67,25 @@ def mod_grad(data, mod=1, axis=0):
     out[loc + (-1,)] *= 2
     return out
 
+def grad(t, data, axis=0):
+    loc = (slice(None),) * axis
+    l = loc + (slice(None, -2),)
+    c = loc + (slice(1, -1),)
+    r = loc + (slice(2, None),)
+    nd = len(data.shape)
+    fill = [np.newaxis] * nd
+    fill[axis] = slice(None)
+    fill = tuple(fill)
+    D =  (t[l[-1]] - t[r[-1]])[fill]
+    dl = (t[c[-1]] - t[l[-1]])[fill]
+    dr = (t[c[-1]] - t[r[-1]])[fill]
+    norm = (1. / (dl * dr * D))[fill]
+    out = np.zeros_like(data)
+    out[c] = (dl + dr) * D * data[c] - dr**2 * data[l] + dl**2 * data[r]
+    out[loc + (0,)] = (data[loc + (1,)] - data[loc + (0,)]) / dl[loc + (0,)]
+    out[loc + (-1,)] = (data[loc + (-2,)] - data[loc + (-1,)]) / dr[loc + (-1,)]
+    return out
+
 def smooth(data, width=64):
     try:
         len(width)
@@ -968,6 +987,44 @@ class _old_BLmodes(object):
             data[0, m, :].imag = s.data[Im][0, 0, :]
         self.data = data
 
+class FFTset(object):
+    def __init__(self, filenames, sim=None, athinput=None, fft_data=None,
+                 fft_time=None):
+        self.filenames = filenames
+        self.sim = sim
+        self._fft_data = fft_data
+        self._fft_time = fft_time
+
+    def _load_fft_data(self):
+        data = []
+        t = []
+        for fn in self.filenames:
+            if self.sim is None:
+                f = BLFT(fn)
+            else:
+                f = self.sim.loadfile(fn)
+            data.append(f['FT'])
+            t.append(f.t)
+        data = np.array(data)
+        t = np.array(t)
+        if self._fft_data is None:
+            self._fft_data = data
+        if self._fft_time is None:
+            self._fft_time = t
+        return data
+
+    @property
+    def data(self):
+        if self._fft_data is None:
+            return self._load_fft_data()
+        return self._fft_data
+
+    @property
+    def time(self):
+        if self._fft_time is None:
+            self._load_fft_data()
+        return self._fft_time
+
 
 
 class BLsim(object):
@@ -1048,6 +1105,27 @@ class BLsim(object):
 
         return None
         # End init
+
+    def _collect_fft_data(self):
+        ffts = [out for out in self.fileDict.keys()
+                if self.inputs.get(out,{}).get('variable') == "FT-Range"]
+        ffts = sorted([FFTset(self.fileDict[i], sim=self) for i in ffts], key=lambda x:x.time[1])
+        nt = sum([i.time.size for i in ffts])
+        shape = (nt,) + ffts[0].data.shape[1:]
+        data = np.empty(shape, dtype='complex64')
+        time = np.empty(nt)
+        n = len(ffts)
+        for i in range(n):
+            data[i::n] = ffts[i].data
+            time[i::n] = ffts[i].time
+        while time[1] == 0:
+            data = data[1:]
+            time = time[1:]
+        if self._fft_data is None:
+            self._fft_data = data
+        if self._fft_time is None:
+            self._fft_time = time
+        return time, data
 
     def _load_fft_data(self):
         data = []
