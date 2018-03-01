@@ -81,9 +81,10 @@ def grad(t, data, axis=0):
     D =  (t[l[-1]] - t[r[-1]])[fill]
     dl = (t[c[-1]] - t[l[-1]])[fill]
     dr = (t[c[-1]] - t[r[-1]])[fill]
-    norm = (1. / (dl * dr * D))[fill]
+    norm = 1. / (dl * dr * D)
     out = np.zeros_like(data)
     out[c] = (dl + dr) * D * data[c] - dr**2 * data[l] + dl**2 * data[r]
+    data[c] *= norm
     out[loc + (0,)] = (data[loc + (1,)] - data[loc + (0,)]) / dl[loc + (0,)]
     out[loc + (-1,)] = (data[loc + (-2,)] - data[loc + (-1,)]) / dr[loc + (-1,)]
     return out
@@ -91,8 +92,8 @@ def grad(t, data, axis=0):
 def crudeDiff(t, data, axis=0):
     dt = np.diff(t)[(np.newaxis,) * axis + (slice(None),) + (np.newaxis,) * max(0, (len(data.shape) - axis - 1))]
     out = np.diff(data, axis=axis) / dt
-    loc = (slice(None),) * axis + (-1,)
-    return np.concatenate(out, out[loc], axis=axis)
+    loc = (slice(None),) * axis + ([0],)
+    return np.concatenate((out[loc], out), axis=axis)
 
 def smooth(data, width=64):
     try:
@@ -1050,12 +1051,13 @@ class FFTset(object):
 
 class BLsim(object):
     def __init__(self, path, fmts=None, fft_data=None, fft_time=None,
-                 athinput=None, mode_mask=None, main_modes=None):
+                 athinput=None, mode_mask=None, main_modes=None,
+                 phase_angle=None):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
         self.name = os.path.split(os.path.abspath(path))[-1]
-        path = os.path.abspath(os.path.expanduser(path))
+        path = os.path.expanduser(path)
         if path == self.name and not os.path.isdir(path):
             for d in _dirs:
                 tmp = os.path.join(d, path)
@@ -1120,6 +1122,7 @@ class BLsim(object):
         #    setattr(self, attr, getattr(tmp, attr))
         self._fft_data = fft_data
         self._fft_time = fft_time
+        self._phase_angle = phase_angle
         self._mode_mask = mode_mask
         self._sigmas = [0,4]
         self._main_modes = main_modes
@@ -1127,17 +1130,20 @@ class BLsim(object):
         return None
         # End init
 
-    def _unwrap(self, phase=None, time=None, limit=None):
+    def _unwrap(self, time=None, phase=None, limit=None, mNorm=False):
         if phase is None:
             phase = np.angle(self.fft)
         if time is None:
             time = self.fft_time
         if limit is None:
-            limit = - .1 / np.arange(phase.shape[1])[np.newaxis,:,np.newaxis]
-        d = grad(time, phase, axis=0)
+            limit = 0
+            #limit = - .1 / np.arange(phase.shape[1])[np.newaxis,:,np.newaxis]
+        if mNorm:
+            limit /= np.arange(phase.shape[1])[np.newaxis,:,np.newaxis]
+        d = crudeDiff(time, phase, axis=0)
         shift = np.zeros_like(phase)
         shift[np.where(d < limit)] += tau
-        return phase + shift.cumsum(axis=1)
+        return phase + shift.cumsum(axis=0)
 
     def _collect_fft_data(self):
         ffts = [out for out in self.fileDict.keys()
@@ -1154,11 +1160,14 @@ class BLsim(object):
         while time[1] == 0:
             data = data[1:]
             time = time[1:]
+        phase = self._unwrap(time, np.angle(data))
         if self._fft_data is None:
             self._fft_data = data
         if self._fft_time is None:
             self._fft_time = time
-        return time, data
+        if self._phase_angle is None:
+            self._phase_angle = phase
+        return time, data, phase
 
     def _load_fft_data(self):
         data = []
@@ -1190,7 +1199,7 @@ class BLsim(object):
     def fft(self):
         if not self._fft_data is None:
             return self._fft_data
-        return self._load_fft_data()
+        return self._collect_fft_data()[1]
 
     @property
     def filenames(self):
@@ -1220,7 +1229,7 @@ class BLsim(object):
     def _gen_fft_time(self):
         t = None
         if self._fft_data is None:
-            self._load_fft_data()
+            self._collect_fft_data()
             t = self._fft_time
         if t is None:
             if 'FT-Range' in self.varDict:
@@ -1237,6 +1246,12 @@ class BLsim(object):
         if not self._fft_time is None:
             return self._fft_time
         return self._gen_fft_time()
+
+    @property
+    def phase_angle(self):
+        if not self._phase_angle is None:
+            return self._phase_angle
+        return self._collect_fft_data()[2]
 
     def rloc(self, r):
         return np.abs(r - self.rc).argmin()
@@ -1320,7 +1335,7 @@ class BLsim(object):
 
     def mode_phase(self):
         DeprecationWarning('This function is deprecated.')
-        out = np.array([np.abs(self.fft), np.angle(self.fft)])
+        out = np.array([np.abs(self.fft), self.phase_angle])
         return out
 
     def prop_speed(self, dt=None, ir=None):
@@ -1333,14 +1348,15 @@ class BLsim(object):
             dt = self.inputs['output3']['dt']
         m = np.arange(self.fft.shape[1])
         if ir is None:
-            data = np.angle(self.fft)
+            data = self.phase_angle
             m = m[np.newaxis,:,np.newaxis]
         else:
-            data = np.angle(self.fft[:,:,ir])
+            data = self.phase_angle[:,:,ir]
             m = m[np.newaxis,:]
         #dphi = np.gradient(data[1] / dt, axis=0)
-        dphi = mod_grad(data, axis=0, mod=tau)
-        return dphi / (dt * m)
+        #dphi = mod_grad(data, axis=0, mod=tau)
+        dphi = crudeDiff(self.fft_time, data)
+        return dphi / m
 
     def mt_plot(self, r, fn=None, save=False, ext='pdf', sdir=None,
                 fig=None, ax=None, fopt={}, vmin='smart', vmax='max', cb=True,
@@ -1405,7 +1421,7 @@ class BLsim(object):
         if self._main_modes is None:
             fft = self.fft * self.rc[np.newaxis, np.newaxis, :]
             nt = fft.shape[0]
-            a = self.intr(self.rc[np.newaxis] * (fft[nt//2:]**2).sum(axis=0))
+            a = self.intr(np.abs(fft[nt//2:]).sum(axis=0))
             self._main_modes = sorted(range(a.size), key=lambda x: -a[x])
         modes = self._main_modes[:]
         if skip_zero:
@@ -1471,7 +1487,7 @@ class BLsim(object):
             plt.figure()
         ir = self.rloc(r)
         mask = self.mode_mask()[:,:,ir]
-        data = np.ma.array(np.angle(self.fft[:,:,ir]), mask=mask)
+        data = np.ma.array(self.phase_angle[:,:,ir], mask=mask)
         m = self._r_phase_plotter(r, data, ret_m=ret_m)
         plt.ylabel('Phase')
         return m
@@ -1523,7 +1539,8 @@ class BLsim(object):
         plt.ylabel('Amplitude')
         return m
 
-    def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None):
+    def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None,
+                         ret_m=None, smooth=False, sw=20):
         ir = self.rloc(r)
         if modes is None:
             modes = self.main_modes(nm=nm)[::-1]
@@ -1536,7 +1553,12 @@ class BLsim(object):
         else:
             rdata = data
         for m in modes:
-            handles[m] = plt.plot(self.fft_time / tau, rdata[:,m], lw=1)[0]
+            line = rdata[:,m]
+            if smooth:
+                if smooth in [True, 1]:
+                    smooth = 'flat'
+                line = helpers.smooth(line, window=smooth, window_len=sw)
+            handles[m] = plt.plot(self.fft_time / tau, line, lw=1)[0]
         opt = {'loc': 0, 'frameon': True, 'handlelength': .7, 'prop': {'size':8}, 'ncol': 3}
         modes.sort()
         handles = [handles[m] for m in modes]
@@ -1551,6 +1573,10 @@ class BLsim(object):
     def r_speed(self, r, fig=True, **kwarg):
         if fig is True:
             plt.figure()
+        if not 'smooth' in kwarg:
+            kwarg['smooth'] = 'hanning'
+            if not 'sw' in kwarg:
+                kwarg['sw'] = 41
         ir = self.rloc(r)
         data = self.prop_speed(ir=ir)
         self._r_phase_plotter(r, data, **kwarg)
@@ -1562,6 +1588,10 @@ class BLsim(object):
         return None
 
     def r_amp(self, r, fig=True, **kwarg):
+        if not 'smooth' in kwarg:
+            kwarg['smooth'] = 'hanning'
+            if not 'sw' in kwarg:
+                kwarg['sw'] = 11
         if fig is True:
             plt.figure()
         ir = self.rloc(r)
@@ -1933,8 +1963,8 @@ class auxBLsim(BLsim):
         return out
 
 def refreshSim(sim):
-    attr = ['fft_data', 'fft_time', 'main_modes', 'mode_mask']
-    opt = {i: getattr(sim, '_' + i) for i in attr}
+    attr = ['fft_data', 'fft_time', 'main_modes', 'mode_mask', 'phase_angle']
+    opt = {i: getattr(sim, '_' + i, None) for i in attr}
     return BLsim(sim.path, **opt)
 
 ######################
