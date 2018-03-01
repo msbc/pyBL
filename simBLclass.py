@@ -1405,7 +1405,7 @@ class BLsim(object):
         if self._main_modes is None:
             fft = self.fft * self.rc[np.newaxis, np.newaxis, :]
             nt = fft.shape[0]
-            a = self.intr(np.abs(fft[nt//2:]).sum(axis=0))
+            a = self.intr(self.rc[np.newaxis] * (fft[nt//2:]**2).sum(axis=0))
             self._main_modes = sorted(range(a.size), key=lambda x: -a[x])
         modes = self._main_modes[:]
         if skip_zero:
@@ -1555,8 +1555,8 @@ class BLsim(object):
         data = self.prop_speed(ir=ir)
         self._r_phase_plotter(r, data, **kwarg)
         ylim = list(plt.ylim())
-        ylim[0] = max(0, ylim[0])
-        ylim[1] = min(1, ylim[1])
+        ylim[0] = 0
+        ylim[1] = 1
         plt.ylim(*ylim)
         plt.ylabel('Speed')
         return None
