@@ -68,11 +68,13 @@ def mod_grad(data, mod=1, axis=0):
     return out
 
 def grad(t, data, axis=0):
+    nd = len(data.shape)
+    if axis == -1:
+        axis += nd
     loc = (slice(None),) * axis
     l = loc + (slice(None, -2),)
     c = loc + (slice(1, -1),)
     r = loc + (slice(2, None),)
-    nd = len(data.shape)
     fill = [np.newaxis] * nd
     fill[axis] = slice(None)
     fill = tuple(fill)
@@ -85,6 +87,12 @@ def grad(t, data, axis=0):
     out[loc + (0,)] = (data[loc + (1,)] - data[loc + (0,)]) / dl[loc + (0,)]
     out[loc + (-1,)] = (data[loc + (-2,)] - data[loc + (-1,)]) / dr[loc + (-1,)]
     return out
+
+def crudeDiff(t, data, axis=0):
+    dt = np.diff(t)[(np.newaxis,) * axis + (slice(None),) + (np.newaxis,) * max(0, (len(data.shape) - axis - 1))]
+    out = np.diff(data, axis=axis) / dt
+    loc = (slice(None),) * axis + (-1,)
+    return np.concatenate(out, out[loc], axis=axis)
 
 def smooth(data, width=64):
     try:
@@ -630,7 +638,20 @@ class BLaux(BLfile):
         ax = plt.subplot(224)
         self.plot2d('pseudo', ax=ax)
 
-class BLConsPrim(BLfile):
+class BL3Dfile(BLfile):
+    def curl(self, data):
+        if hasattr(data, 'lower'):
+            data = self[data+'1'], self[data+'2']
+        x, y = data
+        y *= self.rc[np.newaxis,:]
+        return (grad(self.rc, y, axis=1) - np.gradient(x,axis=0)) / self.rc[np.newaxis,:]
+
+class BLConsPrim(BL3Dfile):
+    def vorticity(self):
+        return self.curl('vel')
+
+    def vortensity(self):
+        return self.vorticity() / self['dens']
 
     def rhoWeight(self, data):
         data = self._parse_data(data)
@@ -1034,7 +1055,7 @@ class BLsim(object):
             fmts = _file_fmts
         self._fmts = fmts
         self.name = os.path.split(os.path.abspath(path))[-1]
-        path = os.path.expanduser(path)
+        path = os.path.abspath(os.path.expanduser(path))
         if path == self.name and not os.path.isdir(path):
             for d in _dirs:
                 tmp = os.path.join(d, path)
@@ -1105,6 +1126,18 @@ class BLsim(object):
 
         return None
         # End init
+
+    def _unwrap(self, phase=None, time=None, limit=None):
+        if phase is None:
+            phase = np.angle(self.fft)
+        if time is None:
+            time = self.fft_time
+        if limit is None:
+            limit = - .1 / np.arange(phase.shape[1])[np.newaxis,:,np.newaxis]
+        d = grad(time, phase, axis=0)
+        shift = np.zeros_like(phase)
+        shift[np.where(d < limit)] += tau
+        return phase + shift.cumsum(axis=1)
 
     def _collect_fft_data(self):
         ffts = [out for out in self.fileDict.keys()
@@ -1661,7 +1694,7 @@ class BLsim(object):
             bf = self.loadfile(bf)
         return bf.plot2d(data, **kwargs)
 
-    def speed_shift(self, phi_dot=0, data='pseudo', base='cons', t0=None, t1=None,
+    def speed_shift(self, phi_dot=0, data='Rpseudo', base='cons', t0=None, t1=None,
                     mkmov=False, mov_opt={}, sdir=None, **kwargs):
         kwargs['phi_dot'] = phi_dot
         kwargs['ret_fn'] = True
