@@ -282,7 +282,7 @@ class BLfile(dict):
         _popt = {}
         if data is None:
             data = self._defvar
-        if data == 'pseudo' and r_cut is None:
+        if data in ['pseudo', 'Rpseudo'] and r_cut is None:
             r_cut = .85
         data = self._parse_data(data)
         if not smooth is None:
@@ -1251,7 +1251,10 @@ class BLsim(object):
     def phase_angle(self):
         if not self._phase_angle is None:
             return self._phase_angle
-        return self._collect_fft_data()[2]
+        if self._fft_data is None:
+            return self._collect_fft_data()[2]
+        self._phase_angle = self._unwrap()
+        return self._phase_angle
 
     def rloc(self, r):
         return np.abs(r - self.rc).argmin()
@@ -1574,7 +1577,7 @@ class BLsim(object):
         if fig is True:
             plt.figure()
         if not 'smooth' in kwarg:
-            kwarg['smooth'] = 'hanning'
+            kwarg['smooth'] = 'flat'
             if not 'sw' in kwarg:
                 kwarg['sw'] = 41
         ir = self.rloc(r)
@@ -1589,9 +1592,9 @@ class BLsim(object):
 
     def r_amp(self, r, fig=True, **kwarg):
         if not 'smooth' in kwarg:
-            kwarg['smooth'] = 'hanning'
+            kwarg['smooth'] = 'flat'
             if not 'sw' in kwarg:
-                kwarg['sw'] = 11
+                kwarg['sw'] = 41
         if fig is True:
             plt.figure()
         ir = self.rloc(r)
@@ -1767,7 +1770,7 @@ class BLsim(object):
 
         ax = plt.subplot(gs[0,nr])
         f = self.loadfile(self.files('cons')[-1])
-        f.plot2d('pseudo', ax=ax, vmin='smart', cbl=r'$v_r\sqrt{\rho}$', subsample=subsample)
+        f.plot2d('Rpseudo', ax=ax, vmin='smart', cbl=r'$v_r\sqrt{\rho}$', subsample=subsample)
         fig.suptitle('Diagnostic for ' + helpers.sanitize_lbl(self.name))
 
         ax = plt.subplot(gs[-1,-1])
