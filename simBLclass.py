@@ -289,6 +289,8 @@ class BLfile(dict):
             data = self._defvar
         if data in ['pseudo', 'Rpseudo'] and r_cut is None:
             r_cut = .85
+        if hasattr(data, 'lower') and cbl is None:
+            cbl = helpers.labeler(data)
         data = self._parse_data(data)
         if not smooth is None:
             data = self.smooth(data, smooth)
@@ -319,6 +321,8 @@ class BLfile(dict):
         if 'smart' in [vmin, vmax]:
             rloc = slice(None)
             if r_cut:
+                if subsample:
+                    raise NotImplementedError('r_cut not compatible with subsample')
                 rloc = slice(self.rloc(r_cut), None)
             tmp = helpers.smartlim(data[:, rloc], **tmp)
             if vmin == 'smart':
@@ -339,24 +343,30 @@ class BLfile(dict):
                 vmax = abs(vmin)
             vmin = -vmax
 
-        if name:
-            if title is None:
-                #title = self.name + ' ' + self.t_str + ' ' + name
-                title = self.name + ' ' + name
-            if save and fn is None:
-                fn = self._prefix + '_' + name + '_plot.' + ext
-
-        _popt = dict(cmap=cmap, vmin=vmin, vmax=vmax)
+        _popt.update(dict(cmap=cmap, vmin=vmin, vmax=vmax))
         _popt.update(popt)
 
         if fig is None and ax is None:
             fig = plt.figure(**fopt)
+            if name is None:
+                name = True
         if ax:
             plt.sca(ax)
         else:
             ax = plt.gca()
         if aspect:
             ax.set_aspect(aspect)
+
+        if name:
+            if name in [True, 1]:
+                name = ''
+            if title is None:
+                #title = self.name + ' ' + self.t_str + ' ' + name
+                title = self.name + ' ' + name
+                if self.sim:
+                    title = self.sim.name + ' $t/2\pi = {0:g}$'.format(self.t / tau)
+            if save and fn is None:
+                fn = self._prefix + '_' + name + '_plot.' + ext
 
         #start plotting
         pcm = plt.pcolormesh(x, y, data, **_popt)
@@ -654,7 +664,10 @@ class BL3Dfile(BLfile):
 
 class BLConsPrim(BL3Dfile):
     def vorticity(self):
-        return self.curl('vel')
+        out = self.curl('vel')
+        #out[:,0] = out[:, 1]
+        #out[:,-1] = out[:,-2]
+        return out
 
     def vortensity(self):
         return self.vorticity() / self['dens']
