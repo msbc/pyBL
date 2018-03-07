@@ -1342,7 +1342,7 @@ class BLsim(object):
         return mask
 
     def mode_phase(self):
-        DeprecationWarning('This function is deprecated.')
+        DeprecationWarning('This function (mode_phase) is deprecated.')
         out = np.array([np.abs(self.fft), self.phase_angle])
         return out
 
