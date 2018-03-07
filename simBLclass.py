@@ -78,13 +78,14 @@ def grad(t, data, axis=0):
     fill = [np.newaxis] * nd
     fill[axis] = slice(None)
     fill = tuple(fill)
-    D =  (t[l[-1]] - t[r[-1]])[fill]
+    Dinv =  (t[r[-1]] - t[l[-1]])[fill]**-1
     dl = (t[c[-1]] - t[l[-1]])[fill]
-    dr = (t[c[-1]] - t[r[-1]])[fill]
-    norm = 1. / (dl * dr * D)
+    dr = (t[r[-1]] - t[c[-1]])[fill]
+    rat = dr / dl
+    #norm = (dl * dr * D)**-2
     out = np.zeros_like(data)
-    out[c] = (dl + dr) * D * data[c] - dr**2 * data[l] + dl**2 * data[r]
-    data[c] *= norm
+    out[c] = (dl**-1 - dr**-1) * data[c] + Dinv / rat * data[r] - rat * Dinv * data[l]
+    #data[c] *= norm
     out[loc + (0,)] = (data[loc + (1,)] - data[loc + (0,)]) / dl[loc + (0,)]
     out[loc + (-1,)] = (data[loc + (-2,)] - data[loc + (-1,)]) / dr[loc + (-1,)]
     return out
@@ -253,6 +254,10 @@ class BLfile(dict):
     def intr(self, data, axis=-1):
         data = self._parse_data(data)
         return intr(self.dr, data, axis=axis)
+
+    def ddphi(self, data, axis=0):
+        data = self._parse_data(data)
+        return (np.roll(data, -1, axis=axis) - np.roll(data, 1, axis=axis)) / (self.phic[2] - self.phic[0])
 
     def fft(self, data, axis=-2, mag=False):
         try:
@@ -645,7 +650,7 @@ class BL3Dfile(BLfile):
             data = self[data+'1'], self[data+'2']
         x, y = data
         y *= self.rc[np.newaxis,:]
-        return (grad(self.rc, y, axis=1) - np.gradient(x,axis=0)) / self.rc[np.newaxis,:]
+        return (grad(self.rc, y, axis=1) - self.ddphi(x)) / self.rc[np.newaxis,:]
 
 class BLConsPrim(BL3Dfile):
     def vorticity(self):
@@ -1358,7 +1363,7 @@ class BLsim(object):
             m = m[np.newaxis,:]
         #dphi = np.gradient(data[1] / dt, axis=0)
         #dphi = mod_grad(data, axis=0, mod=tau)
-        dphi = crudeDiff(self.fft_time, data)
+        dphi = grad(self.fft_time, data)
         return dphi / m
 
     def mt_plot(self, r, fn=None, save=False, ext='pdf', sdir=None,
