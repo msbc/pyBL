@@ -22,6 +22,31 @@ except ImportError:
     print('Warning, cannot load "convolve_fft" from astropy. Using scipy equivlent which uses zero padding.')
     from scipy.signal import fftconvolve
 
+def labeler(name):
+    sub = None
+    for vec in ['mom', 'vel', 'mag', 'B']:
+        if name[:len(vec)] == vec:
+            try:
+                i = int(name[len(vec):])
+                if i == 1:
+                    sub = 'r'
+                elif i == 2:
+                    sub = r'\phi'
+                else:
+                    raise TypeError
+                name = vec
+            except TypeError:
+                pass
+    try:
+        out = {'vel': 'v', 'mom': r'\rho v', 'mag': 'B', 'dens': r'\rho',
+               'pres': 'P', 'vorticity': r'\omega_z',
+               'vortensity': r'\omega_z/\rho'}[name]
+        if sub:
+            out += '_' + sub
+        return '$' + out + '$'
+    except KeyError:
+        return sanitize_lbl(name)
+
 def sanitize_lbl(name):
   '''sanitize_lbl(label):
   Makes labels latex friendly.'''
