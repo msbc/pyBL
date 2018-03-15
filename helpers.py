@@ -39,8 +39,8 @@ def labeler(name):
                 pass
     try:
         out = {'vel': 'v', 'mom': r'\rho v', 'mag': 'B', 'dens': r'\rho',
-               'pres': 'P', 'vorticity': r'\omega_z',
-               'vortensity': r'\omega_z/\rho'}[name]
+               'pres': 'P', 'Rpseudo': r'rv_r\sqrt{\rho}', 'pseudo': r'v_r\sqrt{\rho}',
+               'vorticity': r'\omega_z', 'vortensity': r'\omega_z/\rho'}[name]
         if sub:
             out += '_' + sub
         return '$' + out + '$'

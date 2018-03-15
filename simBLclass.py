@@ -273,11 +273,17 @@ class BLfile(dict):
         return np.abs(r - self.rc).argmin()
 
     def plot2d(self, data=None, fn=None, save=False, subsample=False, title=None,
-               name=None, ext='pdf', popt={}, cb=True, cbl=None, zerocent=None,
-               vmin=None, vmax=None, cmap=None, cbopt={}, fig=None, fopt={},
+               name=None, ext='pdf', popt=None, cb=True, cbl=None, zerocent=None,
+               vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                ax=None, log=False, aspect=1, sdir=None, smooth=None,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False):
         '''Plot 2D sim data'''
+        if fopt is None:
+            fopt = {}
+        if popt is None:
+            popt = {}
+        if cbopt is None:
+            cbopt = {}
         r = self.r[np.newaxis, :]
         phi = self.phi[:,np.newaxis] + phi_shift
         if self.t and phi_dot:
@@ -289,8 +295,18 @@ class BLfile(dict):
             data = self._defvar
         if data in ['pseudo', 'Rpseudo'] and r_cut is None:
             r_cut = .85
+            if vmax is None and vmin is None:
+                vmin = 'smart'
+        if data in ['vorticity', 'vortensity']:
+            if r_cut is None:
+                r_cut = .9
+            if zerocent is None:
+                zerocent = True
+            if vmax is None and vmin is None:
+                vmax = 'smart'
         if hasattr(data, 'lower') and cbl is None:
             cbl = helpers.labeler(data)
+            name = data
         data = self._parse_data(data)
         if not smooth is None:
             data = self.smooth(data, smooth)
@@ -364,7 +380,7 @@ class BLfile(dict):
                 #title = self.name + ' ' + self.t_str + ' ' + name
                 title = self.name + ' ' + name
                 if self.sim:
-                    title = self.sim.name + ' $t/2\pi = {0:g}$'.format(self.t / tau)
+                    title = self.sim.name + r' $t/2\pi = {0:g}$'.format(self.t / tau)
             if save and fn is None:
                 fn = self._prefix + '_' + name + '_plot.' + ext
 
@@ -548,111 +564,6 @@ class BLaux(BLfile):
                 traceback.print_exc(file=sys.stdout)
                 print('-' * 60)
 
-    def FFT_errors(self, vmin='smart', vmax='max', mmax=None):
-        pfft = self.fft('pseudo')
-        afft = (self['FT-Re'] + 1j * self['FT-Im'])[:225]
-        loc = slice(None)
-        if not mmax is None:
-            loc = slice(None, mmax + 1)
-        amp = np.abs(afft)
-        n = self.rc.size * self.phic.size
-        norm = np.median(np.abs(pfft) / amp)
-        if norm > np.sqrt(n):
-            norm = n
-        elif int(norm + .5) == 1:
-            norm = 1
-        afft *= norm
-        amp *= norm
-        print("norm:", norm, "post-norm:", np.median(np.abs(pfft)/np.abs(afft)))
-        dmag = (np.abs(pfft) - amp) / np.abs(pfft)
-        dth = np.angle(pfft) - np.angle(afft)
-        _opt = dict(interpolation='nearest', norm=mpl.colors.LogNorm())
-        fig = plt.figure(figsize=(8,8))
-        #fig, axs = plt.subplots(1, 3, figsize=(12,4))
-
-        #plt.figure()
-        #plt.sca(axs[0])
-        plt.subplot(221)
-        data = abs(dmag)
-        opt = {}
-        opt.update(_opt)
-        if 'smart' in [vmin, vmax]:
-            tmp = helpers.smartlim(data[loc])
-        if vmin == 'smart':
-            opt['vmin'] = tmp[0]
-        else:
-            opt['vmin'] = vmin
-        if vmax == 'smart':
-            opt['vmax'] = tmp[1]
-        elif vmax == 'max':
-            opt['vmax'] = data[loc].max()
-        else:
-            opt['vmax'] = vmax
-        im = plt.imshow(data, **opt)
-        cb = plt.colorbar(im)
-        plt.xlabel('r index')
-        plt.ylabel('mode')
-        cb.set_label(r'$\left|\Delta|{\rm FFT}|/|{\rm FFT})|\right|$')
-        ylim = plt.ylim(None, mmax)
-
-        #plt.figure()
-        #plt.sca(axs[1])
-        plt.subplot(222)
-        data = abs(dth)
-        del(opt)
-        opt1 = {}
-        opt1.update(_opt)
-        if 'smart' in [vmin, vmax]:
-            tmp = helpers.smartlim(data[loc])
-        if vmin == 'smart':
-            opt1['vmin'] = tmp[0]
-        else:
-            opt1['vmin'] = vmin
-        if vmax == 'smart':
-            opt1['vmax'] = tmp[1]
-        elif vmax == 'max':
-            opt1['vmax'] = data[loc].max()
-        else:
-            opt1['vmax'] = vmax
-        im1 = plt.imshow(data, **opt1)
-        cb1 = plt.colorbar(im1)
-        plt.xlabel('r index')
-        plt.ylabel('mode')
-        cb1.set_label(r'$\left|\Delta\theta\right|$')
-        plt.ylim(*ylim)
-        #return None
-
-        #plt.figure()
-        #plt.sca(axs[2])
-        plt.subplot(223)
-        data = amp
-        del(cb,cb1,opt1,vmin,vmax)
-        opt2 = {}
-        opt2.update(_opt)
-        if 0:
-            if 'smart' in [vmin, vmax]:
-                tmp = helpers.smartlim(data[loc])
-            if vmin == 'smart':
-                opt2['vmin'] = tmp[0]
-            else:
-                opt2['vmin'] = vmin
-            if vmax == 'smart':
-                opt2['vmax'] = tmp[1]
-            else:
-                opt2['vmax'] = vmax
-        #opt2['vmin'] = helpers.smartlim(data[loc])[0]
-        #opt2['vmax'] = data[loc].max()
-        print(opt2)
-        im2 = plt.imshow(data,interpolation='nearest', norm=mpl.colors.LogNorm(),
-                         vmin=helpers.smartlim(data[loc])[0], vmax=data[loc].max())#, vmin=helpers.smartlim(data[loc])[0], **opt2)
-        cb2 = plt.colorbar(im2)
-        plt.xlabel('r index')
-        plt.ylabel('mode')
-        cb2.set_label(r'$\left|{\rm FFT}\right|$')
-        plt.ylim(*ylim)
-
-        ax = plt.subplot(224)
-        self.plot2d('pseudo', ax=ax)
 
 class BL3Dfile(BLfile):
     def curl(self, data):
@@ -820,6 +731,87 @@ class BLConsPrim(BL3Dfile):
     def hs(self, S0):
         return -S0 / self.ddr(S0)
 
+    def FFT_errors(self, ft_file, var='pseudo', vmin='smart', vmax='max'):
+        afft = ft_file['FT-' + var]
+        if len(var) == 2:
+            if var[0] == 'v':
+                var = 'vel' + var[-1]
+        pfft = self.fft(var)[:afft.shape[0]]
+        amp = np.abs(afft)
+        n = self.rc.size * self.phic.size
+        norm = np.median(np.abs(pfft) / amp)
+        if norm > np.sqrt(n):
+            norm = n
+        elif int(norm + .5) == 1:
+            norm = 1
+        afft *= norm
+        amp *= norm
+        print("norm:", norm, "post-norm:", np.median(np.abs(pfft)/np.abs(afft)))
+        dmag = (np.abs(pfft) - amp) / np.abs(pfft)
+        dth = (np.angle(pfft) + np.angle(afft))# % tau
+
+        fig = plt.figure(figsize=(8,8))
+        ax0 = plt.subplot(221)
+        data = abs(dmag)
+        avmax = vmax
+        avmin = vmin
+        if 'smart' in [vmin, vmax]:
+            tmp = helpers.smartlim(data)
+        if vmin == 'smart':
+            avmin = tmp[0]
+        else:
+            avmin = vmin
+        if vmax == 'smart':
+            avmax = tmp[1]
+        elif vmax == 'max':
+            avmax = data.max()
+        else:
+            avmax = vmax
+
+        im0 = plt.imshow(data, vmin=avmin, vmax=avmax, interpolation='nearest', norm=mpl.colors.LogNorm())
+        cb0 = plt.colorbar(im0, ax=ax0)
+        plt.xlabel('r index')
+        plt.ylabel('mode')
+        cb0.set_label(r'$\left|\Delta|{\rm FFT}|/|{\rm FFT})|\right|$')
+
+        ax1 = plt.subplot(222)
+        data1 = abs(dth)
+        bvmax = vmax
+        bvmin = vmin
+        if 'smart' in [vmin, vmax]:
+            tmp = helpers.smartlim(data1)
+        if vmin == 'smart':
+            bvmin = tmp[0]
+        else:
+            bvmin = vmin
+        if vmax == 'smart':
+            bvmax = tmp[1]
+        elif vmax == 'max':
+            bvmax = data1.max()
+        else:
+            bvmax = vmax
+
+        im1 = plt.imshow(data1, vmin=bvmin, vmax=bvmax, interpolation='nearest', norm=mpl.colors.LogNorm())
+        cb1 = plt.colorbar(im1, ax=ax1)
+        plt.xlabel('r index')
+        plt.ylabel('mode')
+        cb1.set_label(r'$\left|\Delta\theta\right|$')
+
+        plt.subplot(223)
+        data = amp
+        # opt2['vmin'] = helpers.smartlim(data[loc])[0]
+        # opt2['vmax'] = data[loc].max()
+        im2 = plt.imshow(data, interpolation='nearest', norm=mpl.colors.LogNorm(),
+                         vmin=helpers.smartlim(data)[0],
+                         vmax=data.max())  # , vmin=helpers.smartlim(data[loc])[0], **opt2)
+        cb2 = plt.colorbar(im2)
+        plt.xlabel('r index')
+        plt.ylabel('mode')
+        cb2.set_label(r'$\left|{\rm FFT}\right|$')
+
+        ax = plt.subplot(224)
+        self.plot2d(var, ax=ax)
+
 class BLcons(BLConsPrim):
     def _special_keys(self, key):
         if key[:3] == 'vel' and len(key) == 4:
@@ -871,10 +863,18 @@ class BLFT(BLfile):
     def _special_keys(self, key):
         if key == 'FT':
             return (self['FT-Re'] - 1j * self['FT-Im']).astype('complex64')
+        if key + '-Re' in self.data and key + '-Im' in self.data:
+            return (self[key + '-Re'] - 1j * self[key + '-Im']).astype('complex64')
+        if key == 'FT':
+            if 'FT-pseudo-Re' in self.data:
+                key = 'FT-pseudo'
+            return (self[key + '-Re'] - 1j * self[key + '-Im']).astype('complex64')
         if key in ['mag', 'amp']:
             return np.abs(self['FT'])
         if key == 'angle':
             return np.angle(self['FT'])
+        if 'FT-' + key + '-Re' in self.data:
+            return self._special_keys('FT-' + key)
         return None
 
 ############################
@@ -917,7 +917,7 @@ def loadBLfile(fn, **kwargs):
         return BLcons(fn, data=data, **kwargs)
     if kind in ['FT', 'FT-Range']:
         return BLFT(fn, data=data, **kwargs)
-    raise RuntimeError
+    #raise RuntimeError
     return BLfile(fn, data=data, **kwargs)
 
 class _old_BLsliceFile(object):
@@ -1090,12 +1090,21 @@ class BLsim(object):
             tmp = glob(qry)
             if len(tmp) == 1:
                 athinput = tmp[0]
+            else:
+                if 'athinput.bl' in tmp:
+                    athinput = 'athinput.bl'
+                else:
+                    athinput = sorted(tmp, key=os.path.getmtime)[-1]
+                print('Multiple athena inputs detected. Using "{0:}".'.format(athinput))
         if os.path.isfile(athinput):
             self.inputs = ar.athinput(athinput)
+        elif os.path.isfile(os.path.join(self.path, athinput)):
+            self.inputs = ar.athinput(os.path.join(self.path, athinput))
         else:
             self.inputs = {}
         self.fileDict = {}
         self.varDict = {}
+        self.idDict = {}
         axes = []
         if not self.inputs:
             searches = [fmt.split('%')[0] + '*.' + fmt.split('d.')[-1] for fmt in fmts]
@@ -1135,6 +1144,7 @@ class BLsim(object):
                 var = self.inputs[out].get('variable')
                 if varlist.count(var) == 1:
                     self.varDict[var] = out
+                self.idDict[b] = out
 
         #for attr in ['r', 'phi', 'rc', 'phic']:
         #    setattr(self, attr, getattr(tmp, attr))
@@ -1226,6 +1236,8 @@ class BLsim(object):
     def files(self, key=None):
         if key is None:
             return self.filenames
+        if key in self.idDict:
+            return self.fileDict[self.idDict[key]]
         if key in self.fileDict:
             return self.fileDict[key]
         if key in self.varDict:
@@ -1719,6 +1731,13 @@ class BLsim(object):
         return m
 
     def plot2d(self, data, *args, **kwargs):
+        phi_dot = kwargs.pop('phi_dot', [0])
+        if not type(data) == list:
+            data = [data]
+        sdir = False
+        out = []
+        if len(phi_dot) > 0 and kwargs.get('sdir', None) is None:
+            sdir = True
         if len(args) == 1:
             bf = args[1]
         else:
@@ -1736,35 +1755,53 @@ class BLsim(object):
                     tmp[1] += 1
                 except (IndexError, TypeError):
                     pass
-                out = []
                 for fn in self.files(pre)[slice(*tmp)]:
                     bf = self.loadfile(fn)
-                    out.append(bf.plot2d(data, **kwargs))
+                    for pd in phi_dot:
+                        kwargs['phi_dot'] = pd
+                        if sdir is True:
+                            kwargs['sdir'] = '%g' % pd
+                        if not 'title' in kwargs:
+                            kwargs['title'] = r'$\Omega_p = {0:g}$'.format(pd)
+                        for d in data:
+                            out.append(bf.plot2d(d, **kwargs))
                 return out
         if not hasattr(bf, 'plot2d'):
             bf = self.loadfile(bf)
-        return bf.plot2d(data, **kwargs)
+        for pd in phi_dot:
+            kwargs['phi_dot'] = pd
+            if sdir is True:
+                kwargs['sdir'] = '%g' % phi_dot
+            for d in data:
+                out.append(bf.plot2d(d, **kwargs))
+        if len(out) == 1:
+            return out[0]
+        return out
 
-    def speed_shift(self, phi_dot=0, data='Rpseudo', base='cons', t0=None, t1=None,
-                    mkmov=False, mov_opt={}, sdir=None, **kwargs):
+    def speed_shift(self, phi_dot=.1*np.arange(10), data=None, base='cons', t0=None, t1=None,
+                    mkmov=False, add_phi_dot=None, dpi=300, **kwargs):
+        if data is None:
+            data = ['Rpseudo', 'vorticity', 'vortensity']
+        phi_dot = np.atleast_1d(phi_dot)
+        if not add_phi_dot is None:
+            phi_dot = np.concatenate([phi_dot, np.atleast_1d(add_phi_dot)])
         kwargs['phi_dot'] = phi_dot
         kwargs['ret_fn'] = True
+        if dpi:
+            tmp = kwargs.get('fopt', None)
+            if tmp is None:
+                kwargs['fopt'] = {'dpi': dpi}
+            elif not 'dpi' in tmp:
+                kwargs['fopt']['dpi'] = dpi
         if not 'save' in kwargs:
             kwargs['save'] = True
             if not 'ext' in kwargs:
                 kwargs['ext'] = 'png'
-        if sdir is None:
-            sdir = '%g' % phi_dot
-        pwd = os.getcwd()
-        if sdir:
-            if not os.path.isdir(sdir):
-                os.makedirs(sdir)
-            os.chdir(sdir)
         fns = self.plot2d(data, base, t0, t1, **kwargs)
         if mkmov:
+            raise NotImplementedError('Need to reimplement for multiple phi-dots.')
             helpers.mkmov(fnames="")
-        os.chdir(pwd)
-
+        return None
 
     def diagnostic(self, rs=[.8,1.3], save=False, fn=None, ext='pdf', figsize=None,
                    sdir=None, subsample=None, sz=4):
