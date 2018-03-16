@@ -293,20 +293,23 @@ class BLfile(dict):
         _popt = {}
         if data is None:
             data = self._defvar
-        if data in ['pseudo', 'Rpseudo'] and r_cut is None:
-            r_cut = .85
-            if vmax is None and vmin is None:
-                vmin = 'smart'
-        if data in ['vorticity', 'vortensity']:
-            if r_cut is None:
-                r_cut = .9
-            if zerocent is None:
-                zerocent = True
-            if vmax is None and vmin is None:
-                vmax = 'smart'
-        if hasattr(data, 'lower') and cbl is None:
-            cbl = helpers.labeler(data)
-            name = data
+        if hasattr(data, 'lower'):
+            if data in ['pseudo', 'Rpseudo'] and r_cut is None:
+                r_cut = .85
+                if vmax is None and vmin is None:
+                    vmin = 'smart'
+            if data in ['vorticity', 'vortensity']:
+                if r_cut is None:
+                    r_cut = .9
+                if zerocent is None:
+                    zerocent = True
+                if vmax is None and vmin is None:
+                    vmax = 'smart'
+            if data in ['vi', 've']:
+                vmin='99%'
+            if cbl is None:
+                cbl = helpers.labeler(data)
+                name = data
         data = self._parse_data(data)
         if not smooth is None:
             data = self.smooth(data, smooth)
@@ -574,14 +577,25 @@ class BL3Dfile(BLfile):
         return (grad(self.rc, y, axis=1) - self.ddphi(x)) / self.rc[np.newaxis,:]
 
 class BLConsPrim(BL3Dfile):
-    def vorticity(self):
-        out = self.curl('vel')
+    def vorticity(self, dvphi=False):
+        if dvphi:
+            out = self['vel2']
+            out -=  self.rhoWeight(out)[np.newaxis,:]
+            out = self.curl((self['vel1'], out))
+        else:
+            out = self.curl('vel')
         #out[:,0] = out[:, 1]
         #out[:,-1] = out[:,-2]
         return out
 
-    def vortensity(self):
-        return self.vorticity() / self['dens']
+    def vortensity(self, dvphi=False):
+        return self.vorticity(dvphi=dvphi) / self['dens']
+
+    def vi(self):
+        return self.rc[np.newaxis,:]**2 * self.vorticity(True)
+
+    def ve(self):
+        return self.rc[np.newaxis,:]**2 * self.vortensity(True)
 
     def rhoWeight(self, data):
         data = self._parse_data(data)
@@ -1732,6 +1746,7 @@ class BLsim(object):
 
     def plot2d(self, data, *args, **kwargs):
         phi_dot = kwargs.pop('phi_dot', [0])
+        pop_title = False
         if not type(data) == list:
             data = [data]
         sdir = False
@@ -1762,9 +1777,12 @@ class BLsim(object):
                         if sdir is True:
                             kwargs['sdir'] = '%g' % pd
                         if not 'title' in kwargs:
-                            kwargs['title'] = r'$\Omega_p = {0:g}$'.format(pd)
+                            kwargs['title'] = r'$\Omega_p = {0:g},\, t/2\pi = {1:07.2f}$'.format(pd, bf.t/tau)
+                            pop_title = True
                         for d in data:
                             out.append(bf.plot2d(d, **kwargs))
+                        if pop_title:
+                            kwargs.pop['title']
                 return out
         if not hasattr(bf, 'plot2d'):
             bf = self.loadfile(bf)
@@ -1870,6 +1888,114 @@ class BLsim(object):
             plt.close()
             return fn
         return None
+
+    def gatherVort(self):
+        out = {i: [] for i in ['vorticity', 'vortensity', 'dvorticity', 'dvortensity']}
+        i = 0
+        for f in self.files('cons'):
+            bf = self.loadfile(f)
+            tmp = bf.vorticity()
+            out['vorticity'].append(tmp.mean(axis=0))
+            tmp /= bf['dens']
+            out['vortensity'].append(tmp.mean(axis=0))
+            tmp = bf.vorticity(True)
+            out['dvorticity'].append(tmp.mean(axis=0))
+            tmp /= bf['dens']
+            out['dvortensity'].append(tmp.mean(axis=0))
+            if not i % 10:
+                print(i)
+            i += 1
+        return {i: np.array(out[i]) for i in out.keys()}
+
+    def stVort(self, data=None, var=None, vmin=None, vmax='smart', zerocent=None, log=False, cmap=None, popt=None,
+               r_cut=None, fig=None, ax=None, fopt=None, interpolation='nearest'):
+        if fopt is None:
+            fopt = {}
+        if popt is None:
+            popt = {}
+        _popt = {}
+        if data is None:
+            fn = os.path.join(self.path, "v_st.p")
+            if os.path.isfile(fn):
+                import pickel
+                data = pickle.load(open(fn, "rb" ))
+                #pickle.dump(data, fn, "wb"))
+            else:
+                data = self.gatherVort()
+        if type(data) == dict:
+            if var is None:
+                var = 'dvortensity'
+            data = data[var]
+        nt = data.shape[0]
+        #ext = [[0, nt], []]
+        if fig is None and ax is None:
+            fig = plt.figure(**fopt)
+        if ax:
+            plt.sca(ax)
+        else:
+            ax = plt.gca()
+
+        tmp = {}
+        try:
+            if '%' == vmin[-1]:
+                tmp['low'] = float(vmin[:-1])
+                vmin = 'smart'
+        except TypeError:
+            pass
+        try:
+            if '%' == vmax[-1]:
+                tmp['high'] = float(vmax[:-1])
+                vmax = 'smart'
+        except TypeError:
+            pass
+        if 'smart' in [vmin, vmax]:
+            rloc = slice(None)
+            if r_cut:
+                rloc = slice(self.rloc(r_cut), None)
+            tmp = helpers.smartlim(data[:, rloc], **tmp)
+            if vmin == 'smart':
+                vmin = tmp[0]
+            if vmax == 'smart':
+                vmax = tmp[1]
+        # check if zero centered data
+        if zerocent is None and not log:
+            zerocent = helpers.isZeroCent(data)
+        if zerocent:
+            if cmap is None:
+                cmap = helpers.NCcmap
+            if vmin is None and vmax is None:
+                vmax = np.abs(data).max()
+            elif vmin is None:
+                vmin = -abs(vmax)
+            else:
+                vmax = abs(vmin)
+            vmin = -vmax
+
+        _popt.update(dict(cmap=cmap, vmin=vmin, vmax=vmax))#, interpolation=interpolation))
+        _popt.update(popt)
+
+        #plt.imshow(data.T, **_popt)
+        x = np.arange(nt)[:,np.newaxis] * np.ones_like(data)
+        y = self.rc[np.newaxis,:] * np.ones_like(data)
+        pcm = plt.pcolormesh(x, y, data, **_popt)
+        plt.colorbar()
+
+        plt.xlabel('$t / 2\pi$')
+        plt.ylabel('$r$')
+
+    def tVort(self, data, t, save=False):
+        plt.plot(self.rc, data['dvortensity'][t])
+        plt.plot(self.rc, data['dvorticity'][t])
+        plt.legend([r'$\delta\omega_z/\rho$', r'$\delta\omega_z$'])
+        plt.xlabel('$r$')
+        plt.title(r'$t/2\pi={0:d}$'.format(t))
+        plt.axes().xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+        if save:
+            fn = 'vort_t-{0:04d}.pdf'.format(t)
+            plt.savefig(fn)
+            plt.close()
+
+
 
 class auxBLsim(BLsim):
     def mode_plot(self, data=None, cb=True, title=None, cbl=None, vmin=0,
