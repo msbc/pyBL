@@ -316,6 +316,7 @@ def email_diag(sims, ext=None):
         if '/' in sim:
             sim = os.path.abspath(os.path.expanduser(sim))
         job = choose_job_type({'name': sim}, **opt)
+        print(job)
         job.send_file()
 
 
