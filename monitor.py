@@ -205,12 +205,9 @@ class zeusJob(_job):
 class athenaBL(_job):
     '''Class for Athena++ BL sims'''
     def gen_update(self):
-        try:
-            import matplotlib as mpl
-            mpl.use('agg')
-            import pyBL.simBLclass as bl
-        except ImportError:
-            return None
+        import matplotlib as mpl
+        mpl.use('agg')
+        import pyBL.simBLclass as bl
         sim = bl.BLsim(self.name.rstrip('.sh'))
         return sim.diagnostic(save=True, ext=self.ext)
 
