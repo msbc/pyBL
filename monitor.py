@@ -72,6 +72,7 @@ class searchDirs(object):
         out = dirs[:]
         for dir in dirs:
             out += [i for i in glob(os.path.join(dir, '*')) if os.path.isdir(i)]
+        return out
 
     @property
     def paths(self):
