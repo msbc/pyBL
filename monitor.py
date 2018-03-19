@@ -169,8 +169,10 @@ class _job(dict):
         return False
 
     def send_file(self, fn=None, subject=None):
+        print('Sending update for {0:}.'.format(self))
         if fn is None:
             fn = self.gen_update()
+            print('Generated update file "{0:}".'.format(fn))
         if not subject:
             subject = self._subject
         opt = {}
