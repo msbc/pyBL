@@ -16,6 +16,7 @@ from email.mime.text import MIMEText
 from optparse import OptionParser
 import numpy as np
 import getpass
+from glob import glob
 
 _from = getpass.getuser() + '@' + socket.gethostname()
 
@@ -52,6 +53,38 @@ def _setupMPL():
     mpl.rcParams['savefig.dpi'] = 300
 
 
+class searchDirs(object):
+    def __init__(self, solo_dirs=None, multi_dirs=None):
+        if solo_dirs is None:
+            solo_dirs = []
+        if multi_dirs is None:
+            multi_dirs = []
+        self.solo_dirs = solo_dirs
+        self.multi_dirs = multi_dirs
+        self._search_dirs = None
+
+    def abspath(self, *dirs):
+        return [os.path.abspath(os.path.expanduser(i)) for i in dirs]
+
+    def expand_multi(self, dirs=None):
+        if dirs is None:
+            dirs = self.abspath(*self.multi_dirs)
+        out = dirs[:]
+        for dir in dirs:
+            out += [i for i in glob(os.path.join(dir, '*')) if os.path.isdir(i)]
+
+    @property
+    def paths(self):
+        if self._search_dirs is not None:
+            return self._search_dir[:]
+        out = self.abspath(*self._solo_dirs) + self.expand_multi()
+        self._search_dirs = out
+        return out[:]
+
+
+BLdirs = searchDirs(['~/BLayer', '~/BLayer/fft_tests'], ['~/data/bl'])
+
+
 def choose_job_type(job, **opt):
     jname = job['name'].rstrip('.sh')
     if 0:
@@ -60,18 +93,13 @@ def choose_job_type(job, **opt):
             if os.path.isdir(tmp):
                 #print 'Zeus:', tmp, d, os.path.join(os.path.expanduser(d), jname)
                 return zeusJob(job, **opt)
-    bl_dirs = ['~/BLayer', '~/BLayer/fft_tests']
-    for i in ['~/data/bl']:
-        tmp = os.path.abspath(os.path.expanduser(i))
-        bl_dirs.append(tmp)
-        if os.path.isfile(tmp):
-            bl_dirs += [j for j in glob(tmp) if os.path.isdir(tmp)]
-    for d in bl_dirs:
-        tmp = os.path.abspath(os.path.join(os.path.expanduser(d), jname))
+    for d in BLdirs.paths:
+        tmp = os.path.abspath(os.path.join(d, jname))
         #print tmp, os.path.expanduser(d)
         if os.path.isdir(tmp):
             if not 'ext' in  opt:
                 opt['ext'] = 'png'
+            job['name'] = tmp
             return athenaBL(job, **opt)
     if 'BLayer' in jname:
         return athenaBL(job, **opt)
