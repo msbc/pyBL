@@ -28,10 +28,29 @@ _two_word_head = [i.lower() for i in ['job id', 'time use', 'slots ja-task-id']]
 
 np.seterr(divide='ignore')
 
+
+def which(program):
+    def is_exe(fpath):
+        return os.path.isfile(fpath) and os.access(fpath, os.X_OK)
+
+    fpath, fname = os.path.split(program)
+    if fpath:
+        if is_exe(program):
+            return program
+    else:
+        for path in os.environ["PATH"].split(os.pathsep):
+            exe_file = os.path.join(path, program)
+            if is_exe(exe_file):
+                return exe_file
+
+    return None
+
+
 def _setupMPL():
     import matplotlib as mpl
     mpl.use('agg')
     mpl.rcParams['savefig.dpi'] = 300
+
 
 def choose_job_type(job, **opt):
     jname = job['name'].rstrip('.sh')
@@ -40,18 +59,19 @@ def choose_job_type(job, **opt):
             tmp = os.path.join(os.path.expanduser(d), jname)
             if os.path.isdir(tmp):
                 #print 'Zeus:', tmp, d, os.path.join(os.path.expanduser(d), jname)
-                return zeus_job(job, **opt)
+                return zeusJob(job, **opt)
     for d in ['~/BLayer', '~/BLayer/fft_tests']:
         tmp = os.path.abspath(os.path.join(os.path.expanduser(d), jname))
         #print tmp, os.path.expanduser(d)
         if os.path.isdir(tmp):
             if not 'ext' in  opt:
                 opt['ext'] = 'png'
-            return athena_BL(job, **opt)
+            return athenaBL(job, **opt)
     if 'BLayer' in jname:
-        return athena_BL(job, **opt)
+        return athenaBL(job, **opt)
     #print job
-    return non_job(job, **opt)
+    return nonJob(job, **opt)
+
 
 class _job(dict):
     '''Base class for super computing jobs. Missing function gen_update.'''
@@ -127,7 +147,8 @@ class _job(dict):
         if self.updateQ():
             self.send_file()
 
-class zeus_job(_job):
+
+class zeusJob(_job):
     '''Class for Zeus shearing-box sims'''
     def gen_update(self):
         import read_sim as rs # only import if needed to reduce cpu time
@@ -142,7 +163,8 @@ class zeus_job(_job):
             sim.diagnostic(fn=fn)
         return fn
 
-class athena_BL(_job):
+
+class athenaBL(_job):
     '''Class for Athena++ BL sims'''
     def gen_update(self):
         try:
@@ -154,9 +176,11 @@ class athena_BL(_job):
         sim = bl.BLsim(self.name.rstrip('.sh'))
         return sim.diagnostic(save=True, ext=self.ext)
 
-class non_job(_job):
+
+class nonJob(_job):
     def gen_update(self):
       return None
+
 
 def _parse_head(head):
     head = head.lower().strip()
@@ -171,11 +195,12 @@ def _parse_head(head):
                     head[i] += '-' + b
     return [_remap_head.get(i, i) for i in head]
 
+
 def parse_queue(cmds=None, user=getpass.getuser(), usr_trunc=None, job_opt=None):
     if job_opt is None:
         job_opt = {}
     if cmds is None:
-        cmds = [i for i in _queue_cmds if os.popen('which ' + i)]
+        cmds = [i for i in _queue_cmds if which(i)]
     cmds = np.atleast_1d(cmds)
     if cmds.size == 0:
         raise RuntimeError('Cannot locate queue commands {0:}'.format(cmds))
@@ -206,6 +231,7 @@ def parse_queue(cmds=None, user=getpass.getuser(), usr_trunc=None, job_opt=None)
         usr = user[:usr_trunc]
         out = [i for i in out if i['user'] == usr]
     return [choose_job_type(i, **job_opt) for i in out]
+
 
 def email_file(to, path, subject='Automated python scripted email', preamble=None, sender=_from):
     outer = MIMEMultipart()
@@ -259,9 +285,10 @@ def email_file(to, path, subject='Automated python scripted email', preamble=Non
 
     return None
 
+
 def monitor(ext=None, force=False, debug=False):
     opt = {}
-    # make sure extension is formated correctly
+    # make sure extension is formatted correctly
     if ext:
         if ext[0] != '.' :
             ext = '.' + ext
@@ -276,9 +303,10 @@ def monitor(ext=None, force=False, debug=False):
             job.run_test()
     return None
 
+
 def email_diag(sims, ext=None):
     opt = {}
-    # make sure extension is formated correctly
+    # make sure extension is formatted correctly
     if ext:
         if ext[0] != '.':
             ext = '.' + ext
@@ -288,6 +316,7 @@ def email_diag(sims, ext=None):
             sim = os.path.abspath(os.path.expanduser(sim))
         job = choose_job_type({'name': sim}, **opt)
         job.send_file()
+
 
 if __name__ == '__main__':
     parser = OptionParser()
@@ -300,6 +329,8 @@ if __name__ == '__main__':
     if opt.debug:
         print('parsed like a boss')
 
-    monitor(force=opt.force, debug=opt.debug)
     if args:
         email_diag(args)
+    else:
+        monitor(force=opt.force, debug=opt.debug)
+
