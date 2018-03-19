@@ -76,8 +76,8 @@ class searchDirs(object):
     @property
     def paths(self):
         if self._search_dirs is not None:
-            return self._search_dir[:]
-        out = self.abspath(*self._solo_dirs) + self.expand_multi()
+            return self._search_dirs[:]
+        out = self.abspath(*self.solo_dirs) + self.expand_multi()
         self._search_dirs = out
         return out[:]
 
