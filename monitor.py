@@ -60,7 +60,13 @@ def choose_job_type(job, **opt):
             if os.path.isdir(tmp):
                 #print 'Zeus:', tmp, d, os.path.join(os.path.expanduser(d), jname)
                 return zeusJob(job, **opt)
-    for d in ['~/BLayer', '~/BLayer/fft_tests']:
+    bl_dirs = ['~/BLayer', '~/BLayer/fft_tests']
+    for i in ['~/data/bl']:
+        tmp = os.path.abspath(os.path.expanduser(i))
+        bl_dirs.append(tmp)
+        if os.path.isfile(tmp):
+            bl_dirs += [j for j in glob(tmp) if os.path.isdir(tmp)]
+    for d in bl_dirs:
         tmp = os.path.abspath(os.path.join(os.path.expanduser(d), jname))
         #print tmp, os.path.expanduser(d)
         if os.path.isdir(tmp):
