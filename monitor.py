@@ -70,7 +70,8 @@ def choose_job_type(job, **opt):
     if 'BLayer' in jname:
         return athenaBL(job, **opt)
     #print job
-    return nonJob(job, **opt)
+    #return nonJob(job, **opt)
+    return athenaBL(job, **opt)
 
 
 class _job(dict):
