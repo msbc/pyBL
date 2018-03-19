@@ -8,7 +8,6 @@ import smtplib
 import socket
 import mimetypes
 from email import encoders
-from email.message import Message
 from email.mime.audio import MIMEAudio
 from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
@@ -36,11 +35,12 @@ def _setupMPL():
 
 def choose_job_type(job, **opt):
     jname = job['name'].rstrip('.sh')
-    for d in ['~/zeus_rad/data/', '~/wd/', '~/nodust', '~/am_cvn/']:
-        tmp = os.path.join(os.path.expanduser(d), jname)
-        if os.path.isdir(tmp):
-            #print 'Zeus:', tmp, d, os.path.join(os.path.expanduser(d), jname)
-            return zeus_job(job, **opt)
+    if 0:
+        for d in ['~/zeus_rad/data/', '~/wd/', '~/nodust', '~/am_cvn/']:
+            tmp = os.path.join(os.path.expanduser(d), jname)
+            if os.path.isdir(tmp):
+                #print 'Zeus:', tmp, d, os.path.join(os.path.expanduser(d), jname)
+                return zeus_job(job, **opt)
     for d in ['~/BLayer', '~/BLayer/fft_tests']:
         tmp = os.path.abspath(os.path.join(os.path.expanduser(d), jname))
         #print tmp, os.path.expanduser(d)
@@ -108,7 +108,7 @@ class _job(dict):
             wt = map(int, self['walltime'].split(':'))
             if hours >= wt[-3] - 1:
                 return True
-        except KeyError, IndexError:
+        except (KeyError, IndexError):
             pass
         return False
 
@@ -171,7 +171,9 @@ def _parse_head(head):
                     head[i] += '-' + b
     return [_remap_head.get(i, i) for i in head]
 
-def parse_queue(cmds=None, user=getpass.getuser(), usr_trunc=None, job_opt={}):
+def parse_queue(cmds=None, user=getpass.getuser(), usr_trunc=None, job_opt=None):
+    if job_opt is None:
+        job_opt = {}
     if cmds is None:
         cmds = [i for i in _queue_cmds if os.popen('which ' + i)]
     cmds = np.atleast_1d(cmds)
@@ -210,7 +212,7 @@ def email_file(to, path, subject='Automated python scripted email', preamble=Non
     outer['Subject'] = subject
     outer['From'] = sender
     outer['To'] = to
-    if preamble == None:
+    if preamble is None:
         preamble = subject
     outer.preamble = preamble
 
@@ -278,7 +280,7 @@ def email_diag(sims, ext=None):
     opt = {}
     # make sure extension is formated correctly
     if ext:
-        if ext[0] != '.' :
+        if ext[0] != '.':
             ext = '.' + ext
         opt['ext'] = ext
     for sim in sims:
@@ -295,8 +297,9 @@ if __name__ == '__main__':
                       help="Enable debugging messages.")
 
     (opt, args) = parser.parse_args()
-    if opt.debug : print 'parsed like a boss'
+    if opt.debug:
+        print('parsed like a boss')
 
     monitor(force=opt.force, debug=opt.debug)
-    if args :
+    if args:
         email_diag(args)
