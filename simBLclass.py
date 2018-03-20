@@ -876,7 +876,8 @@ class BLFT(BLfile):
 
     def _special_keys(self, key):
         if key == 'FT':
-            return (self['FT-Re'] - 1j * self['FT-Im']).astype('complex64')
+            if 'FT-Re' in self.data:
+              return (self['FT-Re'] - 1j * self['FT-Im']).astype('complex64')
         if key + '-Re' in self.data and key + '-Im' in self.data:
             return (self[key + '-Re'] - 1j * self[key + '-Im']).astype('complex64')
         if key == 'FT':
