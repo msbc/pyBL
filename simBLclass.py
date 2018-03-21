@@ -1,7 +1,7 @@
 #! /usr/bin/env python
 
 from __future__ import absolute_import, division, print_function
-from builtins import (bytes, str, open, super, range, zip, round, input, int, pow, object)
+#from builtins import (bytes, str, open, super, range, zip, round, input, int, pow, object)
 #import h5py
 #from mayavi import mlab
 import numpy as np
@@ -247,7 +247,8 @@ class BLfile(dict):
 
     def __getitem__(self, key):
         try:
-            return super().__getitem__(key)
+            return super(BLfile, self).__getitem__(key)
+            #return super().__getitem__(key)
         except KeyError:
             return self._parse_self(key)
 
@@ -852,12 +853,14 @@ class BLprim(BLConsPrim):
 
 class BLFT(BLfile):
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super(BLFT, self).__init__(*args, **kwargs)
+        #super().__init__(*args, **kwargs)
         self.data = {}
         self.data.update(self)
 
     def _trim(self, data):
-        data = super()._trim(data)
+        data = super(BLFT, self)._trim(data)
+        #data = super()._trim(data)
         if len(data.shape) == 2:
             a = data.min(axis=1)
             b = data.max(axis=1)
