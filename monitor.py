@@ -1,4 +1,4 @@
-#! /usr/bin/env python2
+#! /usr/bin/env python
 
 _Send_To = 'mcoleman@ias.edu'  # your email address
 
