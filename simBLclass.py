@@ -688,13 +688,6 @@ class BLConsPrim(BL3Dfile):
         else:
             dvm = self.fft('vel1') / self.phic.size
             dum = self.fft('vel2') / self.phic.size
-        if 0:#dvm is None or dum is None:
-            if dSm is None:
-                dSm = self.fft(rho)
-            if dvm is None:
-                dvm = self.dvm(dSm, S, o)
-            if dum is None:
-                dum = self.dum(dSm, S, o)
         r = self.rc[np.newaxis, :]
         return .5 * np.pi * r**2 * S * (np.conj(dvm) * dum + dvm * np.conj(dum))
 
@@ -722,23 +715,6 @@ class BLConsPrim(BL3Dfile):
             pass
         title += 't=$%g' % (self.t / tau) + r'\times 2 \pi$'
         plt.title(title)
-
-    def _dvm(self, dSm=None, S0=None, o=None):
-        if dSm is None:
-            dSm = self.fft('dens')
-        if S0 is None:
-            S0 = sdm[0][np.newaxis, :]
-        m = np.arange(dSm.shape[0])[:,np.newaxis]
-        s = 1. / self.mach
-        return s**2/o * (m / self.rc[np.newaxis, :]) * dSm / S0
-
-    def _dum(self, dSm=None, S0=None, o=None):
-        if dSm is None:
-            dSm = self.fft('dens')
-        if S0 is None:
-            S0 = sdm[0][np.newaxis, :]
-        s = 1. / self.mach
-        return s**2/o * (self.kr(dSm) - 1j / self.hs(S0)) * dSm / S0
 
     def kr(self, dSm):
         return self.ddr(dSm) / dSm
@@ -937,113 +913,6 @@ def loadBLfile(fn, **kwargs):
         return BLFT(fn, data=data, **kwargs)
     #raise RuntimeError
     return BLfile(fn, data=data, **kwargs)
-
-class _old_BLsliceFile(object):
-    def __init__(self, fn):
-        self.prefix, self.block, self.var, self.index, self.ext = fn.split('.')
-        if self.ext == 'vtk':
-            x1, x2, x3, data = ar.vtk(fn)
-        elif self.ext == 'tab':
-            x1, x2, x3, data = ar.tab(fn)
-        else:
-            raise ValueError('Cannot parse filetype ' + ext)
-        self.r = x1
-        self.phi = x2
-        if x1.size > 1:
-            self.rc = .5 * (self.r[:-1] + self.r[1:])
-        else:
-            self.rc = self.r
-        if x2.size > 1:
-            self.phic = .5 * (self.phi[:-1] + self.phi[1:])
-        else:
-            self.phic = self.phi
-        self._x3 = x3
-        self.data = data
-        self.axes = [x3, x2, x1]
-
-class _old_BLslice(object):
-    def __init__(self, name, index, block_order=None, ifmt='%05d', prefix=None, ext='vtk', direction=None):
-        ext = ext.lstrip('.')
-        if type(index) == int:
-            index = ifmt % index
-        if prefix:
-            prefix = np.atleast_1d(prefix)
-        else:
-            prefix = _pre[:]
-        for p in prefix:
-            qry = '.'.join([p, 'block[0-9]*', name, index, ext])
-            #print qry
-            files = glob(qry)
-            if files:
-                break
-        if not files:
-            raise IOError('Cannot find slice files')
-        files = map(BLsliceFile, files)
-        f0 = files[0]
-        if direction is None:
-            direction = [i.size > 1 for i in f0.axes].index(True)
-        else:
-            direction = 3 - direction
-        files = {i.block: i for i in files}
-        if block_order is None:
-            block_order = sorted(files.keys(), key=lambda x:files[x].axes[direction][0])
-        self.block_order = block_order
-        data = {}
-        self.axes = None
-        for i, b in enumerate(block_order):
-            f = files[b]
-            if self.axes is None:
-                self.axes = [i.copy() for i in f.axes]
-            else:
-                tmp = [self.axes[direction], f.axes[direction]]
-                if tmp[0][-1] != tmp[1][0]:
-                    raise ValueError('Missing gaps in block reconstruction.')
-                tmp[1] = tmp[1][1:]
-                self.axes[direction] = np.concatenate(tmp)
-            for var in f.data:
-                if var in data:
-                    data[var] = np.concatenate((data[var], f.data[var]), axis=direction)
-                else:
-                    data[var] = f.data[var]
-        self.data = data
-        self.r = self.axes[2]
-        self.phi = self.axes[1]
-        self.direction = 3 - direction
-        self._dir = direction
-        self.files = files
-        if direction == 1:
-            self.rc = .5 * (self.r[:-1] + self.r[1:])
-            self.phic = self.phi
-        else:
-            self.phic = .5 * (self.phi[:-1] + self.phi[1:])
-            self.rc = self.r
-
-class _old_BLmodes(object):
-    def __init__(self, index, mrng=None, mfmt='%02d'):
-        Re = 'FT-Re'
-        Im = 'FT-Im'
-        if mrng is None:
-            qry = '*.block[0-9]*.mode[0-9]*.[0-9]*.*'
-            mrng = np.array([int(i.split('.')[2][4:]) for i in glob(qry)])
-            mrng = mrng.min(), mrng.max()
-        mrng = np.atleast_1d(mrng).astype(int)
-        if len(mrng) == 1:
-            mrng = [0, mring[0]]
-        modes = range(mrng[0], mrng[1] + 1)
-        self.modes = modes
-        data = None
-        for m in modes:
-            s = BLslice('mode' + mfmt % m, index)
-            if data is None:
-                tmp = list(s.data[Re].shape)
-                tmp[1] = len(modes)
-                self.axes = s.axes
-                self.axes[1] = modes
-                self.rc = s.rc
-                data = np.empty(tmp, dtype=np.complex)
-            data[0, m, :] = s.data[Re][0, 0, :]
-            data[0, m, :].imag = s.data[Im][0, 0, :]
-        self.data = data
 
 class FFTset(object):
     def __init__(self, filenames, sim=None, athinput=None, fft_data=None,
@@ -1769,7 +1638,7 @@ class BLsim(object):
                 except TypeError:
                     tmp.append(i)
             if len(tmp) == 1 and not tmp[0] is None:
-                bf = loadfile(pre, tmp[0])
+                bf = self.loadfile(pre, tmp[0])
             else:
                 try:
                     tmp[1] += 1
@@ -1922,7 +1791,7 @@ class BLsim(object):
         if data is None:
             fn = os.path.join(self.path, "v_st.p")
             if os.path.isfile(fn):
-                import pickel
+                import pickle
                 data = pickle.load(open(fn, "rb" ))
                 #pickle.dump(data, fn, "wb"))
             else:
