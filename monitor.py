@@ -48,6 +48,7 @@ def which(program):
 
 
 def _setupMPL():
+    import pylab
     import matplotlib as mpl
     mpl.use('agg')
     mpl.rcParams['savefig.dpi'] = 300
