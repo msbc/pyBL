@@ -94,12 +94,12 @@ def choose_job_type(job, **opt):
             if os.path.isdir(tmp):
                 #print 'Zeus:', tmp, d, os.path.join(os.path.expanduser(d), jname)
                 return zeusJob(job, **opt)
+    if not 'ext' in opt:
+        opt['ext'] = 'png'
     for d in BLdirs.paths:
         tmp = os.path.abspath(os.path.join(d, jname))
         #print tmp, os.path.expanduser(d)
         if os.path.isdir(tmp):
-            if not 'ext' in  opt:
-                opt['ext'] = 'png'
             job['name'] = tmp
             return athenaBL(job, **opt)
     if 'BLayer' in jname:
