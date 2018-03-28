@@ -1409,9 +1409,10 @@ class BLsim(object):
         dphi = grad(self.fft_time, data)
         return dphi / m
 
-    def mt_plot(self, r, fn=None, save=False, ext='pdf', sdir=None,
-                fig=None, ax=None, fopt={}, vmin='smart', vmax='max', cb=True,
-                cbl=None, popt={}, log=True):
+    def mt_plot(self, r, fn=None, save=False, ext='pdf', sdir=None, fig=None, ax=None, fopt={}, vmin='smart',
+                vmax='max', cb=True, cbl=None, popt={}, log=True, mmax=None):
+        if mmax is None:
+            mmax = self.fft.shape[1] - 1
         #ir = np.abs(self.rc - r).argmin()
         ir = self.rloc(r)
         r = self.rc[ir]
