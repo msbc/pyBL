@@ -90,11 +90,15 @@ def grad(t, data, axis=0):
     out[loc + (-1,)] = (data[loc + (-2,)] - data[loc + (-1,)]) / dr[loc + (-1,)]
     return out
 
-def crudeDiff(t, data, axis=0):
+def crudeDiff(t, data, axis=0, front=True):
     dt = np.diff(t)[(np.newaxis,) * axis + (slice(None),) + (np.newaxis,) * max(0, (len(data.shape) - axis - 1))]
     out = np.diff(data, axis=axis) / dt
-    loc = (slice(None),) * axis + ([0],)
-    return np.concatenate((out[loc], out), axis=axis)
+    if front:
+        loc = (slice(None),) * axis + ([0],)
+        return np.concatenate((out[loc], out), axis=axis)
+    else:
+        loc = (slice(None),) * axis + ([-1],)
+        return np.concatenate((out, out[loc]), axis=axis)
 
 def smooth(data, width=64):
     try:
@@ -952,6 +956,118 @@ class FFTset(object):
             self._load_fft_data()
         return self._fft_time
 
+class CompositeFFTSet(object):
+    def __init__(self, fftsets, fft_data=None, fft_time=None, phase_angle=None, phase_speed=None):
+        self.fftsets = fftsets
+        self._fft_time = fft_time
+        self._fft_data = fft_data
+        self._phase_angle = phase_angle
+        self._phase_speed = phase_speed
+
+    @property
+    def data(self):
+        if self._fft_data is None:
+            return self._collect_fft_data()
+        return self._fft_data
+
+    @property
+    def time(self):
+        if self._fft_time is None:
+            self._collect_fft_data()
+        return self._fft_time
+
+    def _collect_fft_data(self):
+        ffts = sorted(self.fftsets, key=lambda x:x.time[1])
+        nt = sum([i.time.size for i in ffts])
+        shape = (nt,) + ffts[0].data.shape[1:]
+        data = np.empty(shape, dtype='complex64')
+        time = np.empty(nt)
+        n = len(ffts)
+        for i in range(n):
+            data[i::n] = ffts[i].data
+            time[i::n] = ffts[i].time
+        while time[1] == 0:
+            data = data[1:]
+            time = time[1:]
+        phase = self._unwrap(time, np.angle(data))
+        if self._fft_data is None:
+            self._fft_data = data
+        if self._fft_time is None:
+            self._fft_time = time
+        if self._phase_angle is None:
+            self._phase_angle = phase
+        return time, data, phase
+
+    def _unwrap(self, time=None, phase=None, limit=None, mNorm=False, fine_correct=False):
+        if phase is None:
+            phase = np.angle(self.data)
+        else:
+            phase = phase.copy()
+        if time is None:
+            time = self.time
+        if limit is None:
+            limit = 0
+            # limit = - .1 / np.arange(phase.shape[1])[np.newaxis,:,np.newaxis]
+        if mNorm:
+            limit /= np.arange(phase.shape[1])[np.newaxis,:,np.newaxis]
+        # course unwrap
+        d = crudeDiff(time, phase, axis=0)
+        shift = np.zeros_like(phase)
+        shift[np.where(d < limit)] += tau
+        #shift = np.roll(shift, -1, axis=0)
+        #shift[-1] = 0
+        self._shift = shift.copy()
+        phase += shift.cumsum(axis=0)
+        # fine-course unwrap
+        if fine_correct:
+            dphi = np.diff(phase, axis=0)
+            fdphi = np.pad(dphi, ((0, 1), (0, 0), (0, 0)), 'constant')
+            bdphi = np.pad(dphi, ((1, 0), (0, 0), (0, 0)), 'constant')
+            dt = np.diff(time)
+            dtmax = dt.max()
+            fdt = np.pad(dt, (0, 1), 'constant')[:,np.newaxis,np.newaxis]
+            bdt = np.pad(dt, (1, 0), 'constant')[:, np.newaxis, np.newaxis]
+            ashift = np.maximum(fdphi * bdt / fdt - bdphi, 0) / tau
+            bshift = np.maximum(bdphi * fdt / bdt - fdphi, 0) / tau
+            shift = np.maximum(fdphi * bdt / fdt - bdphi + bdphi * fdt / bdt - fdphi, 0) * .5 / tau
+            shift = np.rint(shift) * tau
+            phase += shift.cumsum(axis=0)
+        return phase
+
+    def _fine_correct(self, time=None, phase=None):
+        if phase is None:
+            phase = self._unwrap()
+        if time is None:
+            time = self.time
+        dphi = np.diff(phase, axis=0)
+        fdphi = np.pad(dphi, ((0, 1), (0, 0), (0, 0)), 'constant')
+        bdphi = np.pad(dphi, ((1, 0), (0, 0), (0, 0)), 'constant')
+        dt = np.diff(time)
+        dtmax = dt.max()
+        fdt = np.pad(dt, (0, 1), 'constant')[:,np.newaxis,np.newaxis]
+        bdt = np.pad(dt, (1, 0), 'constant')[:, np.newaxis, np.newaxis]
+        shift = np.rint(np.maximum(fdphi * bdt / fdt - bdphi, 0) / tau)
+        bshift = np.rint(np.roll(np.maximum(bdphi * fdt / bdt - fdphi, 0) / tau, 1, axis=0))
+        shift[shift != bshift] = 0
+        #shift = np.minimum(shift * tau, np.maximum(dtmax - fdphi, 0))
+        shift *= tau
+        self._fshift = shift.copy()
+        return phase + shift.cumsum(axis=0)
+
+    def phase(self):
+        if self._phase_angle is None:
+            self._phase_angle = self._unwrap()
+        return self._phase_angle
+
+    def prop_speed(self, phase=None):
+        if self._phase_speed is None:
+            if phase is None:
+                phase = self._unwrap()
+            m = np.arange(phase.shape[1])
+            m = m[np.newaxis,:,np.newaxis]
+            dphi = grad(self.time, phase)
+            self._phase_speed = dphi / m
+        return self._phase_speed
 
 
 class BLsim(object):
@@ -1059,6 +1175,11 @@ class BLsim(object):
         shift = np.zeros_like(phase)
         shift[np.where(d < limit)] += tau
         return phase + shift.cumsum(axis=0)
+
+    def FFT_composite(self):
+        ffts = [out for out in self.fileDict.keys()
+                if self.inputs.get(out, {}).get('variable') == "FT-Range"]
+        return CompositeFFTSet([FFTset(self.fileDict[i], sim=self) for i in ffts])
 
     def _collect_fft_data(self):
         ffts = [out for out in self.fileDict.keys()
