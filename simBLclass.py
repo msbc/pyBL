@@ -128,7 +128,7 @@ def _findAbsPath(fn, sim_path=None):
 def _parse_file(fn):
     ext = fn.split('.')[-1]
     if ext == 'athdf':
-        return ar.athdf(fn)
+        return BLfile(fn)
     if ext == 'npy':
         return np.load(fn)[()]
     raise IOError('Cannot identify file type of "{0:}"'.format(fn))
@@ -139,31 +139,35 @@ def intr(dr, data, axis=-1):
     loc = [np.newaxis] * axis + [slice(None)]
     return (data * dr).sum(axis=axis)
 
-class BLfile(dict):
+class BLfile(object):
     def __init__(self, fn, sim_path=None, t=None, trim=True, data=None,
-                 defvar=None, ai_data={}, sim=None):
+                 defvar=None, ai_data=None, sim=None):
         self.t = t
         self.sim = sim
+        self._Qtrim = trim
+        #if ai_data is None:
+        #    ai_data = {}
         self._ai_data = ai_data
-        if not sim is None:
+        if sim is not None:
             self.mach = sim.mach
-        elif not ai_data is None:
+        elif ai_data is not None:
             self.mach = 1. / ai_data['hydro']['iso_sound_speed']
         self.fn = _findAbsPath(fn, sim_path)
+        self.data = ar.athdf(self.fn)
+        #super(BLfile, self).__init__(self.fn)
         self.path = os.path.split(self.fn)[0]
-        if data is None:
-            self.data = self._parse_file()
-        else:
-            self.data = data
+        #print(data)
+        #if data is not None:
+        #    self.data.update(data)
         if self.t is None:
             for i in ['Time', 'time', 'T', 't']:
                 if i in self.data:
-                    self.t = self.data[i]
+                    self.t = self[i]
                     break
         if self.t is None:
             self.t = int(os.path.split(fn)[1].split('.')[2])
-        if not 'Time' in self:
-            self['Time'] = self.t
+        if not 'Time' in self.data:
+            self.data['Time'] = self.t
         self._prefix = '.'.join(os.path.split(fn)[-1].split('.')[:-1])
         #if sim_path and not self.t is None:
         #    self.name = os.path.split(sim_path)[-1] + ' {0:05d}'.format(self.t)
@@ -171,17 +175,12 @@ class BLfile(dict):
         #else:
         self.name = os.path.split(fn)[-1]
         self.t_str = '%.04g' % self.t
-        self._Qtrim = trim
-        if trim:
-            self.update({i: self._trim(self.data[i]) for i in self.data})
-        else:
-            self.update(self.data)
-        self.r = self.data['x1f']
+        self.r = self['x1f']
         self.dr = self.r[1:] - self.r[:-1]
-        self.phi = self.data['x2f']
+        self.phi = self['x2f']
         self.rc = .5 * (self.r[:-1] + self.r[1:])
         self.phic = .5 * (self.phi[:-1] + self.phi[1:])
-        self._shape = self.phic.size, self.rc.size
+        self._grid_shape = self.phic.size, self.rc.size
         self._default_var = defvar
 
     def __repr__(self):
@@ -200,7 +199,7 @@ class BLfile(dict):
                 pass
         for i in self:
             try:
-                if self[i].shape == self._shape:
+                if self[i].shape == self._grid_shape:
                     return i
             except KeyError:
                 pass
@@ -215,11 +214,6 @@ class BLfile(dict):
             loc = tuple(loc)
             data = data[loc]
         return data
-
-    def _parse_file(self, fn=None):
-        if fn is None:
-            fn = self.fn
-        return _parse_file(fn)
 
     def _parse_data(self, data):
         try:
@@ -243,7 +237,7 @@ class BLfile(dict):
         if hasattr(self, key):
             try:
                 out = getattr(self, key)()
-                if out.shape == self._shape:
+                if out.shape == self._grid_shape:
                     return out
             except (AttributeError, TypeError):
                 pass
@@ -251,10 +245,13 @@ class BLfile(dict):
 
     def __getitem__(self, key):
         try:
-            return super(BLfile, self).__getitem__(key)
+            out = self.data[key]
             #return super().__getitem__(key)
         except KeyError:
-            return self._parse_self(key)
+            out = self._parse_self(key)
+        if self._Qtrim:
+            return self._trim(out)
+        return out
 
     def intr(self, data, axis=-1):
         data = self._parse_data(data)
@@ -654,7 +651,7 @@ class BLConsPrim(BL3Dfile):
             cl.append(self.CL25(Op, M))
         cl += [self.CS(), self.CA()]
         lbls += ['BRS13 $C_S$','BRS13 $C_A$']
-        tmp = self.Csm()
+        tmp = self.CSm()
         s = tmp.sum(axis=0)
         loc = sorted(range(tmp.shape[0]), key=lambda x: 1/s[x])
         for i in loc[:nm]:
@@ -835,8 +832,8 @@ class BLFT(BLfile):
     def __init__(self, *args, **kwargs):
         super(BLFT, self).__init__(*args, **kwargs)
         #super().__init__(*args, **kwargs)
-        self.data = {}
-        self.data.update(self)
+        #self.data = {}
+        #self.data.update(self)
 
     def _trim(self, data):
         data = super(BLFT, self)._trim(data)
