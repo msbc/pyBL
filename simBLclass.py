@@ -139,7 +139,7 @@ def intr(dr, data, axis=-1):
     loc = [np.newaxis] * axis + [slice(None)]
     return (data * dr).sum(axis=axis)
 
-class BLfile(object):
+class BLfile(dict):
     def __init__(self, fn, sim_path=None, t=None, trim=True, data=None,
                  defvar=None, ai_data=None, sim=None):
         self.t = t
@@ -154,6 +154,11 @@ class BLfile(object):
             self.mach = 1. / ai_data['hydro']['iso_sound_speed']
         self.fn = _findAbsPath(fn, sim_path)
         self.data = ar.athdf(self.fn)
+        for i in self.data.keys():
+            if i not in self:
+                self[i] = None
+            else:
+                print('Warning: key {0:} already exists.'.format(i))
         #super(BLfile, self).__init__(self.fn)
         self.path = os.path.split(self.fn)[0]
         #print(data)
@@ -245,8 +250,9 @@ class BLfile(object):
 
     def __getitem__(self, key):
         try:
-            out = self.data[key]
-            #return super().__getitem__(key)
+            out = super(BLfile, self).__getitem__(key)
+            if out is None:
+                out = self.data[key]
         except KeyError:
             out = self._parse_self(key)
         if self._Qtrim:
