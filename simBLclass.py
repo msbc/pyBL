@@ -582,6 +582,11 @@ class BL3Dfile(BLfile):
         return (grad(self.rc, y, axis=1) - self.ddphi(x)) / self.rc[np.newaxis,:]
 
 class BLConsPrim(BL3Dfile):
+    def Mdot(self):
+        return self['dens']*self['vel1']
+    def v1v2(self):
+        return self['vel1']*self['vel2']
+
     def vorticity(self, dvphi=False):
         if dvphi:
             out = self['vel2']
@@ -811,6 +816,8 @@ class BLcons(BLConsPrim):
     def _special_keys(self, key):
         if key[:3] == 'vel' and len(key) == 4:
             return self.vel(key[3])
+        if key == 'dens**2':
+            return self['dens']**2
         return None
 
     def vel(self, i):
@@ -823,6 +830,8 @@ class BLprim(BLConsPrim):
     def _special_keys(self, key):
         if key[:3] == 'mom' and len(key) == 4:
             return self.mom(key[3])
+        if key == 'dens**2':
+            return self['dens']**2
         return None
 
     def mom(self, i):
@@ -1227,6 +1236,25 @@ class BLsim(object):
         if self._fft_time is None:
             self._fft_time = t
         return data
+
+    def verify_ft(self, orbit=100):
+        bf = self.loadfile('cons', orbit)
+        ft = self.loadfile('FT', orbit*10)
+        varlist = ['pseudo', 'vel1', 'vel2', 'dens', 'dens**2', 'CL', 'v1v2', 'Mdot', 'vortensity']
+        fig = plt.figure()
+        for var in varlist:
+            if var == 'CL':
+                a = (bf['dens']*bf.v1v2()).mean(axis=0)
+            else:
+                a = bf[var].mean(axis=0)
+            b = ft['FT-' + var + '-Re'][0]
+            if var == 'vortensity':
+                a[0] = b[0]
+                a[-1] = b[-1]
+            plt.plot(self.rc, (a-b)/a, lw=1)
+        plt.ylim(-5e-3, 5e-3)
+        plt.legend(varlist)
+        plt.title('Time/$2\pi={0:.1f}$'.format(bf.t / tau))
 
     def intr(self, data, axis=-1):
         return intr(self.dr, data, axis=axis)
