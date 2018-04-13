@@ -46,6 +46,9 @@ _ext = ['athdf', 'npy']
 _int_fmt = '%5.5d'
 _file_fmts = ['.'.join([a, 'out' + b, _int_fmt, c]) for a in _pre for b in _i for c in _ext]
 
+def spiral(r, rp, cs):
+    return -np.sign(r - rp) * (2 / np.sqrt(r) + r / rp ** 1.5 - 3 / np.sqrt(rp)) / cs
+
 def and_neighbor(data, n=1, axis=0, pad=True):
     loc = (slice(None),) * axis
     base = data.copy()
@@ -580,6 +583,20 @@ class BL3Dfile(BLfile):
         x, y = data
         y *= self.rc[np.newaxis,:]
         return (grad(self.rc, y, axis=1) - self.ddphi(x)) / self.rc[np.newaxis,:]
+
+    def draw_spiral(self, rp, phi0=0, opt=None):
+        if opt is None:
+            opt = {}
+        if 'ls' not in opt:
+            opt['ls'] = ':'
+        if 'lw' not in opt:
+            opt['lw'] = 1
+        if 'c' not in opt:
+            opt['c'] = '1'
+        r = np.array([i for i in self.rc if i >= rp])
+        phi = spiral(r, rp, 1./self.mach) + phi0
+        print(phi)
+        plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
 
 class BLConsPrim(BL3Dfile):
     def Mdot(self):
@@ -1122,7 +1139,7 @@ class BLsim(object):
             searches = [fmt.split('%')[0] + '*.' + fmt.split('d.')[-1] for fmt in fmts]
             raise NotImplementedError('Currently needs athinput.')
         else:
-            self.mach = self.inputs['hydro']['iso_sound_speed']
+            self.mach = 1. / self.inputs['hydro']['iso_sound_speed']
             mesh = self.inputs['mesh']
             for i in [1, 2]:
                 x = 'x' + str(i)
@@ -1169,6 +1186,19 @@ class BLsim(object):
 
         return None
         # End init
+
+    def draw_spiral(self, rp, phi0=0, opt=None):
+        if opt is None:
+            opt = {}
+        if 'ls' not in opt:
+            opt['ls'] = ':'
+        if 'lw' not in opt:
+            opt['lw'] = 1
+        if 'c' not in opt:
+            opt['c'] = '1'
+        r = np.array([i for i in self.rc if i >= rp])
+        phi = spiral(r, rp, 1./self.mach) + phi0
+        plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
 
     def _unwrap(self, time=None, phase=None, limit=None, mNorm=False):
         if phase is None:
