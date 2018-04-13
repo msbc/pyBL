@@ -930,6 +930,123 @@ def loadBLfile(fn, **kwargs):
     #raise RuntimeError
     return BLfile(fn, data=data, **kwargs)
 
+class _FileBuffer(object):
+    def __init__(self, filenames, ghost=2, sim=None, var='FT'):
+        self.filenames = filenames
+        self.len = len(filenames)
+        self.size = 2 * ghost + 1
+        self.sim = sim
+        self.ghost = ghost
+        self.index = None
+        self._var = var
+        self._phase = None
+        self._amp = None
+        self._speed = None
+        self._t = None
+        self._offset = range(-ghost, ghost + 1)
+        self.set_index(0)
+
+    def _load(self, f):
+        try:
+            if int(f) == f:
+                f = self.filenames[f]
+        except ValueError:
+            pass
+        bf = BLFT(f, sim=self.sim)
+        return [bf.t, np.abs(bf[self._var]), np.angle(bf[self._var])]
+
+    def _cap_index(self, i):
+        return min(max(i, 0), self.len - 1)
+
+    def set_index(self, i):
+        i %= self.len
+        self._t, self._abs, self._phase = zip(*[self._load(self._cap_index(i + j)) for j in self._offset])
+        self._speed = [None] * self.size
+        self._comp()
+        self.index = i
+
+    def _comp(self, shift=False):
+        # unwrap
+        phi = np.array(self._phase)
+        # coarse correct
+        dphi = np.diff(phi, axis=0)
+        tmp = np.pad(dphi, ((1, 0), (0, 0), (0, 0)), 'constant')
+        tmp = np.minimum(np.floor(tmp / tau), 0)
+        phi -= tmp.cumsum(axis=0) * tau
+        del tmp
+        # fine correct
+        dphi = np.diff(phi, axis=0)
+        t = np.array(self._t)
+        dt = np.diff(t)
+        fdphi = np.pad(dphi, ((0, 1), (0, 0), (0, 0)), 'constant')
+        bdphi = np.pad(dphi, ((1, 0), (0, 0), (0, 0)), 'constant')
+        fdt = np.pad(dt, (0, 1), 'constant')[:, np.newaxis, np.newaxis]
+        bdt = np.pad(dt, (1, 0), 'constant')[:, np.newaxis, np.newaxis]
+        shift = np.rint(np.maximum(fdphi * bdt / fdt - bdphi, 0) / tau)
+        bshift = np.rint(np.roll(np.maximum(bdphi * fdt / bdt - fdphi, 0) / tau, 1, axis=0))
+        shift[shift != bshift] = 0
+        shift *= tau
+        phi += shift.cumsum(axis=0)
+        self._phase = list(phi)
+
+        # speed
+        self._speed = grad(t, phi)
+
+    def _increment(self):
+        if self.index >= self.len - 1:
+            raise IndexError('Cannot increment past last time-step.')
+        tmp = self._load(self.index + self.ghost)
+        self._t.append(tmp.pop(0))
+        self._amp.append(tmp.pop(0))
+        self._phase.append(tmp.pop(0))
+        # coarse unwrap
+        fdphi = self._phase[-1] - self._phase[-2]
+        self._phase[-1] -= tau * np.minimum(np.floor(fdphi / tau), 0)
+        # fine unwrap
+        fdphi = self._phase[-1] - self._phase[-2]
+        bdphi = self._phase[-2] - self._phase[-3]
+        fdt = self._t[-1] - self._t[-2]
+        bdt = self._t[-2] - self._t[-3]
+        shift = np.rint(np.maximum(fdphi * bdt / fdt - bdphi, 0) / tau)
+        bshift = np.rint(np.roll(np.maximum(bdphi * fdt / bdt - fdphi, 0) / tau, 1, axis=0))
+        shift[shift != bshift] = 0
+        shift *= tau
+        self._phase[-2] += shift
+        self._phase[-1] += shift
+
+        # speed
+        self._speed.append(None)
+        dl = self._t[-2] - self._t[-3]
+        dr = self._t[-1] - self._t[-2]
+        Dinv = 1. / (dl + dr)
+        rat = dr / dl
+        self._speed[-2] =   (dl**-1 - dr**-1) * self._phase[-2] \
+                          + Dinv / rat * self._phase[-1] \
+                          - rat * Dinv * self._phase[-3]
+
+        # update index and arrays
+        self._phase.pop(0)
+        self._t.pop(0)
+        self._amp.pop(0)
+        self._speed.pop(0)
+        self.index += 1
+
+class IncrementalFFT(object):
+    def __init__(self, filenames, sim=None, store_data=False, fine_out=None, course_out=None):
+        self.filenames = filenames
+        self.sim = sim
+        self._store_data = store_data
+        self._amp = None
+        self._phase = None
+        self._speed = None
+        self._ghost = 2
+
+    def process(self, store_data=None):
+        if store_data is None:
+            store_data = self._store_data
+
+
+
 class FFTset(object):
     def __init__(self, filenames, sim=None, athinput=None, fft_data=None,
                  fft_time=None):
@@ -1022,7 +1139,7 @@ class CompositeFFTSet(object):
             # limit = - .1 / np.arange(phase.shape[1])[np.newaxis,:,np.newaxis]
         if mNorm:
             limit /= np.arange(phase.shape[1])[np.newaxis,:,np.newaxis]
-        # course unwrap
+        # coarse unwrap
         d = crudeDiff(time, phase, axis=0)
         shift = np.zeros_like(phase)
         shift[np.where(d < limit)] += tau
