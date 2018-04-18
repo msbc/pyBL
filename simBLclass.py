@@ -284,7 +284,7 @@ class BLfile(dict):
                name=None, ext='pdf', popt=None, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                ax=None, log=False, aspect=1, sdir=None, smooth=None,
-               phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False):
+               phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1):
         '''Plot 2D sim data'''
         if fopt is None:
             fopt = {}
@@ -397,6 +397,10 @@ class BLfile(dict):
 
         #start plotting
         pcm = plt.pcolormesh(x, y, data, **_popt)
+        if rplot:
+            rplot = np.atleast_1d(rplot)
+            for r in rplot:
+                plt.plot(r * np.cos(self.phic), r * np.sin(self.phic), lw=1, c='1', ls=':')
         if title:
             plt.title(helpers.sanitize_lbl(title.format(**self.__dict__)))
         if cb:
