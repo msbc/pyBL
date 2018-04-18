@@ -1158,8 +1158,8 @@ class IncrementalFFT(object):
                     helpers.update_progress(float(self.buffer.index) / self.buffer.len)
         helpers.update_progress(1)
         if store_data:
-            for i in self._cb:
-                self._cb[i] = np.array(i)
+            for i in self._cd:
+                self._cd[i] = np.array(i)
 
 class FTdataFile(object):
     def __init__(self, filename, nr=None, nphi=None, sim=None, coarse=True):
@@ -1188,6 +1188,8 @@ class FTdataFile(object):
     def updateQ(self):
         if not self.existsQ():
             return True
+        if os.path.getsize(self.filename) == 0:
+            return True
         if self.sim is not None:
             tmp = [0, os.path.getmtime(self.sim.path)]
             files = [i for i in glob(os.path.join(self.sim.path, '*.athdf'))]
@@ -1201,8 +1203,7 @@ class FTdataFile(object):
 
     def _read_data(self):
         if self.updateQ():
-            print('meh')
-            #self.generate()
+            self.generate()
         t = []
         amp = []
         phase = []
@@ -2281,7 +2282,7 @@ class BLsim(object):
         ax = plt.subplot(gs[0,nr])
         f = self.loadfile(self.files('cons')[-1])
         f.plot2d('Rpseudo', ax=ax, vmin='smart', cbl=r'$rv_r\sqrt{\rho}$', subsample=subsample,
-                 title=r'$t/2\pi={:.2f}$'.format(f.t))
+                 title=r'$t/2\pi={:.2f}$'.format(f.t / tau))
         fig.suptitle('Diagnostic for ' + helpers.sanitize_lbl(self.name))
 
         ax = plt.subplot(gs[-1,-1])
