@@ -1128,6 +1128,15 @@ class IncrementalFFT(object):
         self._cd = None
 
     def process(self, store_data=None):
+        mode = 'wb'
+        _ft = -1
+        _ct = -1
+        if os.path.isfile(self.fine_out):
+            _ft = self.get_last_time(self.fine_out)
+            mode = 'ab'
+        if os.path.isfile(self.coarse_out):
+            _ct = self.get_last_time(self.coarse_out)
+            mode = 'ab'
         if store_data is None:
             store_data = self._store_data
         if store_data:
@@ -1141,7 +1150,7 @@ class IncrementalFFT(object):
             #print(self.coarse_out)
             print('Compiling FFT data.')
             helpers.update_progress(0)
-        with open(self.fine_out, 'wb') as fine, open(self.coarse_out, 'wb') as coarse:
+        with open(self.fine_out, mode) as fine, open(self.coarse_out, mode) as coarse:
             while test:
                 data = self.buffer.state
                 if store_data:
@@ -1149,32 +1158,33 @@ class IncrementalFFT(object):
                     self._amp.append(data[1])
                     self._phase.append(data[2])
                     self._speed.append(data[3])
-                for i in data:
-                    np.array(i).astype('float32').tofile(fine)
+                if data[0] > _ft:
+                    for i in data:
+                        np.array(i).astype('float32').tofile(fine)
                 name = os.path.split(self.buffer.filenames[self.buffer.index])[-1].split('.')
-                #print(name)
-                if name[1] == 'FT' and name[2][-1] == '0':
-                    #print(self.buffer.index, data[0], self.buffer.filenames[self.buffer.index])
-                    np.array(data[0]).astype('float32').tofile(coarse)
-                    a = self.buffer._amp
-                    if store_data:
-                        self._cd['t'].append(data[0])
-                        self._cd['amp'].append(self.buffer.mean(a))
-                        self._cd['amp_std'].append(self.buffer.std(a))
-                    self.buffer.mean(a).astype('float32').tofile(coarse)
-                    self.buffer.std(a).astype('float32').tofile(coarse)
-                    a = self.buffer._phase
-                    if store_data:
-                        self._cd['phase'].append(self.buffer.mean(a))
-                        self._cd['phase_std'].append(self.buffer.std(a))
-                    self.buffer.mean(a).astype('float32').tofile(coarse)
-                    self.buffer.std(a).astype('float32').tofile(coarse)
-                    a = self.buffer._speed
-                    if store_data:
-                        self._cd['speed'].append(self.buffer.mean(a))
-                        self._cd['speed_std'].append(self.buffer.std(a))
-                    self.buffer.mean(a).astype('float32').tofile(coarse)
-                    self.buffer.std(a).astype('float32').tofile(coarse)
+                if data[0] > _ct:
+                    if name[1] == 'FT' and name[2][-1] == '0':
+                        #print(self.buffer.index, data[0], self.buffer.filenames[self.buffer.index])
+                        np.array(data[0]).astype('float32').tofile(coarse)
+                        a = self.buffer._amp
+                        if store_data:
+                            self._cd['t'].append(data[0])
+                            self._cd['amp'].append(self.buffer.mean(a))
+                            self._cd['amp_std'].append(self.buffer.std(a))
+                        self.buffer.mean(a).astype('float32').tofile(coarse)
+                        self.buffer.std(a).astype('float32').tofile(coarse)
+                        a = self.buffer._phase
+                        if store_data:
+                            self._cd['phase'].append(self.buffer.mean(a))
+                            self._cd['phase_std'].append(self.buffer.std(a))
+                        self.buffer.mean(a).astype('float32').tofile(coarse)
+                        self.buffer.std(a).astype('float32').tofile(coarse)
+                        a = self.buffer._speed
+                        if store_data:
+                            self._cd['speed'].append(self.buffer.mean(a))
+                            self._cd['speed_std'].append(self.buffer.std(a))
+                        self.buffer.mean(a).astype('float32').tofile(coarse)
+                        self.buffer.std(a).astype('float32').tofile(coarse)
                 test = self.buffer.increment()
                 if not self.quiet:
                     helpers.update_progress(float(self.buffer.index) / self.buffer.len)
@@ -1182,6 +1192,28 @@ class IncrementalFFT(object):
         if store_data:
             for i in self._cd:
                 self._cd[i] = np.array(i)
+
+    def get_last_time(self, fn=None, nvar=None, nphi=None):
+        if fn is None:
+            fn = self.coarse_out
+        if nvar is None:
+            if fn == self.coarse_out:
+                nvar = 6
+            elif fn == self.fine_out:
+                nvar = 3
+            else:
+                raise RuntimeError('"navr" cannot be determined.')
+        first = BLFT(self.filenames[0], sim=self.sim)
+        if nphi is None:
+            nphi = self.sim.inputs['meshblock']['nx2']
+        nr = first.rc.size
+        del first
+        with open(fn, 'r') as f:
+            offset = - 4 * (nvar * nphi * nr + 1)
+            f.seek(offset, os.SEEK_END)
+            t = np.fromfile(f, 'float32', 1)[0]
+        return t
+
 
 class FTdataFile(object):
     def __init__(self, filename, nr=None, nphi=None, sim=None, coarse=True):
@@ -2340,7 +2372,7 @@ class BLsim(object):
         ax.yaxis.set_ticks([])
         # the time is now
         now = time.asctime() + ' ' + time.tzname[time.localtime().tm_isdst]
-        ax.text(.5, 1, self.name + '\n' + now, ha='center', va='top')
+        ax.text(.5, 1, helpers.sanitize_lbl(self.name) + '\n' + now, ha='center', va='top')
         info = {}
         pars = []
         def _add(key, val):
