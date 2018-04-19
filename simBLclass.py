@@ -30,6 +30,7 @@ from . import athena_read as ar
 from . import helpers
 
 
+_quiet = False
 tau = 2 * np.pi
 
 #mpl.rc('text', usetex=True)
@@ -1088,7 +1089,7 @@ class _FileBuffer(object):
 
 
 class IncrementalFFT(object):
-    def __init__(self, filenames, sim=None, store_data=False, fine_out=None, coarse_out=None, var='FT', quiet=False):
+    def __init__(self, filenames, sim=None, store_data=False, fine_out=None, coarse_out=None, var='FT', quiet=None):
         self.filenames = filenames
         self._ghost = 10
         self.buffer = _FileBuffer(filenames, ghost=self._ghost, sim=sim, var=var)
@@ -1104,6 +1105,8 @@ class IncrementalFFT(object):
         self._amp = None
         self._phase = None
         self._speed = None
+        if quiet is None:
+            quiet = _quiet
         self.quiet = quiet
         self._cd = None
 
@@ -1118,6 +1121,7 @@ class IncrementalFFT(object):
             self._cd = {'t': [], 'amp': [], 'phase': [], 'speed': [], 'amp_std': [], 'phase_std': [], 'speed_std': []}
         test = True
         if not self.quiet:
+            #print(self.coarse_out)
             print('Compiling FFT data.')
             helpers.update_progress(0)
         with open(self.fine_out, 'wb') as fine, open(self.coarse_out, 'wb') as coarse:
@@ -1130,13 +1134,14 @@ class IncrementalFFT(object):
                     self._speed.append(data[3])
                 for i in data:
                     np.array(i).astype('float32').tofile(fine)
-                name = self.buffer.filenames[self.buffer.index].split('.')
+                name = os.path.split(self.buffer.filenames[self.buffer.index])[-1].split('.')
+                #print(name)
                 if name[1] == 'FT' and name[2][-1] == '0':
                     #print(self.buffer.index, data[0], self.buffer.filenames[self.buffer.index])
-                    self._cd['t'].append(data[0])
                     np.array(data[0]).astype('float32').tofile(coarse)
                     a = self.buffer._amp
                     if store_data:
+                        self._cd['t'].append(data[0])
                         self._cd['amp'].append(self.buffer.mean(a))
                         self._cd['amp_std'].append(self.buffer.std(a))
                     self.buffer.mean(a).astype('float32').tofile(coarse)
@@ -1547,15 +1552,15 @@ class BLsim(object):
         handler.process()
 
     def load_fft_data(self, fine=False, var='FT'):
-        type = 'coarse'
+        _type = 'coarse'
         if fine:
-            type = 'fine'
-        fn = os.path.join(self.path, 'FFT_' + type + '_' + var + '.npy')
+            _type = 'fine'
+        fn = os.path.join(self.path, 'FFT_' + _type + '_' + var + '.npy')
         if not os.path.isfile(fn):
             # TODO: store data
             self.gen_fft_file(var=var)
         data = FTdataFile(fn, sim=self)
-        if type == 'coarse':
+        if _type == 'coarse':
             self._coarse_data = data
         else:
             self._fine_data = data
@@ -1570,7 +1575,7 @@ class BLsim(object):
     @property
     def fine_data(self):
         if self._fine_data is None:
-            self.load_fft_data()
+            self.load_fft_data(fine=True)
         return self._fine_data
 
     def __FFT_composite(self):
@@ -2025,7 +2030,7 @@ class BLsim(object):
         return m
 
     def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None,
-                         ret_m=None, smooth=False, sw=20):
+                         ret_m=None, smooth=False, sw=20, std=None):
         ir = self.rloc(r)
         if modes is None:
             modes = self.main_modes(nm=nm)[::-1]
@@ -2037,6 +2042,9 @@ class BLsim(object):
             rdata = data[:,:,ir]
         else:
             rdata = data
+        if std is not None:
+            if len(std.shape) == 3:
+                std = std[:, :, ir]
         for m in modes:
             line = rdata[:,m]
             if smooth:
@@ -2044,6 +2052,9 @@ class BLsim(object):
                     smooth = 'flat'
                 line = helpers.smooth(line, window=smooth, window_len=sw)
             handles[m] = plt.plot(self.fft_time / tau, line, lw=1)[0]
+            if std is not None:
+                c = handles[m].get_color()
+                plt.fill_between(self.fft_time / tau, line - std[:,m], line + std[:,m], color=c, alpha=.1)
         opt = {'loc': 0, 'frameon': True, 'handlelength': .7, 'prop': {'size':8}, 'ncol': 3}
         modes.sort()
         handles = [handles[m] for m in modes]
@@ -2055,7 +2066,7 @@ class BLsim(object):
         #plt.ylabel('Phase')
         plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
 
-    def r_speed(self, r, fig=True, **kwarg):
+    def r_speed(self, r, fig=True, plt_std=False, **kwarg):
         if fig is True:
             plt.figure()
         if not 'smooth' in kwarg:
@@ -2064,6 +2075,11 @@ class BLsim(object):
                 kwarg['sw'] = 41
         ir = self.rloc(r)
         data = self.speed[:,:,ir]
+        if plt_std:
+            try:
+                kwarg['std'] = self.fft_data._speed_std[:,:,ir]
+            except AttributeError:
+                pass
         self._r_phase_plotter(r, data, **kwarg)
         ylim = list(plt.ylim())
         ylim[0] = 0
