@@ -30,6 +30,7 @@ from . import athena_read as ar
 from . import helpers
 
 
+_quiet = False
 tau = 2 * np.pi
 
 #mpl.rc('text', usetex=True)
@@ -131,7 +132,7 @@ def _findAbsPath(fn, sim_path=None):
 def _parse_file(fn):
     ext = fn.split('.')[-1]
     if ext == 'athdf':
-        return ar.athdf(fn)
+        return BLfile(fn)
     if ext == 'npy':
         return np.load(fn)[()]
     raise IOError('Cannot identify file type of "{0:}"'.format(fn))
@@ -144,29 +145,38 @@ def intr(dr, data, axis=-1):
 
 class BLfile(dict):
     def __init__(self, fn, sim_path=None, t=None, trim=True, data=None,
-                 defvar=None, ai_data={}, sim=None):
+                 defvar=None, ai_data=None, sim=None):
         self.t = t
         self.sim = sim
+        self._Qtrim = trim
+        #if ai_data is None:
+        #    ai_data = {}
         self._ai_data = ai_data
-        if not sim is None:
+        if sim is not None:
             self.mach = sim.mach
-        elif not ai_data is None:
+        elif ai_data is not None:
             self.mach = 1. / ai_data['hydro']['iso_sound_speed']
         self.fn = _findAbsPath(fn, sim_path)
+        self.data = ar.athdf(self.fn)
+        for i in self.data.keys():
+            if i not in self:
+                self[i] = None
+            else:
+                print('Warning: key {0:} already exists.'.format(i))
+        #super(BLfile, self).__init__(self.fn)
         self.path = os.path.split(self.fn)[0]
-        if data is None:
-            self.data = self._parse_file()
-        else:
-            self.data = data
+        #print(data)
+        #if data is not None:
+        #    self.data.update(data)
         if self.t is None:
             for i in ['Time', 'time', 'T', 't']:
                 if i in self.data:
-                    self.t = self.data[i]
+                    self.t = self[i]
                     break
         if self.t is None:
             self.t = int(os.path.split(fn)[1].split('.')[2])
-        if not 'Time' in self:
-            self['Time'] = self.t
+        if not 'Time' in self.data:
+            self.data['Time'] = self.t
         self._prefix = '.'.join(os.path.split(fn)[-1].split('.')[:-1])
         #if sim_path and not self.t is None:
         #    self.name = os.path.split(sim_path)[-1] + ' {0:05d}'.format(self.t)
@@ -174,17 +184,12 @@ class BLfile(dict):
         #else:
         self.name = os.path.split(fn)[-1]
         self.t_str = '%.04g' % self.t
-        self._Qtrim = trim
-        if trim:
-            self.update({i: self._trim(self.data[i]) for i in self.data})
-        else:
-            self.update(self.data)
-        self.r = self.data['x1f']
+        self.r = self['x1f']
         self.dr = self.r[1:] - self.r[:-1]
-        self.phi = self.data['x2f']
+        self.phi = self['x2f']
         self.rc = .5 * (self.r[:-1] + self.r[1:])
         self.phic = .5 * (self.phi[:-1] + self.phi[1:])
-        self._shape = self.phic.size, self.rc.size
+        self._grid_shape = self.phic.size, self.rc.size
         self._default_var = defvar
 
     def __repr__(self):
@@ -203,7 +208,7 @@ class BLfile(dict):
                 pass
         for i in self:
             try:
-                if self[i].shape == self._shape:
+                if self[i].shape == self._grid_shape:
                     return i
             except KeyError:
                 pass
@@ -218,11 +223,6 @@ class BLfile(dict):
             loc = tuple(loc)
             data = data[loc]
         return data
-
-    def _parse_file(self, fn=None):
-        if fn is None:
-            fn = self.fn
-        return _parse_file(fn)
 
     def _parse_data(self, data):
         try:
@@ -246,7 +246,7 @@ class BLfile(dict):
         if hasattr(self, key):
             try:
                 out = getattr(self, key)()
-                if out.shape == self._shape:
+                if out.shape == self._grid_shape:
                     return out
             except (AttributeError, TypeError):
                 pass
@@ -254,10 +254,14 @@ class BLfile(dict):
 
     def __getitem__(self, key):
         try:
-            return super(BLfile, self).__getitem__(key)
-            #return super().__getitem__(key)
+            out = super(BLfile, self).__getitem__(key)
+            if out is None:
+                out = self.data[key]
         except KeyError:
-            return self._parse_self(key)
+            out = self._parse_self(key)
+        if self._Qtrim:
+            return self._trim(out)
+        return out
 
     def intr(self, data, axis=-1):
         data = self._parse_data(data)
@@ -284,7 +288,7 @@ class BLfile(dict):
                name=None, ext='pdf', popt=None, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                ax=None, log=False, aspect=1, sdir=None, smooth=None,
-               phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False):
+               phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1):
         '''Plot 2D sim data'''
         if fopt is None:
             fopt = {}
@@ -397,6 +401,10 @@ class BLfile(dict):
 
         #start plotting
         pcm = plt.pcolormesh(x, y, data, **_popt)
+        if rplot:
+            rplot = np.atleast_1d(rplot)
+            for r in rplot:
+                plt.plot(r * np.cos(self.phic), r * np.sin(self.phic), lw=1, c='1', ls=':')
         if title:
             plt.title(helpers.sanitize_lbl(title.format(**self.__dict__)))
         if cb:
@@ -676,7 +684,7 @@ class BLConsPrim(BL3Dfile):
             cl.append(self.CL25(Op, M))
         cl += [self.CS(), self.CA()]
         lbls += ['BRS13 $C_S$','BRS13 $C_A$']
-        tmp = self.Csm()
+        tmp = self.CSm()
         s = tmp.sum(axis=0)
         loc = sorted(range(tmp.shape[0]), key=lambda x: 1/s[x])
         for i in loc[:nm]:
@@ -861,8 +869,8 @@ class BLFT(BLfile):
     def __init__(self, *args, **kwargs):
         super(BLFT, self).__init__(*args, **kwargs)
         #super().__init__(*args, **kwargs)
-        self.data = {}
-        self.data.update(self)
+        #self.data = {}
+        #self.data.update(self)
 
     def _trim(self, data):
         data = super(BLFT, self)._trim(data)
@@ -879,7 +887,10 @@ class BLFT(BLfile):
                 except KeyError:
                     pass
             else:
-                i = self._ai_data['meshblock']['nx2'] - 1
+                try:
+                    i = self._ai_data['meshblock']['nx2'] - 1
+                except TypeError:
+                    i = 31
             data = data[slice(0, i + 1)].copy()
         return data
 
@@ -943,6 +954,338 @@ def loadBLfile(fn, **kwargs):
         return BLFT(fn, data=data, **kwargs)
     #raise RuntimeError
     return BLfile(fn, data=data, **kwargs)
+
+class _FileBuffer(object):
+    def __init__(self, filenames, ghost=1, sim=None, var='FT'):
+        self.filenames = filenames
+        self.len = len(filenames)
+        self.size = 2 * ghost + 1
+        self.sim = sim
+        self.ghost = ghost
+        self.index = None
+        self._var = var
+        self._phase = None
+        self._amp = None
+        self._speed = None
+        self._t = None
+        self._offset = range(-ghost, ghost + 1)
+        self.set_index(0)
+
+    def _load(self, f):
+        try:
+            if int(f) == f:
+                f = self.filenames[f]
+        except ValueError:
+            pass
+        #print(f)
+        bf = BLFT(f, sim=self.sim)
+        return [bf.t, np.abs(bf[self._var]), np.angle(bf[self._var])]
+
+    def _cap_index(self, i):
+        return min(max(i, 0), self.len - 1)
+
+    def set_index(self, i):
+        i %= self.len
+        self._t, self._amp, self._phase = zip(*[self._load(self._cap_index(i + j)) for j in self._offset])
+        self._t = list(self._t)
+        self._amp = list(self._amp)
+        self._phase = list(self._phase)
+        self._speed = [None] * self.size
+        self._comp()
+        self.index = i
+
+    def _set(self, i):
+        i %= self.len
+        i0 = i - self.ghost
+        tmp = self._load(self._cap_index(i0))
+        self._t = [tmp[0]] * self.size
+        self._amp = [tmp[1]] * self.size
+        self._phase = [tmp[2]] * self.size
+        self.index = i0
+        while self.index < i:
+            self._increment()
+
+    def _comp(self, shift=False):
+        # unwrap
+        phi = np.array(self._phase)
+        # coarse correct
+        dphi = np.diff(phi, axis=0)
+        tmp = np.pad(dphi, ((1, 0), (0, 0), (0, 0)), 'constant')
+        tmp = np.minimum(np.floor(tmp / tau), 0)
+        phi -= tmp.cumsum(axis=0) * tau
+        del tmp
+        # fine correct
+        dphi = np.diff(phi, axis=0)
+        t = np.array(self._t)
+        dt = np.diff(t)
+        fdphi = np.pad(dphi, ((0, 1), (0, 0), (0, 0)), 'constant')
+        bdphi = np.pad(dphi, ((1, 0), (0, 0), (0, 0)), 'constant')
+        fdt = np.pad(dt, (0, 1), 'constant')[:, np.newaxis, np.newaxis]
+        bdt = np.pad(dt, (1, 0), 'constant')[:, np.newaxis, np.newaxis]
+        shift = np.rint(np.maximum(fdphi * bdt / fdt - bdphi, 0) / tau)
+        bshift = np.rint(np.roll(np.maximum(bdphi * fdt / bdt - fdphi, 0) / tau, 1, axis=0))
+        shift[shift != bshift] = 0
+        shift *= tau
+        phi += shift.cumsum(axis=0)
+        self._phase = list(phi)
+
+        # speed
+        self._speed = list(grad(t, phi))
+
+    def _increment(self):
+        if self.index >= self.len - 1:
+            raise IndexError('Cannot increment past last time-step.')
+        tmp = self._load(self.index + self.ghost + 1)
+        self._t.append(tmp.pop(0))
+        self._amp.append(tmp.pop(0))
+        self._phase.append(tmp.pop(0))
+        # coarse unwrap
+        fdphi = self._phase[-1] - self._phase[-2]
+        self._phase[-1] -= tau * np.minimum(np.floor(fdphi / tau), 0)
+        # fine unwrap
+        fdphi = self._phase[-1] - self._phase[-2]
+        bdphi = self._phase[-2] - self._phase[-3]
+        fdt = self._t[-1] - self._t[-2]
+        bdt = self._t[-2] - self._t[-3]
+        shift = np.rint(np.maximum(fdphi * bdt / fdt - bdphi, 0) / tau)
+        bshift = np.rint(np.roll(np.maximum(bdphi * fdt / bdt - fdphi, 0) / tau, 1, axis=0))
+        shift[shift != bshift] = 0
+        shift *= tau
+        self._phase[-2] += shift
+        self._phase[-1] += shift
+
+        # speed
+        self._speed.append(None)
+        dl = self._t[-2] - self._t[-3]
+        dr = self._t[-1] - self._t[-2]
+        Dinv = 1. / (dl + dr)
+        rat = dr / dl
+        self._speed[-2] =   (dl**-1 - dr**-1) * self._phase[-2] \
+                          + Dinv / rat * self._phase[-1] \
+                          - rat * Dinv * self._phase[-3]
+
+        # update index and arrays
+        self._phase.pop(0)
+        self._t.pop(0)
+        self._amp.pop(0)
+        self._speed.pop(0)
+        self.index += 1
+
+    def increment(self):
+        try:
+            self._increment()
+            return True
+        except IndexError:
+            return False
+
+    @property
+    def t(self):
+        return self._t[self.ghost]
+
+    @property
+    def amp(self):
+        return self._amp[self.ghost]
+
+    @property
+    def phase(self):
+        return self._phase[self.ghost]
+
+    @property
+    def speed(self):
+        return self._speed[self.ghost]
+
+    @property
+    def state(self):
+        return (self.t, self.amp, self.phase, self.speed)
+
+    def mean(self, data):
+        return np.array([i for i in data if i is not None]).mean(axis=0)
+
+    def std(self, data):
+        return np.std(np.array([i for i in data if i is not None]), axis=0)
+
+
+class IncrementalFFT(object):
+    def __init__(self, filenames, sim=None, store_data=False, fine_out=None, coarse_out=None, var='FT', quiet=None):
+        self.filenames = filenames
+        self._ghost = 10
+        self.buffer = _FileBuffer(filenames, ghost=self._ghost, sim=sim, var=var)
+        self.sim = sim
+        self._store_data = store_data
+        if fine_out is None:
+            fine_out = os.path.join(sim.path, 'FFT_fine_' + var + '.npy')
+        if coarse_out is None:
+            coarse_out = os.path.join(sim.path, 'FFT_coarse_' + var + '.npy')
+        self.fine_out = fine_out
+        self.coarse_out = coarse_out
+        self._t = None
+        self._amp = None
+        self._phase = None
+        self._speed = None
+        if quiet is None:
+            quiet = _quiet
+        self.quiet = quiet
+        self._cd = None
+
+    def process(self, store_data=None):
+        if store_data is None:
+            store_data = self._store_data
+        if store_data:
+            self._t = []
+            self._amp = []
+            self._phase = []
+            self._speed = []
+            self._cd = {'t': [], 'amp': [], 'phase': [], 'speed': [], 'amp_std': [], 'phase_std': [], 'speed_std': []}
+        test = True
+        if not self.quiet:
+            #print(self.coarse_out)
+            print('Compiling FFT data.')
+            helpers.update_progress(0)
+        with open(self.fine_out, 'wb') as fine, open(self.coarse_out, 'wb') as coarse:
+            while test:
+                data = self.buffer.state
+                if store_data:
+                    self._t.append(data[0])
+                    self._amp.append(data[1])
+                    self._phase.append(data[2])
+                    self._speed.append(data[3])
+                for i in data:
+                    np.array(i).astype('float32').tofile(fine)
+                name = os.path.split(self.buffer.filenames[self.buffer.index])[-1].split('.')
+                #print(name)
+                if name[1] == 'FT' and name[2][-1] == '0':
+                    #print(self.buffer.index, data[0], self.buffer.filenames[self.buffer.index])
+                    np.array(data[0]).astype('float32').tofile(coarse)
+                    a = self.buffer._amp
+                    if store_data:
+                        self._cd['t'].append(data[0])
+                        self._cd['amp'].append(self.buffer.mean(a))
+                        self._cd['amp_std'].append(self.buffer.std(a))
+                    self.buffer.mean(a).astype('float32').tofile(coarse)
+                    self.buffer.std(a).astype('float32').tofile(coarse)
+                    a = self.buffer._phase
+                    if store_data:
+                        self._cd['phase'].append(self.buffer.mean(a))
+                        self._cd['phase_std'].append(self.buffer.std(a))
+                    self.buffer.mean(a).astype('float32').tofile(coarse)
+                    self.buffer.std(a).astype('float32').tofile(coarse)
+                    a = self.buffer._speed
+                    if store_data:
+                        self._cd['speed'].append(self.buffer.mean(a))
+                        self._cd['speed_std'].append(self.buffer.std(a))
+                    self.buffer.mean(a).astype('float32').tofile(coarse)
+                    self.buffer.std(a).astype('float32').tofile(coarse)
+                test = self.buffer.increment()
+                if not self.quiet:
+                    helpers.update_progress(float(self.buffer.index) / self.buffer.len)
+        helpers.update_progress(1)
+        if store_data:
+            for i in self._cd:
+                self._cd[i] = np.array(i)
+
+class FTdataFile(object):
+    def __init__(self, filename, nr=None, nphi=None, sim=None, coarse=True):
+        if nr is None:
+            nr = sim.rc.size
+        if nphi is None:
+            nphi = sim.inputs['meshblock']['nx2']
+        self.filename = filename
+        print(filename)
+        self.nr = nr
+        self.nphi = nphi
+        self.modes = np.arange(nphi)[np.newaxis,:,np.newaxis]
+        self.sim = sim
+        self.coarse = coarse
+        self._t = None
+        self._amp = None
+        self._phase = None
+        self._speed = None
+        self._amp_std = None
+        self._phase_std = None
+        self._speed_std = None
+
+    def existsQ(self):
+        return os.path.isfile(self.filename)
+
+    def updateQ(self):
+        if not self.existsQ():
+            return True
+        if os.path.getsize(self.filename) == 0:
+            return True
+        if self.sim is not None:
+            tmp = [0, os.path.getmtime(self.sim.path)]
+            files = [i for i in glob(os.path.join(self.sim.path, '*.athdf'))]
+            tmp.extend([os.path.getmtime(i) for i in files])
+            if max(tmp) > os.path.getmtime(self.filename):
+                return True
+        return False
+
+    def generate(self):
+        self.sim.gen_fft_file()
+
+    def _read_data(self):
+        if self.updateQ():
+            self.generate()
+        t = []
+        amp = []
+        phase = []
+        speed = []
+        nvar = 3
+        if self.coarse:
+            amp_std = []
+            phase_std = []
+            speed_std = []
+            nvar += 3
+        with open(self.filename, 'rb') as f:
+            while True:
+                try:
+                    t.append(np.fromfile(f, 'float32', 1)[0])
+                    data = list(np.reshape(np.fromfile(f, 'float32', nvar * self.nphi * self.nr), (nvar, self.nphi, self.nr)))
+                    amp.append(data.pop(0))
+                    if self.coarse: amp_std.append(data.pop(0))
+                    phase.append(data.pop(0))
+                    if self.coarse: phase_std.append(data.pop(0))
+                    speed.append(data.pop(0))
+                    if self.coarse: speed_std.append(data.pop(0))
+                except (EOFError, IndexError, ValueError):
+                    break
+        self._t = np.array(t)
+        self._amp = np.array(amp)
+        self._phase = np.array(phase)
+        self._speed = np.array(speed) / self.modes
+        if self.coarse:
+            self._amp_std = np.array(amp_std)
+            self._phase_std = np.array(phase_std)
+            self._speed_std = np.array(speed_std) / self.modes
+
+    @property
+    def t(self):
+        if self._t is None:
+            self._read_data()
+        return self._t
+
+    @property
+    def amp(self):
+        if self._amp is None:
+            self._read_data()
+        return self._amp
+
+    @property
+    def phase(self):
+        if self._phase is None:
+            self._read_data()
+        return self._phase
+
+    @property
+    def speed(self):
+        if self._speed is None:
+            self._read_data()
+        return self._speed
+
+    @property
+    def FT(self):
+        return self.amp * np.exp(1j * self.phase)
+
 
 class FFTset(object):
     def __init__(self, filenames, sim=None, athinput=None, fft_data=None,
@@ -1036,7 +1379,7 @@ class CompositeFFTSet(object):
             # limit = - .1 / np.arange(phase.shape[1])[np.newaxis,:,np.newaxis]
         if mNorm:
             limit /= np.arange(phase.shape[1])[np.newaxis,:,np.newaxis]
-        # course unwrap
+        # coarse unwrap
         d = crudeDiff(time, phase, axis=0)
         shift = np.zeros_like(phase)
         shift[np.where(d < limit)] += tau
@@ -1163,6 +1506,8 @@ class BLsim(object):
             a = self.inputs['job']['problem_id']
             c = '[0-9]*'
             varlist = list(filter(None, [self.inputs[i].get('variable') for i in outs]))
+            self._coarse_data = None
+            self._fine_data = None
             for out in outs:
                 files = []
                 b = self.inputs[out].get('id', 'out' + out[6:])
@@ -1200,6 +1545,9 @@ class BLsim(object):
         phi = spiral(r, rp, 1./self.mach) + phi0
         plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
 
+    def __repr__(self):
+        return '<BLsim "{0:}">'.format(self.name)
+
     def _unwrap(self, time=None, phase=None, limit=None, mNorm=False):
         if phase is None:
             phase = np.angle(self.fft)
@@ -1215,12 +1563,57 @@ class BLsim(object):
         shift[np.where(d < limit)] += tau
         return phase + shift.cumsum(axis=0)
 
-    def FFT_composite(self):
+    def sortedFFT(self):
+        ffts = [out for out in self.fileDict.keys()
+                if self.inputs.get(out, {}).get('variable') == "FT-Range"]
+        ffts.sort(key=lambda x: self.inputs.get(out, {}).get('start_time', 0))
+        n = max([len(self.fileDict[i]) for i in ffts])
+        out = []
+        for i in range(n):
+            for series in ffts:
+                try:
+                    out.append(self.fileDict[series][i])
+                except IndexError:
+                    pass
+        return [os.path.join(self.path, i) for i in out]
+
+    def gen_fft_file(self, var='FT'):
+        handler = IncrementalFFT(self.sortedFFT(), var=var, sim=self)
+        handler.process()
+
+    def load_fft_data(self, fine=False, var='FT'):
+        _type = 'coarse'
+        if fine:
+            _type = 'fine'
+        fn = os.path.join(self.path, 'FFT_' + _type + '_' + var + '.npy')
+        if not os.path.isfile(fn):
+            # TODO: store data
+            self.gen_fft_file(var=var)
+        data = FTdataFile(fn, sim=self)
+        if _type == 'coarse':
+            self._coarse_data = data
+        else:
+            self._fine_data = data
+        return data
+
+    @property
+    def coarse_data(self):
+        if self._coarse_data is None:
+            self.load_fft_data()
+        return self._coarse_data
+
+    @property
+    def fine_data(self):
+        if self._fine_data is None:
+            self.load_fft_data(fine=True)
+        return self._fine_data
+
+    def __FFT_composite(self):
         ffts = [out for out in self.fileDict.keys()
                 if self.inputs.get(out, {}).get('variable') == "FT-Range"]
         return CompositeFFTSet([FFTset(self.fileDict[i], sim=self) for i in ffts])
 
-    def _collect_fft_data(self):
+    def __collect_fft_data(self):
         ffts = [out for out in self.fileDict.keys()
                 if self.inputs.get(out,{}).get('variable') == "FT-Range"]
         ffts = sorted([FFTset(self.fileDict[i], sim=self) for i in ffts], key=lambda x:x.time[1])
@@ -1244,7 +1637,7 @@ class BLsim(object):
             self._phase_angle = phase
         return time, data, phase
 
-    def _load_fft_data(self):
+    def __load_fft_data(self):
         data = []
         t = []
         try:
@@ -1290,10 +1683,36 @@ class BLsim(object):
         return intr(self.dr, data, axis=axis)
 
     @property
-    def fft(self):
+    def __fft(self):
         if not self._fft_data is None:
             return self._fft_data
         return self._collect_fft_data()[1]
+
+    @property
+    def fft_data(self):
+        if self._fine_data is None:
+            return self.coarse_data
+        return self.fine_data
+
+    @property
+    def fft(self):
+        return self.fft_data.FT
+
+    @property
+    def amp(self):
+        return self.fft_data.amp
+
+    @property
+    def phase(self):
+        return self.fft_data.phase
+
+    @property
+    def speed(self):
+        return self.fft_data.speed
+
+    @property
+    def fft_time(self):
+        return self.fft_data.t
 
     @property
     def filenames(self):
@@ -1319,10 +1738,7 @@ class BLsim(object):
             out = False
         return out
 
-    def __repr__(self):
-        return '<BLsim "{0:}">'.format(self.name)
-
-    def _gen_fft_time(self):
+    def __gen_fft_time(self):
         t = None
         if self._fft_data is None:
             self._collect_fft_data()
@@ -1338,13 +1754,13 @@ class BLsim(object):
         return t
 
     @property
-    def fft_time(self):
+    def __fft_time(self):
         if not self._fft_time is None:
             return self._fft_time
         return self._gen_fft_time()
 
     @property
-    def phase_angle(self):
+    def __phase_angle(self):
         if not self._phase_angle is None:
             return self._phase_angle
         if self._fft_data is None:
@@ -1364,7 +1780,7 @@ class BLsim(object):
         if fn in self.filenames:
             return loadBLfile(fn, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
 
-    def mode_mask(self, data=None, info=False, amin=None):
+    def __mode_mask(self, data=None, info=False, amin=None):
         if self._mode_mask is None:
             if amin is None:
                 amin = 1e-3 / self.rc.size / self.phic.size
@@ -1432,12 +1848,12 @@ class BLsim(object):
             return _info
         return mask
 
-    def mode_phase(self):
+    def __mode_phase(self):
         DeprecationWarning('This function (mode_phase) is deprecated.')
         out = np.array([np.abs(self.fft), self.phase_angle])
         return out
 
-    def prop_speed(self, dt=None, ir=None):
+    def __prop_speed(self, dt=None, ir=None):
         if dt is None:
             for var in ['FT-Range', 'FT']:
                 if var in self.varDict:
@@ -1520,8 +1936,11 @@ class BLsim(object):
     def main_modes(self, nm=None, skip_zero=True):
         if self._main_modes is None:
             fft = self.fft * self.rc[np.newaxis, np.newaxis, :]
-            nt = fft.shape[0]
-            a = self.intr(np.abs(fft[nt//2:]).sum(axis=0))
+            if self.fft_time[-1] < 200:
+                nt = self.fft_time.size
+                a = self.intr(self.amp[nt//2:].sum(axis=0))
+            else:
+                a = self.intr(self.amp[self.tloc(100 * tau) - 1:].sum(axis=0))
             self._main_modes = sorted(range(a.size), key=lambda x: -a[x])
         modes = self._main_modes[:]
         if skip_zero:
@@ -1586,13 +2005,14 @@ class BLsim(object):
         if fig is True:
             plt.figure()
         ir = self.rloc(r)
+        # TODO: Fix mask
         mask = self.mode_mask()[:,:,ir]
-        data = np.ma.array(self.phase_angle[:,:,ir], mask=mask)
+        data = np.ma.array(self.phase[:,:,ir], mask=mask)
         m = self._r_phase_plotter(r, data, ret_m=ret_m)
         plt.ylabel('Phase')
         return m
 
-    def _old_r_speed(self, r, ret_m=False, fig=True):
+    def __old_r_speed(self, r, ret_m=False, fig=True):
         if fig is True:
             plt.figure()
         ir = self.rloc(r)
@@ -1611,7 +2031,7 @@ class BLsim(object):
         plt.ylabel('Speed')
         return m
 
-    def _old_r_amp(self, r, ret_m=False, fig=True):
+    def __old_r_amp(self, r, ret_m=False, fig=True):
         if fig is True:
             plt.figure()
         ir = self.rloc(r)
@@ -1640,7 +2060,7 @@ class BLsim(object):
         return m
 
     def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None,
-                         ret_m=None, smooth=False, sw=20):
+                         ret_m=None, smooth=False, sw=20, std=None):
         ir = self.rloc(r)
         if modes is None:
             modes = self.main_modes(nm=nm)[::-1]
@@ -1652,6 +2072,9 @@ class BLsim(object):
             rdata = data[:,:,ir]
         else:
             rdata = data
+        if std is not None:
+            if len(std.shape) == 3:
+                std = std[:, :, ir]
         for m in modes:
             line = rdata[:,m]
             if smooth:
@@ -1659,6 +2082,9 @@ class BLsim(object):
                     smooth = 'flat'
                 line = helpers.smooth(line, window=smooth, window_len=sw)
             handles[m] = plt.plot(self.fft_time / tau, line, lw=1)[0]
+            if std is not None:
+                c = handles[m].get_color()
+                plt.fill_between(self.fft_time / tau, line - std[:,m], line + std[:,m], color=c, alpha=.1)
         opt = {'loc': 0, 'frameon': True, 'handlelength': .7, 'prop': {'size':8}, 'ncol': 3}
         modes.sort()
         handles = [handles[m] for m in modes]
@@ -1670,7 +2096,7 @@ class BLsim(object):
         #plt.ylabel('Phase')
         plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
 
-    def r_speed(self, r, fig=True, **kwarg):
+    def r_speed(self, r, fig=True, plt_std=False, **kwarg):
         if fig is True:
             plt.figure()
         if not 'smooth' in kwarg:
@@ -1678,7 +2104,12 @@ class BLsim(object):
             if not 'sw' in kwarg:
                 kwarg['sw'] = 41
         ir = self.rloc(r)
-        data = self.prop_speed(ir=ir)
+        data = self.speed[:,:,ir]
+        if plt_std:
+            try:
+                kwarg['std'] = self.fft_data._speed_std[:,:,ir]
+            except AttributeError:
+                pass
         self._r_phase_plotter(r, data, **kwarg)
         ylim = list(plt.ylim())
         ylim[0] = 0
@@ -1695,7 +2126,7 @@ class BLsim(object):
         if fig is True:
             plt.figure()
         ir = self.rloc(r)
-        data = np.abs(self.fft[:,:,ir])
+        data = self.amp[:,:,ir]
         self._r_phase_plotter(r, data, **kwarg)
         nt = self.fft_time.size
         m0 = data[:nt//5, 1:].max()
@@ -1775,7 +2206,7 @@ class BLsim(object):
     def t_speed(self, t='mean', ret_m=False, fig=True, nm=5, tmin=2e2*tau):
         if fig is True:
             plt.figure()
-        speed = self.prop_speed()
+        speed = self.speed()
         std = None
         if t == 'mean':
             amp = np.abs(self.fft[self.tloc(tmin):])
@@ -1876,8 +2307,8 @@ class BLsim(object):
 
     def diagnostic(self, rs=[.8,1.3], save=False, fn=None, ext='pdf', figsize=None,
                    sdir=None, subsample=None, sz=4):
-        self.fft #make sure data is loaded
-        self.mode_mask()
+        self.amp #make sure data is loaded
+        #self.mode_mask()
         rs = np.atleast_1d(rs)
         nr = rs.size
         nx = nr + 1
@@ -1896,7 +2327,8 @@ class BLsim(object):
 
         ax = plt.subplot(gs[0,nr])
         f = self.loadfile(self.files('cons')[-1])
-        f.plot2d('Rpseudo', ax=ax, vmin='smart', cbl=r'$v_r\sqrt{\rho}$', subsample=subsample)
+        f.plot2d('Rpseudo', ax=ax, vmin='smart', cbl=r'$rv_r\sqrt{\rho}$', subsample=subsample,
+                 title=r'$t/2\pi={:.2f}$'.format(f.t / tau))
         fig.suptitle('Diagnostic for ' + helpers.sanitize_lbl(self.name))
 
         ax = plt.subplot(gs[-1,-1])
@@ -1908,18 +2340,20 @@ class BLsim(object):
         ax.yaxis.set_ticks([])
         # the time is now
         now = time.asctime() + ' ' + time.tzname[time.localtime().tm_isdst]
-        ax.text(.5, 1, now, ha='center', va='top')
+        ax.text(.5, 1, self.name + '\n' + now, ha='center', va='top')
         info = {}
         pars = []
         def _add(key, val):
             info[key] = val
             pars.append(key)
         # populate
-        _add('Name', self.name)
+        #_add('Name', self.name)
+        _add(r'$\mathcal{M}$', self.mach)
         _add('$N_r$', self.rc.size)
         _add(r'$N_\phi$', self.phic.size)
         _add('$r$', '[{:g}, {:g}]'.format(self.r[0], self.r[-1]))
-        _add(r'$\mathcal{M}$', 1. / self.mach)
+        _add('Seed', self.inputs['problem'].get('seed', 'random'))
+        _add('Amp', '{:g}'.format(self.inputs['problem'].get('seedAmp', .01)))
         # print the stuff in a grid
         j = 0
         ncol = 3
@@ -1928,7 +2362,7 @@ class BLsim(object):
                 txt = '{0:s}: {1:g}'.format(par, float(info[par]))
             except (TypeError, ValueError) :
                 txt = '{0:s}: {1:}'.format(par, info[par])
-            ax.text(.03 + .35 * (j % ncol), 1. - .5 * .12 * (j // ncol + 2), txt)
+            ax.text(.00 + .4 * (j % ncol), 1. - .5 * .12 * (j // ncol + 3), txt)
             j += 1
         if save or fn:
             if fn is None:

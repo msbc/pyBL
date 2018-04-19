@@ -352,3 +352,10 @@ def mkmov(fnames, out=None, cmd=None, **kwargs):
     _opt.update(kwargs)
     query = map(str, filter(None, sum(map(list, _opt.items()), [cmd])))
     call(query)
+
+def dir_mtime(dir):
+    '''Usage : dir_mtime(dir)
+    Gets the time of the most recently modified file in the given directory.'''
+    out = [0, os.path.getmtime(dir)]
+    out.extend([os.path.getmtime(os.path.join(dir, i)) for i in os.listdir(dir)])
+    return max(out)
