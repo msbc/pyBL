@@ -17,7 +17,10 @@ from optparse import OptionParser
 import numpy as np
 import getpass
 from glob import glob
+import warnings
 
+
+warnings.filterwarnings("ignore")
 _from = getpass.getuser() + '@' + socket.gethostname()
 
 _queue_cmds = ['qstat', 'squeue']
@@ -209,6 +212,7 @@ class athenaBL(_job):
         import matplotlib as mpl
         mpl.use('agg')
         import pyBL.simBLclass as bl
+        bl._quiet = True
         sim = bl.BLsim(self.name.rstrip('.sh'))
         return sim.diagnostic(save=True, ext=self.ext)
 
