@@ -319,6 +319,7 @@ def email_file(to, path, subject='Automated python scripted email', preamble=Non
         s.sendmail(sender, to, outer.as_string())
         s.quit()
     except socket.error:
+        print('Socket Error')
         s = smtplib.SMTP(host='smtp.gmail.com', port=587)
         s.sendmail(sender, to, outer.as_string())
         s.quit()
