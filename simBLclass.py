@@ -1706,7 +1706,7 @@ class BLsim(object):
             if var == 'vortensity':
                 a[0] = b[0]
                 a[-1] = b[-1]
-            plt.plot(self.rc, (a-b)/a, lw=1)
+            plt.plot(self.rc, (a-b)/np.maximum(np.abs(a),np.abs(b)), lw=1)
         plt.ylim(-5e-3, 5e-3)
         plt.legend(varlist)
         plt.title('Time/$2\pi={0:.1f}$'.format(bf.t / tau))
@@ -2094,6 +2094,7 @@ class BLsim(object):
     def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None,
                          ret_m=None, smooth=False, sw=20, std=None):
         ir = self.rloc(r)
+        r = self.rc[ir]
         if modes is None:
             modes = self.main_modes(nm=nm)[::-1]
         if not add_modes is None:
@@ -2337,8 +2338,8 @@ class BLsim(object):
             helpers.mkmov(fnames="")
         return None
 
-    def diagnostic(self, rs=[.8,1.3], save=False, fn=None, ext='pdf', figsize=None,
-                   sdir=None, subsample=None, sz=4):
+    def diagnostic(self, rs=[-1, 1.3], save=False, fn=None, ext='pdf', figsize=None,
+                   sdir=None, subsample=None, sz=4, xmax=2.5):
         self.amp #make sure data is loaded
         #self.mode_mask()
         rs = np.atleast_1d(rs)
@@ -2351,6 +2352,8 @@ class BLsim(object):
         gs = mpl.gridspec.GridSpec(ny, nx, top=.9, bottom=.1, hspace=.3)
 
         for i, r in enumerate(rs):
+            if r == -1:
+                r = .5 + .5 * self.rc[0]
             ax = plt.subplot(gs[0,i])
             self.r_amp(r, fig=False)
 
@@ -2361,6 +2364,8 @@ class BLsim(object):
         f = self.loadfile(self.files('cons')[-1])
         f.plot2d('Rpseudo', ax=ax, vmin='smart', cbl=r'$rv_r\sqrt{\rho}$', subsample=subsample,
                  title=r'$t/2\pi={:.2f}$'.format(f.t / tau))
+        plt.xlim(-xmax, xmax)
+        plt.ylim(-xmax, xmax)
         fig.suptitle('Diagnostic for ' + helpers.sanitize_lbl(self.name))
 
         ax = plt.subplot(gs[-1,-1])
