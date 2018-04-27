@@ -281,8 +281,9 @@ class BLfile(dict):
             out = np.absolute(out)
         return out
 
-    def rloc(self, r):
-        return np.abs(r - self.rc).argmin()
+    def rloc(self, r, subsample=None):
+        rc = self.rc[::subsample]
+        return np.abs(r - rc).argmin()
 
     def plot2d(self, data=None, fn=None, save=False, subsample=False, title=None,
                name=None, ext='pdf', popt=None, cb=True, cbl=None, zerocent=None,
@@ -1245,7 +1246,7 @@ class FTdataFile(object):
         if os.path.getsize(self.filename) == 0:
             return True
         if self.sim is not None:
-            tmp = [0, os.path.getmtime(self.sim.path)]
+            tmp = [0]
             files = [i for i in glob(os.path.join(self.sim.path, '*.athdf'))]
             tmp.extend([os.path.getmtime(i) for i in files])
             if max(tmp) > os.path.getmtime(self.filename):
@@ -1800,8 +1801,9 @@ class BLsim(object):
         self._phase_angle = self._unwrap()
         return self._phase_angle
 
-    def rloc(self, r):
-        return np.abs(r - self.rc).argmin()
+    def rloc(self, r, subsample=None):
+        rc = self.rc[::subsample]
+        return np.abs(r - rc).argmin()
 
     def tloc(self, t):
         return np.abs(t - self.fft_time).argmin()
@@ -2299,7 +2301,7 @@ class BLsim(object):
                         for d in data:
                             out.append(bf.plot2d(d, **kwargs))
                         if pop_title:
-                            kwargs.pop['title']
+                            kwargs.pop('title')
                 return out
         if not hasattr(bf, 'plot2d'):
             bf = self.loadfile(bf)
@@ -2316,7 +2318,7 @@ class BLsim(object):
     def speed_shift(self, phi_dot=.1*np.arange(10), data=None, base='cons', t0=None, t1=None,
                     mkmov=False, add_phi_dot=None, dpi=300, **kwargs):
         if data is None:
-            data = ['Rpseudo', 'vorticity', 'vortensity']
+            data = ['Rpseudo', 'vorticity', 'vortensity', 'vi', 've']
         phi_dot = np.atleast_1d(phi_dot)
         if not add_phi_dot is None:
             phi_dot = np.concatenate([phi_dot, np.atleast_1d(add_phi_dot)])
