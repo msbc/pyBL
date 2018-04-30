@@ -214,7 +214,8 @@ class athenaBL(_job):
         import pyBL.simBLclass as bl
         bl._quiet = True
         sim = bl.BLsim(self.name.rstrip('.sh'))
-        return sim.diagnostic(save=True, ext=self.ext)
+        if len(sim.files()) > 20:
+            return sim.diagnostic(save=True, ext=self.ext)
 
 
 class nonJob(_job):
