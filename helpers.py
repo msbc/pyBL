@@ -359,3 +359,23 @@ def dir_mtime(dir):
     out = [0, os.path.getmtime(dir)]
     out.extend([os.path.getmtime(os.path.join(dir, i)) for i in os.listdir(dir)])
     return max(out)
+
+def rolling_weighted_triangle_conv(x, w, window_size):
+    """Smooth with triangle window, also using per-element weights."""
+    # Simplify slicing
+    wing = window_size // 2
+
+    # Pad both arrays with mirror-image values at edges
+    xp = np.concatenate(( x[wing-1::-1], x, x[:-wing-1:-1] ))
+    wp = np.concatenate(( w[wing-1::-1], w, w[:-wing-1:-1] ))
+
+    # Generate a (triangular) window of weights to slide
+    ramp = (1. + np.arange(wing)) / (wing + 1)
+    triangle = np.r_[ramp, 1.0, ramp[::-1]]
+
+    D = np.convolve(wp*xp, triangle)[window_size-1:-window_size+1]
+    N = np.convolve(wp, triangle)[window_size-1:-window_size+1]
+    out = D / N
+    if not window_size % 2:
+        out = out[1:-1]
+    return out
