@@ -28,6 +28,7 @@ import time
 
 from . import athena_read as ar
 from . import helpers
+from .helpers import rolling_weighted_triangle_conv as running_mean
 
 
 _quiet = False
@@ -2093,31 +2094,53 @@ class BLsim(object):
         plt.ylabel('Amplitude')
         return m
 
-    def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None,
-                         ret_m=None, smooth=False, sw=20, std=None):
+    def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None, std_plot=False,
+                         ret_m=None, smooth=False, sw=20, std=None, rsmooth=None):
         ir = self.rloc(r)
+        rslice = ir
         r = self.rc[ir]
         if modes is None:
             modes = self.main_modes(nm=nm)[::-1]
         if not add_modes is None:
             add_modes = list(np.atleast_1d(add_modes))
             modes += add_modes
+        modes = list(modes)
         handles = {}
-        if len(data.shape) == 3:
-            rdata = data[:,:,ir]
+        weight = None
+        rweight = None
+        if rsmooth:
+            if rsmooth == -1:
+                if r <= 1:
+                    rsmooth = 5
+                else:
+                    rsmooth = 30
+            if rsmooth < 0:
+                raise ValueError('Keyword "rsmooth" cannot be negative.')
+            rslice = slice(max(ir - rsmooth, 0), ir + rsmooth + 1)
+            weight = std**-2
+            rdata, rweight = np.average(data[:,modes,rslice], weights=weight[:,modes,rslice], axis=2, returned=True)
         else:
-            rdata = data
-        if std is not None:
-            if len(std.shape) == 3:
-                std = std[:, :, ir]
-        for m in modes:
-            line = rdata[:,m]
-            if smooth:
-                if smooth in [True, 1]:
-                    smooth = 'flat'
-                line = helpers.smooth(line, window=smooth, window_len=sw)
-            handles[m] = plt.plot(self.fft_time / tau, line, lw=1)[0]
+            if len(data.shape) == 3:
+                rdata = data[:,modes,ir]
+            else:
+                rdata = data[:,modes]
             if std is not None:
+                if len(std.shape) == 3:
+                    std = std[:, modes, ir]
+                else:
+                    std = std[:, modes]
+        for i, m in enumerate(modes):
+            line = rdata[:,i]
+            if smooth:
+                if std is not None and rsmooth:
+                    line = running_mean(rdata[:,i], rweight[:,i], sw)
+                    print(sw,line.size,self.fft_time.size)
+                else:
+                    if smooth in [True, 1]:
+                        smooth = 'flat'
+                    line = helpers.smooth(line, window=smooth, window_len=sw)
+            handles[m] = plt.plot(self.fft_time / tau, line, lw=1)[0]
+            if std is not None and std_plot:
                 c = handles[m].get_color()
                 plt.fill_between(self.fft_time / tau, line - std[:,m], line + std[:,m], color=c, alpha=.1)
         opt = {'loc': 0, 'frameon': True, 'handlelength': .7, 'prop': {'size':8}, 'ncol': 3}
@@ -2131,20 +2154,21 @@ class BLsim(object):
         #plt.ylabel('Phase')
         plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
 
-    def r_speed(self, r, fig=True, plt_std=False, **kwarg):
+    def r_speed(self, r, fig=True, **kwarg):
         if fig is True:
             plt.figure()
         if not 'smooth' in kwarg:
             kwarg['smooth'] = 'flat'
             if not 'sw' in kwarg:
-                kwarg['sw'] = 41
+                kwarg['sw'] = 20
         ir = self.rloc(r)
-        data = self.speed[:,:,ir]
-        if plt_std:
-            try:
-                kwarg['std'] = self.fft_data._speed_std[:,:,ir]
-            except AttributeError:
-                pass
+        data = self.speed
+        try:
+            kwarg['std'] = self.fft_data._speed_std
+            if 'rsmooth' not in kwarg:
+                kwarg['rsmooth'] = -1
+        except AttributeError:
+            pass
         self._r_phase_plotter(r, data, **kwarg)
         ylim = list(plt.ylim())
         ylim[0] = 0
