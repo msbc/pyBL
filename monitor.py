@@ -213,7 +213,10 @@ class athenaBL(_job):
         mpl.use('agg')
         import pyBL.simBLclass as bl
         bl._quiet = True
-        sim = bl.BLsim(self.name.rstrip('.sh'))
+        try:
+            sim = bl.BLsim(self.name.rstrip('.sh'))
+        except IOError:
+          return None
         if len(sim.files()) > 20:
             return sim.diagnostic(save=True, ext=self.ext)
 
