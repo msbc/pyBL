@@ -2181,15 +2181,21 @@ class BLsim(object):
         if not 'smooth' in kwarg:
             kwarg['smooth'] = 'flat'
             if not 'sw' in kwarg:
-                kwarg['sw'] = 41
+                kwarg['sw'] = 20
         if fig is True:
             plt.figure()
         ir = self.rloc(r)
-        data = self.amp[:,:,ir]
+        data = self.amp
+        try:
+            kwarg['std'] = self.fft_data._speed_std
+            if 'rsmooth' not in kwarg:
+                kwarg['rsmooth'] = -1
+        except AttributeError:
+            pass
         self._r_phase_plotter(r, data, **kwarg)
         nt = self.fft_time.size
-        m0 = data[:nt//5, 1:].max()
-        m1 = data[nt//5:, 1:].max()
+        m0 = data[:nt//5, 1:, ir].max()
+        m1 = data[nt//5:, 1:, ir].max()
         plt.ylim(0, None)
         if m0 > 1.2 * m1:
             plt.ylim(None, 1.1 * m1)
