@@ -37,7 +37,7 @@ tau = 2 * np.pi
 #mpl.rc('text', usetex=True)
 #mpl.rcParams['text.latex.preamble'] = [r"\usepackage{amssymb,amsmath}"]
 
-_dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer', '/perseus/scratch/gpfs/sashaph/BLayer', '~/BLayer', '~/BLayer/fft_tests']
+_dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer', '/perseus/scratch/gpfs/sashaph/BLayer', '~/BLayer', '~/BLayer/fft_tests', '~/data/bl', '~/archive']
 _dirs = list(map(os.path.expanduser, _dirs))
 _dirs += [os.path.join(d, 'Mach8stampede') for d in _dirs]
 _data_base = '/scratch/gpfs/sashaph/BLayer'
@@ -2134,7 +2134,7 @@ class BLsim(object):
             if smooth:
                 if std is not None and rsmooth:
                     line = running_mean(rdata[:,i], rweight[:,i], sw)
-                    print(sw,line.size,self.fft_time.size)
+                    #print(sw,line.size,self.fft_time.size)
                 else:
                     if smooth in [True, 1]:
                         smooth = 'flat'
