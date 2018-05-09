@@ -1474,7 +1474,7 @@ class CompositeFFTSet(object):
 
 
 class BLsim(object):
-    def __init__(self, path, fmts=None, fft_data=None, fft_time=None,
+    def __init__(self, path, fmts=None, coarse_data=None, fft_time=None,
                  athinput=None, mode_mask=None, main_modes=None,
                  phase_angle=None):
         if fmts is None:
@@ -1556,7 +1556,8 @@ class BLsim(object):
 
         #for attr in ['r', 'phi', 'rc', 'phic']:
         #    setattr(self, attr, getattr(tmp, attr))
-        self._fft_data = fft_data
+        self._fft_data = None
+        self._coarse_data = coarse_data
         self._fft_time = fft_time
         self._phase_angle = phase_angle
         self._mode_mask = mode_mask
@@ -2552,6 +2553,75 @@ class BLsim(object):
             plt.close()
 
 
+    def _mr_plot(self, t, data, std, log=False, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False,
+                 fn=None, cbl=None, skip_m0=None, speed=False, popt=None, title=None):
+        tslice = slice(t - dt, t + dt + 1)
+        weights = np.minimum(np.nan_to_num(std[tslice]), 1e99) ** -2
+        _data, weight = np.average(data[tslice], weights=weights, axis=0, returned=True)
+
+        rbins = np.arange(self.rc[0] - self.rc[0] % dr, self.rc[-1], dr)
+        bins = []
+        for r in rbins:
+            loc = np.where(np.logical_and(r <= self.rc, self.rc < r + dr))[0]
+            bins.append(np.average(_data[:,loc], weights=weight[:,loc], axis=1))
+        bins = np.array(bins).T
+
+        if title is None:
+            title = helpers.sanitize_lbl(self.name) + " $t/2\pi={0:g}\pm{1:g}$".format(t, dt)
+
+
+        if log and norm is None:
+            norm = mpl.colors.LogNorm()
+        extent = [rbins[0], rbins[-1], -.5, data.shape[1] - .5]
+
+        if speed:
+            if skip_m0 is None:
+                skip_m0 = True
+            bins[bins > 1] = np.nan
+            bins[bins < 0] = np.nan
+        if skip_m0:
+            extent[2] = .5
+            bins = bins[1:,:]
+
+        if popt is None:
+            popt = {}
+        _opt = dict(extent=extent, norm=norm, interpolation='nearest')
+        _opt.update(popt)
+
+        if fig is None and ax is None:
+            fig = plt.figure()
+        if ax is None:
+            ax = plt.gca()
+
+        im = ax.imshow(bins, **_opt)
+        cb = plt.colorbar(im)
+        if cbl:
+            cb.set_label(cbl)
+        plt.xlabel('$r$')
+        plt.ylabel('$m$')
+        ax.minorticks_on()
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        if title:
+            plt.title(title)
+        plt.axvline(1, lw=1, c='k', ls=':')
+
+        if fn and save is None:
+            save = True
+        if save:
+            if fn is None:
+                fn = helpers.sanitize_lbl(self.name) + '_mr.' + ext.lstrip('.')
+            fig.savefig(fn)
+
+    def mr_speed(self, t, log=False, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
+                 cbl=None, **kwargs):
+        if fn is None:
+            fn = helpers.sanitize_lbl(self.name) + '_mr_speed_{0:05d}.'.format(t) + ext.lstrip('.')
+        if cbl is None:
+            cbl = r'$\Omega_{\rm p}$'
+        opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=fn, cbl=cbl, speed=True,
+                   popt=kwargs)
+        self._mr_plot(t, self.speed, self.fft_data._speed_std, **opt)
+
 
 class auxBLsim(BLsim):
     def mode_plot(self, data=None, cb=True, title=None, cbl=None, vmin=0,
@@ -2703,7 +2773,7 @@ class auxBLsim(BLsim):
         return out
 
 def refreshSim(sim):
-    attr = ['fft_data', 'fft_time', 'main_modes', 'mode_mask', 'phase_angle']
+    attr = ['coarse_data', 'fft_time']
     opt = {i: getattr(sim, '_' + i, None) for i in attr}
     return BLsim(sim.path, **opt)
 
