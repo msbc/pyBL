@@ -1969,14 +1969,16 @@ class BLsim(object):
             fig.savefig(fn)
             plt.close()
 
-    def main_modes(self, nm=None, skip_zero=True):
+    def main_modes(self, nm=None, skip_zero=True, rmax=1.7):
         if self._main_modes is None:
             fft = self.fft * self.rc[np.newaxis, np.newaxis, :]
+            amp = self.amp.copy()
+            amp[:, :, np.where(self.rc > 1.7)[0]] = 0
             if self.fft_time[-1] < 200:
                 nt = self.fft_time.size
-                a = self.intr(self.amp[nt//2:].sum(axis=0))
+                a = self.intr(amp[nt//2:].sum(axis=0))
             else:
-                a = self.intr(self.amp[self.tloc(100 * tau) - 1:].sum(axis=0))
+                a = self.intr(amp[self.tloc(100 * tau) - 1:].sum(axis=0))
             self._main_modes = sorted(range(a.size), key=lambda x: -a[x])
         modes = self._main_modes[:]
         if skip_zero:
