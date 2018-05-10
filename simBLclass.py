@@ -2611,6 +2611,7 @@ class BLsim(object):
             if fn is None:
                 fn = helpers.sanitize_lbl(self.name) + '_mr.' + ext.lstrip('.')
             fig.savefig(fn)
+            plt.close(fig)
 
     def mr_speed(self, t, log=False, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
                  cbl=None, **kwargs):
