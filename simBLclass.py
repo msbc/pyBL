@@ -2588,8 +2588,11 @@ class BLsim(object):
             extent[2] = .5
             bins = bins[1:,:]
 
-        if amp and 'vmax' not in popt and bins.max() > .1:
-            popt['vmax'] = .1
+        if amp:
+            if 'vmax' not in popt and bins.max() > .1:
+                popt['vmax'] = .1
+            if 'vmin' not in popt and bins.min() < 1e-5:
+                popt['vmin'] = .1e-5
 
         if popt is None:
             popt = {}
@@ -2637,8 +2640,6 @@ class BLsim(object):
             fn = helpers.sanitize_lbl(self.name) + '_mr_amp_{0:05d}.'.format(t) + ext.lstrip('.')
         if cbl is None:
             cbl = r'$|A_m|$'
-        if 'vmin' not in kwargs:
-            kwargs['vmin'] = 1e-5
         opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=fn, cbl=cbl, amp=True,
                    popt=kwargs)
         self._mr_plot(t, self.amp, self.fft_data._amp_std, **opt)
