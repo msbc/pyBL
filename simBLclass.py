@@ -2556,7 +2556,7 @@ class BLsim(object):
 
 
     def _mr_plot(self, t, data, std, log=False, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False,
-                 fn=None, cbl=None, skip_m0=None, speed=False, popt=None, title=None):
+                 fn=None, cbl=None, skip_m0=None, speed=False, popt=None, title=None, amp=False):
         tslice = slice(t - dt, t + dt + 1)
         weights = np.minimum(np.nan_to_num(std[tslice]), 1e99) ** -2
         _data, weight = np.average(data[tslice], weights=weights, axis=0, returned=True)
@@ -2584,6 +2584,9 @@ class BLsim(object):
         if skip_m0:
             extent[2] = .5
             bins = bins[1:,:]
+
+        if amp and 'vmax' not in popt and bins.max() > .1:
+            popt['vmax'] = .1
 
         if popt is None:
             popt = {}
@@ -2624,6 +2627,19 @@ class BLsim(object):
         opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=fn, cbl=cbl, speed=True,
                    popt=kwargs)
         self._mr_plot(t, self.speed, self.fft_data._speed_std, **opt)
+
+    def mr_amp(self, t, log=True, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
+                 cbl=None, **kwargs):
+        if fn is None:
+            fn = helpers.sanitize_lbl(self.name) + '_mr_amp_{0:05d}.'.format(t) + ext.lstrip('.')
+        if cbl is None:
+            cbl = r'$|A_m|$'
+        if 'vmin' not in kwargs:
+            kwargs['vmin'] = 1e-5
+        opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=fn, cbl=cbl, amp=True,
+                   popt=kwargs)
+        self._mr_plot(t, self.amp, self.fft_data._amp_std, **opt)
+
 
 
 class auxBLsim(BLsim):
