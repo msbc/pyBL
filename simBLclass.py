@@ -2371,8 +2371,8 @@ class BLsim(object):
             helpers.mkmov(fnames="")
         return None
 
-    def diagnostic(self, rs=[-1, 1.3], save=False, fn=None, ext='pdf', figsize=None,
-                   sdir=None, subsample=None, sz=4, xmax=2.5):
+    def diagnostic(self, rs=[-1, 1.3], save=False, fn=None, ext='png', figsize=None,
+                   sdir=None, subsample=None, sz=4, xmax=2.5, dpi=300):
         self.amp #make sure data is loaded
         #self.mode_mask()
         rs = np.atleast_1d(rs)
@@ -2381,7 +2381,10 @@ class BLsim(object):
         ny = 2
         if figsize is None:
             figsize = (nx * sz, ny * sz)
-        fig = plt.figure(figsize=figsize)
+        if dpi:
+            fig = plt.figure(figsize=figsize, dpi=dpi)
+        else:
+            fig = plt.figure(figsize=figsize)
         gs = mpl.gridspec.GridSpec(ny, nx, top=.9, bottom=.1, hspace=.3)
 
         for i, r in enumerate(rs):
