@@ -2373,7 +2373,7 @@ class BLsim(object):
             helpers.mkmov(fnames="")
         return None
 
-    def diagnostic(self, rs=[-1, 1.3], save=False, fn=None, ext='png', figsize=None,
+    def diagnostic(self, rs=[-1, 1.2], save=False, fn=None, ext='png', figsize=None,
                    sdir=None, subsample=None, sz=4, xmax=2.5, dpi=300):
         self.amp #make sure data is loaded
         #self.mode_mask()
