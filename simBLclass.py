@@ -2156,6 +2156,7 @@ class BLsim(object):
             legobj.set_linewidth(2.0)
         plt.xlabel(r'Time/$2\pi$')
         #plt.ylabel('Phase')
+        plt.axes().xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
         plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
 
     def r_speed(self, r, fig=True, save=None, fn=None, **kwarg):
