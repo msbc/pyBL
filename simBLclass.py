@@ -2158,15 +2158,7 @@ class BLsim(object):
         #plt.ylabel('Phase')
         plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
 
-        if fn and save is None:
-            save = True
-        if save:
-            if fn is None:
-                fn = helpers.sanitize_lbl(self.name) + '_r_fft.' + ext.lstrip('.')
-            fig.savefig(fn)
-            plt.close(fig)
-
-    def r_speed(self, r, fig=True, **kwarg):
+    def r_speed(self, r, fig=True, save=None, fn=None, **kwarg):
         if fig is True:
             plt.figure()
         if not 'smooth' in kwarg:
@@ -2187,6 +2179,13 @@ class BLsim(object):
         ylim[1] = 1
         plt.ylim(*ylim)
         plt.ylabel('Speed')
+        if fn and save is None:
+            save = True
+        if save:
+            if fn is None:
+                fn = helpers.sanitize_lbl(self.name) + '_r_speed.' + ext.lstrip('.')
+            plt.savefig(fn)
+            plt.close()
         return None
 
     def r_amp(self, r, fig=True, **kwarg):
@@ -2673,8 +2672,8 @@ class BLsim(object):
         if rin == -1:
             rin = self.rc[0] * .5 + .5
         if save:
-            self.r_speed(rin, modes=modes, fn=sim.name + '_rin.pdf')
-            self.r_speed(rout, modes=modes, fn=sim.name + '_rout.pdf')
+            self.r_speed(rin, modes=modes, fn=self.name + '_rin.pdf')
+            self.r_speed(rout, modes=modes, fn=self.name + '_rout.pdf')
         else:
             self.r_speed(rin, modes=modes)
             self.r_speed(rout, modes=modes)
@@ -2683,10 +2682,10 @@ class BLsim(object):
         if r == -1:
             r = self.rc[0] * .5 + .5
         rl = self.rloc(r)
-        loc = [slice(t, t + dt), slice(m), slice(rl, rl + dr)]
+        loc = [slice(t0, t0 + dt), m, slice(rl, rl + dr)]
         out = np.average(self.speed[loc], weights=self.fft_data._speed_std[loc]**-2)
         if fmt:
-            print(('{' + fmt + '}').format(out))
+            print(('{0:' + fmt + '}').format(out))
         return out
 
 
