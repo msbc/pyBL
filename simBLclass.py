@@ -2578,6 +2578,9 @@ class BLsim(object):
             loc = np.where(np.logical_and(r <= self.rc, self.rc < r + dr))[0]
             bins.append(np.average(_data[:,loc], weights=weight[:,loc], axis=1))
         bins = np.array(bins).T
+        tmp = bins[np.isfinite(bins)]
+        bmax = tmp.max()
+        bmin = tmp.min()
 
         if title is None:
             title = helpers.sanitize_lbl(self.name) + " $t/2\pi={0:g}\pm{1:g}$".format(t, dt)
@@ -2592,14 +2595,18 @@ class BLsim(object):
                 skip_m0 = True
             bins[bins > 1] = np.nan
             bins[bins < 0] = np.nan
+            if 'vmax' not in popt and bmax > .9:
+                popt['vmax'] = .9
+            if 'vmin' not in popt and bmin < .2:
+                popt['vmin'] = .2
         if skip_m0:
             extent[2] = .5
             bins = bins[1:,:]
 
         if amp:
-            if 'vmax' not in popt and bins.max() > .1:
+            if 'vmax' not in popt and bmin > .1:
                 popt['vmax'] = .1
-            if 'vmin' not in popt and bins.min() < 1e-5:
+            if 'vmin' not in popt and bmax < 1e-5:
                 popt['vmin'] = .1e-5
 
         if popt is None:
