@@ -2098,7 +2098,8 @@ class BLsim(object):
         return m
 
     def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None, std_plot=False,
-                         ret_m=None, smooth=False, sw=20, std=None, rsmooth=None):
+                         ret_m=None, smooth=False, sw=20, std=None, rsmooth=None, fn=None,
+                         save=None, ext='pdf'):
         ir = self.rloc(r)
         rslice = ir
         r = self.rc[ir]
@@ -2156,6 +2157,14 @@ class BLsim(object):
         plt.xlabel(r'Time/$2\pi$')
         #plt.ylabel('Phase')
         plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
+
+        if fn and save is None:
+            save = True
+        if save:
+            if fn is None:
+                fn = helpers.sanitize_lbl(self.name) + '_r_fft.' + ext.lstrip('.')
+            fig.savefig(fn)
+            plt.close(fig)
 
     def r_speed(self, r, fig=True, **kwarg):
         if fig is True:
@@ -2626,23 +2635,58 @@ class BLsim(object):
 
     def mr_speed(self, t, log=False, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
                  cbl=None, **kwargs):
-        if fn is None:
-            fn = helpers.sanitize_lbl(self.name) + '_mr_speed_{0:05d}.'.format(t) + ext.lstrip('.')
-        if cbl is None:
-            cbl = r'$\Omega_{\rm p}$'
-        opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=fn, cbl=cbl, speed=True,
-                   popt=kwargs)
-        self._mr_plot(t, self.speed, self.fft_data._speed_std, **opt)
+        tlist = np.atleast_1d(t)
+        for t in tlist:
+            if fn is None:
+                fn = helpers.sanitize_lbl(self.name) + '_mr_speed_{0:05d}.'.format(t) + ext.lstrip('.')
+            if cbl is None:
+                cbl = r'$\Omega_{\rm p}$'
+            opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=fn, cbl=cbl, speed=True,
+                       popt=kwargs)
+            self._mr_plot(t, self.speed, self.fft_data._speed_std, **opt)
 
     def mr_amp(self, t, log=True, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
                  cbl=None, **kwargs):
-        if fn is None:
-            fn = helpers.sanitize_lbl(self.name) + '_mr_amp_{0:05d}.'.format(t) + ext.lstrip('.')
-        if cbl is None:
-            cbl = r'$|A_m|$'
-        opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=fn, cbl=cbl, amp=True,
-                   popt=kwargs)
-        self._mr_plot(t, self.amp, self.fft_data._amp_std, **opt)
+        tlist = np.atleast_1d(t)
+        for t in tlist:
+            if fn is None:
+                fn = helpers.sanitize_lbl(self.name) + '_mr_amp_{0:05d}.'.format(t) + ext.lstrip('.')
+            if cbl is None:
+                cbl = r'$|A_m|$'
+            opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=fn, cbl=cbl, amp=True,
+                       popt=kwargs)
+            self._mr_plot(t, self.amp, self.fft_data._amp_std, **opt)
+
+    def my_fft_plots(self, save=True, quiet=False):
+        self.diagnostic(save=save, ext='png')
+        self.mr_speed(range(100, self.fft[-1] + 1, 100))
+        if not quiet:
+            print('Consider using the following:')
+            print('    sim.speed_plots(modes)')
+            print('    sim.get_speed(m, t0)')
+
+    def speed_plots(self, modes, rin=-1, rout=1.2, save=True):
+        if rin == -1:
+            rin = self.rc[0] * .5 + .5
+        if save:
+            self.r_speed(rin, modes=modes, fn=sim.name + '_rin.pdf')
+            self.r_speed(rout, modes=modes, fn=sim.name + '_rout.pdf')
+        else:
+            self.r_speed(rin, modes=modes)
+            self.r_speed(rout, modes=modes)
+
+    def get_speed(self, m, t0, dt=50, r=-1, dr=10, fmt='.3f'):
+        if r == -1:
+            r = self.rc[0] * .5 + .5
+        rl = self.rloc(r)
+        loc = [slice(t, t + dt), slice(m), slice(rl, rl + dr)]
+        out = np.average(self.speed[loc], weights=self.fft_data._speed_std[loc]**-2)
+        if fmt:
+            print(('{' + fmt + '}').format(out))
+        return out
+
+
+
 
 
 
