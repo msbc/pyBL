@@ -2633,27 +2633,31 @@ class BLsim(object):
             fig.savefig(fn)
             plt.close(fig)
 
-    def mr_speed(self, t, log=False, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
+    def mr_speed(self, ts, log=False, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
                  cbl=None, **kwargs):
-        tlist = np.atleast_1d(t)
+        tlist = np.atleast_1d(ts)
         for t in tlist:
             if fn is None:
-                fn = helpers.sanitize_lbl(self.name) + '_mr_speed_{0:05d}.'.format(t) + ext.lstrip('.')
+                _fn = helpers.sanitize_lbl(self.name) + '_mr_speed_{0:05d}.'.format(t) + ext.lstrip('.')
+            else:
+              _fn = fn
             if cbl is None:
                 cbl = r'$\Omega_{\rm p}$'
-            opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=fn, cbl=cbl, speed=True,
+            opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=_fn, cbl=cbl, speed=True,
                        popt=kwargs)
             self._mr_plot(t, self.speed, self.fft_data._speed_std, **opt)
 
-    def mr_amp(self, t, log=True, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
+    def mr_amp(self, ts, log=True, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
                  cbl=None, **kwargs):
-        tlist = np.atleast_1d(t)
+        tlist = np.atleast_1d(ts)
         for t in tlist:
             if fn is None:
-                fn = helpers.sanitize_lbl(self.name) + '_mr_amp_{0:05d}.'.format(t) + ext.lstrip('.')
+                _fn = helpers.sanitize_lbl(self.name) + '_mr_amp_{0:05d}.'.format(t) + ext.lstrip('.')
+            else:
+              _fn = fn
             if cbl is None:
                 cbl = r'$|A_m|$'
-            opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=fn, cbl=cbl, amp=True,
+            opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=_fn, cbl=cbl, amp=True,
                        popt=kwargs)
             self._mr_plot(t, self.amp, self.fft_data._amp_std, **opt)
 
@@ -2684,10 +2688,6 @@ class BLsim(object):
         if fmt:
             print(('{' + fmt + '}').format(out))
         return out
-
-
-
-
 
 
 class auxBLsim(BLsim):
