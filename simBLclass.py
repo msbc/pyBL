@@ -2659,7 +2659,7 @@ class BLsim(object):
 
     def my_fft_plots(self, save=True, quiet=False):
         self.diagnostic(save=save, ext='png')
-        self.mr_speed(range(100, self.fft[-1] + 1, 100))
+        self.mr_speed(range(100, int(self.fft_time[-1] / tau + .5) + 1, 100), save=1)
         if not quiet:
             print('Consider using the following:')
             print('    sim.speed_plots(modes)')
