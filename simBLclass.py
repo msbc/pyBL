@@ -2383,7 +2383,7 @@ class BLsim(object):
         return None
 
     def diagnostic(self, rs=[-1, 1.2], save=False, fn=None, ext='png', figsize=None,
-                   sdir=None, subsample=None, sz=4, xmax=2.5, dpi=300):
+                   sdir=None, subsample=None, sz=4, xmax=2.5, dpi=300, modes=None):
         self.amp #make sure data is loaded
         #self.mode_mask()
         rs = np.atleast_1d(rs)
@@ -2402,10 +2402,12 @@ class BLsim(object):
             if r == -1:
                 r = .5 + .5 * self.rc[0]
             ax = plt.subplot(gs[0,i])
-            self.r_amp(r, fig=False)
+            plt.sca(ax)
+            self.r_amp(r, modes=modes, fig=False)
 
             ax = plt.subplot(gs[1,i])
-            self.r_speed(r, fig=False)
+            plt.sca(ax)
+            self.r_speed(r, modes=modes, fig=False)
 
         ax = plt.subplot(gs[0,nr])
         f = self.loadfile(self.files('cons')[-1])
