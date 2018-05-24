@@ -2439,9 +2439,9 @@ class BLsim(object):
         _add(r'$\mathcal{M}$', self.mach)
         _add('$N_r$', self.rc.size)
         _add(r'$N_\phi$', self.phic.size)
-        _add('$r$', '[{:g}, {:g}]'.format(self.r[0], self.r[-1]))
+        _add('$r$', '[{:.3g}, {:.3g}]'.format(self.r[0], self.r[-1]))
         _add('Seed', self.inputs['problem'].get('seed', 'random'))
-        _add('Amp', '{:g}'.format(self.inputs['problem'].get('seedAmp', .01)))
+        _add('Amp', '{:.3g}'.format(self.inputs['problem'].get('seedAmp', .01)))
         # print the stuff in a grid
         j = 0
         ncol = 3
