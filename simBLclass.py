@@ -2159,7 +2159,7 @@ class BLsim(object):
         ax = plt.gca()
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
         plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
-        plt.xlim(self.fft_time[0] / tau, self.fft_time[-1] / tau)
+        plt.xlim(np.floor(self.fft_time[0] / tau), np.ceil(self.fft_time[-1] / tau))
 
     def r_speed(self, r, fig=True, save=None, fn=None, **kwarg):
         if fig is True:
