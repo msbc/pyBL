@@ -37,7 +37,7 @@ tau = 2 * np.pi
 #mpl.rc('text', usetex=True)
 #mpl.rcParams['text.latex.preamble'] = [r"\usepackage{amssymb,amsmath}"]
 
-_dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer', '/perseus/scratch/gpfs/sashaph/BLayer', '~/BLayer', '~/BLayer/fft_tests', '~/data/bl', '~/archive']
+_dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer', '/perseus/scratch/gpfs/sashaph/BLayer', '~/BLayer', '~/BLayer/fft_tests', '~/archive', '~/data/bl']
 _dirs = list(map(os.path.expanduser, _dirs))
 _dirs += [os.path.join(d, 'Mach8stampede') for d in _dirs]
 _data_base = '/scratch/gpfs/sashaph/BLayer'
