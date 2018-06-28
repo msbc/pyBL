@@ -288,7 +288,7 @@ class BLfile(dict):
         return np.abs(r - rc).argmin()
 
     def plot2d(self, data=None, fn=None, save=False, subsample=False, title=None,
-               name=None, ext='pdf', popt=None, cb=True, cbl=None, zerocent=None,
+               name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                ax=None, log=False, aspect=1, sdir=None, smooth=None,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1):
@@ -326,6 +326,8 @@ class BLfile(dict):
                 cbl = helpers.labeler(data)
                 name = data
         data = self._parse_data(data)
+        if type(data) != np.ndarray:
+            raise TypeError('Data has type "{:}", not ndarray.'.format(type(data)))
         if not smooth is None:
             data = self.smooth(data, smooth)
 
@@ -2851,6 +2853,24 @@ class BLsim(object):
             print(('{0:' + fmt + '}').format(out))
         return out
 
+    def mk_maps(self, vars='Rpseudo', dt=50, base_dir=None, file='cons'):
+        vars = np.atleast_1d(vars)
+        path = self.name + '_maps'
+        if base_dir is not None:
+            path = os.path.join(base_dir, path)
+        i = 0
+        if not os.path.isdir(path):
+            os.makedirs(path)
+        while True:
+            print(i)
+            try:
+                for var in vars:
+                    if var is not None:
+                        var = str(var)
+                    self.loadfile(file, i).plot2d(var, sdir=path, save=True)
+            except IndexError:
+                break
+            i += dt
 
 class auxBLsim(BLsim):
     def mode_plot(self, data=None, cb=True, title=None, cbl=None, vmin=0,
