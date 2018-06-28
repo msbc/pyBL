@@ -37,7 +37,8 @@ tau = 2 * np.pi
 #mpl.rc('text', usetex=True)
 #mpl.rcParams['text.latex.preamble'] = [r"\usepackage{amssymb,amsmath}"]
 
-_dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer', '/perseus/scratch/gpfs/sashaph/BLayer', '~/BLayer', '~/BLayer/fft_tests', '~/archive', '~/data/bl']
+_dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer', '/perseus/scratch/gpfs/sashaph/BLayer',
+         '~/BLayer', '~/BLayer/fft_tests', '~/archive', '~/data/bl', '~/data/pleiades_data/bl']
 _dirs = list(map(os.path.expanduser, _dirs))
 _dirs += [os.path.join(d, 'Mach8stampede') for d in _dirs]
 _data_base = '/scratch/gpfs/sashaph/BLayer'
@@ -287,7 +288,7 @@ class BLfile(dict):
         return np.abs(r - rc).argmin()
 
     def plot2d(self, data=None, fn=None, save=False, subsample=False, title=None,
-               name=None, ext='pdf', popt=None, cb=True, cbl=None, zerocent=None,
+               name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                ax=None, log=False, aspect=1, sdir=None, smooth=None,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1):
@@ -325,6 +326,8 @@ class BLfile(dict):
                 cbl = helpers.labeler(data)
                 name = data
         data = self._parse_data(data)
+        if type(data) != np.ndarray:
+            raise TypeError('Data has type "{:}", not ndarray.'.format(type(data)))
         if not smooth is None:
             data = self.smooth(data, smooth)
 
@@ -449,6 +452,14 @@ class BLfile(dict):
         out[loc + [0]] *= 2
         out[loc + [-1]] *= 2
         return out
+
+    def drho_plot(self, ref=None):
+        if ref is None:
+            ref = self.sim.rho_ref
+        drho = self.rhobar() - ref
+        plt.plot(self.rc, drho)
+        plt.xlabel('$r$')
+        plt.ylabel(r'$\left<\rho({:.1f}\times 2\pi)\right>-\left<\rho(0)\right>$'.format(self.t / tau))
 
 class BLaux(BLfile):
 
@@ -609,8 +620,12 @@ class BL3Dfile(BLfile):
         plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
 
 class BLConsPrim(BL3Dfile):
+    def rhobar(self):
+        return self['dens'].mean(axis=0)
+
     def Mdot(self):
         return self['dens']*self['vel1']
+
     def v1v2(self):
         return self['vel1']*self['vel2']
 
@@ -687,8 +702,10 @@ class BLConsPrim(BL3Dfile):
         cl += [self.CS(), self.CA()]
         lbls += ['BRS13 $C_S$','BRS13 $C_A$']
         tmp = self.CSm()
-        s = tmp.sum(axis=0)
-        loc = sorted(range(tmp.shape[0]), key=lambda x: 1/s[x])
+        #s = tmp.sum(axis=0)
+        #loc = sorted(range(tmp.shape[0] // 2), key=lambda x: 1/s[x])
+        norm = self.intr(np.abs(tmp))
+        loc = sorted(range(norm.shape[0]), key=lambda x: -norm[x])
         for i in loc[:nm]:
             cl.append(tmp[i])
             lbls.append('by mode {0:}'.format(i))
@@ -728,7 +745,6 @@ class BLConsPrim(BL3Dfile):
         return .5 * np.pi * r**2 * S * (np.conj(dvm) * dum + dvm * np.conj(dum))
 
     def CSmPlot(self, nm=5, norm=1):
-        nm = 5
         csm = np.real(self.CSm()) * norm
         csm[0] = 0
         cs = self.CS()
@@ -868,6 +884,9 @@ class BLprim(BLConsPrim):
         return self['vel1'] * np.sqrt(self['dens'])
 
 class BLFT(BLfile):
+    def rhobar(self):
+        return self['FT-dens'][0]
+
     def __init__(self, *args, **kwargs):
         super(BLFT, self).__init__(*args, **kwargs)
         #super().__init__(*args, **kwargs)
@@ -913,6 +932,18 @@ class BLFT(BLfile):
         if 'FT-' + key + '-Re' in self.data:
             return self._special_keys('FT-' + key)
         return None
+
+    def fluxes(self):
+        u = self['FT-vel2']
+        r2 = tau*(self.rc)[np.newaxis, :]**2
+        out = {'CL': r2 * self['FT-CL'],
+               'CA': r2 * u[0][np.newaxis, :] * self['FT-Mdot']}
+        out['CS'] = out['CL'] - out['CA']
+        v = self['FT-vel1']
+        out['CSm'] = r2 * np.real(self['FT-dens'][0])[np.newaxis, :] * (np.conj(v) * u + np.conj(u) * v)
+        out['drho'] = np.real(self['FT-dens'][0]) - self.sim.rho_ref
+        return out
+
 
 ############################
 # End of BLfile subclasses #
@@ -1476,7 +1507,7 @@ class CompositeFFTSet(object):
 class BLsim(object):
     def __init__(self, path, fmts=None, coarse_data=None, fft_time=None,
                  athinput=None, mode_mask=None, main_modes=None,
-                 phase_angle=None):
+                 phase_angle=None, rho_ref=None):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
@@ -1556,6 +1587,7 @@ class BLsim(object):
 
         #for attr in ['r', 'phi', 'rc', 'phic']:
         #    setattr(self, attr, getattr(tmp, attr))
+        self._rho_ref = rho_ref
         self._fft_data = None
         self._coarse_data = coarse_data
         self._fft_time = fft_time
@@ -1566,6 +1598,25 @@ class BLsim(object):
 
         return None
         # End init
+
+    @property
+    def rho_ref(self):
+        if self._rho_ref is None:
+            try:
+                self._rho_ref = self.loadfile('FT',0)['FT-dens'][0]
+            except IOError:
+                self._rho_ref = self.loadfile('cons',0)['rho'].mean(axis=0)
+        return self._rho_ref
+
+    def drho_plot(self, *args):
+        try:
+            args[0].drho_plot()
+        except AttributeError:
+            try:
+                self.loadfile(*args).drho_plot()
+            except AttributeError:
+                self.loadfile('cons', args[0]).drho_plot()
+
 
     def draw_spiral(self, rp, phi0=0, opt=None):
         if opt is None:
@@ -1597,6 +1648,108 @@ class BLsim(object):
         shift = np.zeros_like(phase)
         shift[np.where(d < limit)] += tau
         return phase + shift.cumsum(axis=0)
+
+    def fluxes(self, t0, tf, tnorm=tau):
+        if not tnorm or tnorm is True:
+            tnorm = 1
+        t0 *= tnorm
+        tf *= tnorm
+        n = 0
+        ffts = [i for i in self.fileDict.keys()
+                if self.inputs.get(i, {}).get('variable') == "FT-Range"]
+        dt = self.inputs[ffts[0]]['dt']
+        ffts = self.sortedFFT()
+        i = int(2 * t0 // dt - 2)
+        i1 = int(2 * tf // dt - 2)
+        out = {}
+        while i <= i1:
+            fn = ffts[i]
+            ft = loadBLfile(fn, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
+            if n == 0:
+                print('t0', ft.t / tnorm, t0 / tnorm)
+                out['t0'] = ft.t / tnorm
+            tmp = ft.fluxes()
+            try:
+                for k in keys:
+                    out[k] += tmp[k]
+            except NameError:
+                keys = tmp.keys()
+                out.update(tmp)
+            n += 1
+            i += 1
+        print('tf', ft.t / tnorm, tf / tnorm)
+        out['tf'] = ft.t / tnorm
+        for k in keys:
+            out[k] /= n
+        return out
+
+    def plot_fluxes(self, t0=None, tf=None, nm=5, data=None, figsize=None, save=False,
+                    fn=None, ext='pdf', lopt=None):
+        if lopt is None:
+            lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
+        if data is None:
+            data = self.fluxes(t0, tf)
+        csm = np.real(data['CSm'])
+        csm[0] = 0
+        cs = data['CS'][0]
+        norm = self.intr(np.abs(csm))
+        modes = sorted(range(norm.shape[0]), key=lambda x: -norm[x])
+
+        if figsize is None:
+            figsize = (4.5,6.5)
+        plt.figure(figsize=figsize)
+
+        plt.subplot(311)
+        plt.plot(self.rc, cs, 'k-', label='$C_S$')
+        for m in modes[:nm]:
+            plt.plot(self.rc, csm[m], label=str(m))
+        plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls=':', label='sum')
+        plt.xlim(self.r[0], self.r[-1])
+        #ylim = plt.ylim()
+        plt.legend(ncol=nm + 2, **lopt)
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        #plt.ylim(*ylim)
+        #plt.xlabel('$R$')
+        plt.ylabel('$C_S$')
+
+        plt.subplot(312)
+        keys = [i for i in data.keys() if i[0] == 'C' and len(i) == 2]
+        for k in keys:
+            opt = {'label': '${0:}_{1:}$'.format(*k)}
+            if k == 'CS':
+                opt['c'] = 'k'
+            plt.plot(self.rc, data[k][0], **opt)
+        plt.legend(ncol=3, **lopt)
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.xlim(self.r[0], self.r[-1])
+        #plt.xlabel('R')
+
+        plt.subplot(313)
+        plt.plot(self.rc, data['drho'], label=r'$\delta\rho')
+        plt.axhline(0, c='0', ls=':', lw=1)
+        plt.xlim(self.r[0], self.r[-1])
+        ymax = np.abs(data['drho'])[self.rloc(1):].max() * 1.05
+        ylim = plt.ylim()
+        plt.ylim(max(ylim[0], -ymax), min(ylim[1], ymax))
+        plt.xlabel('$R$')
+        plt.ylabel(r'$\delta\rho$')
+
+        title = ''
+        try:
+            title = self.name + ' '
+        except:
+            pass
+        title += '$t/ 2 \pi={t0:.1f}-{tf:.1f}$'.format(**data)
+        plt.suptitle(title)
+
+        if save or fn:
+            if fn is None:
+                fn = '_flux_{:.1f}_{:.2f}.'.format(data['t0'], data['tf'] - data['t0'])
+                fn = self.name + fn + ext
+            plt.savefig(fn)
+            plt.close()
+
+
 
     def sortedFFT(self):
         ffts = [out for out in self.fileDict.keys()
@@ -2159,9 +2312,9 @@ class BLsim(object):
         ax = plt.gca()
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
         plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
-        plt.xlim(self.fft_time[0] / tau, self.fft_time[-1] / tau)
+        plt.xlim(np.floor(self.fft_time[0] / tau), np.ceil(self.fft_time[-1] / tau))
 
-    def r_speed(self, r, fig=True, save=None, fn=None, **kwarg):
+    def r_speed(self, r, fig=True, save=None, fn=None, ext='pdf', **kwarg):
         if fig is True:
             plt.figure()
         if not 'smooth' in kwarg:
@@ -2700,6 +2853,24 @@ class BLsim(object):
             print(('{0:' + fmt + '}').format(out))
         return out
 
+    def mk_maps(self, vars='Rpseudo', dt=50, base_dir=None, file='cons'):
+        vars = np.atleast_1d(vars)
+        path = self.name + '_maps'
+        if base_dir is not None:
+            path = os.path.join(base_dir, path)
+        i = 0
+        if not os.path.isdir(path):
+            os.makedirs(path)
+        while True:
+            print(i)
+            try:
+                for var in vars:
+                    if var is not None:
+                        var = str(var)
+                    self.loadfile(file, i).plot2d(var, sdir=path, save=True)
+            except IndexError:
+                break
+            i += dt
 
 class auxBLsim(BLsim):
     def mode_plot(self, data=None, cb=True, title=None, cbl=None, vmin=0,
