@@ -945,6 +945,7 @@ class BLFT(BLfile):
         out['CSm'] = r2 * np.real(self['FT-dens'][0])[np.newaxis, :] * (np.conj(v) * u + np.conj(u) * v)
         out['drho'] = np.real(self['FT-dens'][0]) - self.sim.rho_ref
         out['vphi'] = np.real(u[0])
+        out['vr'] = np.real(v[0])
         return out
 
 
@@ -1785,6 +1786,10 @@ class BLsim(object):
         ri = self.rloc(1)
         plt.plot(self.rc, data['drho'], label=r'$\delta\rho$')
         plt.plot(self.rc, data['vphi'] / self.rc, label=r'$\Omega$')
+        op = self.rc**-3
+        op +=  self.mach**-2 * grad(self.rc, data['dens']) / (data['dens'] * self.rc)
+        op = np.sqrt(op)
+        plt.plot(self.rc, op, label=r'$\Omega(P)$', ls='--')
         plt.plot(self.rc, self.rc**-1.5, label=r'$\Omega_{\rm k}$', lw=1, c='k', ls=':')
         plt.legend(ncol=4, **lopt)
         plt.xlim(self.r[0], self.r[-1])
