@@ -5,12 +5,13 @@ from __future__ import absolute_import, division, print_function
 #import h5py
 #from mayavi import mlab
 import numpy as np
+import pandas
 #import pdb
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.stats import scoreatpercentile as percentile
-from scipy.signal import gaussian
+from scipy.stats import linregress
 #import math
 import gc
 #import psutil
@@ -48,6 +49,12 @@ _ext = ['athdf', 'npy']
 #_file_fmts = ['BL.out2.%5.5d.athdf', 'disk.out1.%5.5d.athdf']
 _int_fmt = '%5.5d'
 _file_fmts = ['.'.join([a, 'out' + b, _int_fmt, c]) for a in _pre for b in _i for c in _ext]
+
+def boxcar(data, n, axis=None):
+    csum = data.cumsum(axis=axis)
+    tmp = np.roll(csum, n, axis=axis)
+    tmp[:,:n,:] = 0
+    return csum - tmp
 
 def spiral(r, rp, cs):
     return -np.sign(r - rp) * (2 / np.sqrt(r) + r / rp ** 1.5 - 3 / np.sqrt(rp)) / cs
@@ -938,10 +945,14 @@ class BLFT(BLfile):
         r2 = tau*(self.rc)[np.newaxis, :]**2
         out = {'CL': r2 * self['FT-CL'],
                'CA': r2 * u[0][np.newaxis, :] * self['FT-Mdot']}
+        for i in ['Mdot', 'dens']:
+            out[i] = np.real(self['FT-' + i][0])
         out['CS'] = out['CL'] - out['CA']
         v = self['FT-vel1']
         out['CSm'] = r2 * np.real(self['FT-dens'][0])[np.newaxis, :] * (np.conj(v) * u + np.conj(u) * v)
         out['drho'] = np.real(self['FT-dens'][0]) - self.sim.rho_ref
+        out['vphi'] = np.real(u[0])
+        out['vr'] = np.real(v[0])
         return out
 
 
@@ -1507,7 +1518,7 @@ class CompositeFFTSet(object):
 class BLsim(object):
     def __init__(self, path, fmts=None, coarse_data=None, fft_time=None,
                  athinput=None, mode_mask=None, main_modes=None,
-                 phase_angle=None, rho_ref=None):
+                 phase_angle=None, rho_ref=None, mode_detect=None):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
@@ -1595,6 +1606,7 @@ class BLsim(object):
         self._mode_mask = mode_mask
         self._sigmas = [0,4]
         self._main_modes = main_modes
+        self._mode_detect = None
 
         return None
         # End init
@@ -1603,7 +1615,7 @@ class BLsim(object):
     def rho_ref(self):
         if self._rho_ref is None:
             try:
-                self._rho_ref = self.loadfile('FT',0)['FT-dens'][0]
+                self._rho_ref = np.real(self.loadfile('FT',0)['FT-dens'][0])
             except IOError:
                 self._rho_ref = self.loadfile('cons',0)['rho'].mean(axis=0)
         return self._rho_ref
@@ -1661,13 +1673,24 @@ class BLsim(object):
         ffts = self.sortedFFT()
         i = int(2 * t0 // dt - 2)
         i1 = int(2 * tf // dt - 2)
-        out = {}
+        out = {'dwdt': 0, 'drhodt': 0}
         while i <= i1:
             fn = ffts[i]
             ft = loadBLfile(fn, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
             if n == 0:
                 print('t0', ft.t / tnorm, t0 / tnorm)
                 out['t0'] = ft.t / tnorm
+                out['dwdt'] -= np.real(ft['FT-vel2'][0])
+                out['drhodt'] -= np.real(ft['FT-dens'][0])
+                out['drho'] = np.real(ft['FT-dens'][0]) - self.rho_ref
+                #print(ft['FT-vel2'][0])
+            if n == -1:
+                out['dwdt'] -= np.real(ft['FT-vel2'][0])
+                out['drhodt'] -= np.real(ft['FT-dens'][0])
+                t1 = ft.t / tnorm - out['t0']
+            if i == -i1 -1:
+                out['dwdt'] += np.real(ft['FT-vel2'][0])
+                out['drhodt'] += np.real(ft['FT-dens'][0])
             tmp = ft.fluxes()
             try:
                 for k in keys:
@@ -1678,13 +1701,23 @@ class BLsim(object):
             n += 1
             i += 1
         print('tf', ft.t / tnorm, tf / tnorm)
+        print(n,i, i1)
         out['tf'] = ft.t / tnorm
+        out['dwdt'] += np.real(ft['FT-vel2'][0])
+        out['drhodt'] += np.real(ft['FT-dens'][0])
+        #print(ft['FT-vel2'][0])
+        #print(out['dw'])
+        #out['dwdt'] /= tnorm * (out['tf'] - out['t0'] - t1) * self.rc * .5
+        #out['drhodt'] /= tnorm * (out['tf'] - out['t0'] - t1) * self.rc * .5
+        out['dwdt'] /= tnorm * (out['tf'] - out['t0']) * self.rc
+        out['drhodt'] /= tnorm * (out['tf'] - out['t0']) * self.rc
+
         for k in keys:
             out[k] /= n
         return out
 
     def plot_fluxes(self, t0=None, tf=None, nm=5, data=None, figsize=None, save=False,
-                    fn=None, ext='pdf', lopt=None):
+                    fn=None, ext='pdf', lopt=None, ff=1):
         if lopt is None:
             lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
         if data is None:
@@ -1699,7 +1732,7 @@ class BLsim(object):
             figsize = (4.5,6.5)
         plt.figure(figsize=figsize)
 
-        plt.subplot(311)
+        ax0 = plt.subplot(411)
         plt.plot(self.rc, cs, 'k-', label='$C_S$')
         for m in modes[:nm]:
             plt.plot(self.rc, csm[m], label=str(m))
@@ -1708,11 +1741,14 @@ class BLsim(object):
         #ylim = plt.ylim()
         plt.legend(ncol=nm + 2, **lopt)
         plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
         #plt.ylim(*ylim)
         #plt.xlabel('$R$')
         plt.ylabel('$C_S$')
+        #plt.setp(ax0.get_xticklabels(), fontsize=6)
 
-        plt.subplot(312)
+
+        ax = plt.subplot(412, sharex=ax0)
         keys = [i for i in data.keys() if i[0] == 'C' and len(i) == 2]
         for k in keys:
             opt = {'label': '${0:}_{1:}$'.format(*k)}
@@ -1721,18 +1757,59 @@ class BLsim(object):
             plt.plot(self.rc, data[k][0], **opt)
         plt.legend(ncol=3, **lopt)
         plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
         plt.xlim(self.r[0], self.r[-1])
         #plt.xlabel('R')
+        #plt.setp(ax.get_xticklabels(), visible=False)
 
-        plt.subplot(313)
-        plt.plot(self.rc, data['drho'], label=r'$\delta\rho')
-        plt.axhline(0, c='0', ls=':', lw=1)
-        plt.xlim(self.r[0], self.r[-1])
-        ymax = np.abs(data['drho'])[self.rloc(1):].max() * 1.05
+        ax = plt.subplot(413, sharex=ax0)
+        plt.plot(self.rc, - data['Mdot'] * tau * self.rc, label=r'$\dot{M}$', c='k')
+        ri = self.rloc(1.2)
+        ri2 = self.rloc(2)
+        norm = 1 / grad(self.rc, data['vphi'] * self.rc)
+        ycs = norm * grad(self.rc, data['CS'][0])
+        plt.plot(self.rc, ycs, label=r'$C_S$')
+        ydw = norm * self.rc**3 * data['dens'] * data['dwdt'] * tau
+        plt.plot(self.rc, ydw, label=r'$\partial_t \Omega$')
+        plt.plot(self.rc, ycs + ydw, label=r'$C_S\! +\! \partial_t \Omega$', c='.5', ls=':')
+        ydp = np.pi * self.rc**3.5 * grad(self.rc, data['drhodt']) * self.mach**-2
+        ydp /= grad(self.rc, data['vphi'] * self.rc)
+        plt.plot(self.rc, ydp, label=r'$\partial_t\partial_rP$')
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
+        plt.legend(ncol=5, **lopt)
+        ymax = np.maximum(ycs, data['Mdot'])
+        ymax = ymax[ri:ri2].max() * 1.05
+        ymin = np.minimum(ydw, data['Mdot'])
+        ymin = min(ymin[ri:ri2].min() - .1 * ymax, 0)
         ylim = plt.ylim()
-        plt.ylim(max(ylim[0], -ymax), min(ylim[1], ymax))
+        ylim = plt.ylim(max(ylim[0], ymin), min(ylim[1], ymax))
+        print(ylim)
+        yl = 2e-4
+        #plt.ylim(-yl, yl)
+        plt.xlim(self.r[0], self.r[-1])
+        #plt.setp(ax.get_xticklabels(), visible=False)
+
+        ax = plt.subplot(414, sharex=ax0)
+        ri = self.rloc(1)
+        plt.plot(self.rc, data['drho'], label=r'$\delta\rho$')
+        plt.plot(self.rc, data['vphi'] / self.rc, label=r'$\Omega$')
+        op = self.rc**-3
+        op +=  self.mach**-2 * grad(self.rc, data['dens']) / (data['dens'] * self.rc)
+        op = np.sqrt(op)
+        plt.plot(self.rc, op, label=r'$\Omega(P)$', ls='--')
+        plt.plot(self.rc, self.rc**-1.5, label=r'$\Omega_{\rm k}$', lw=1, c='k', ls=':')
+        plt.legend(ncol=4, **lopt)
+        plt.xlim(self.r[0], self.r[-1])
+        ymax = data['drho'][ri:].max() * 1.05
+        ymin = min(data['drho'][ri:].min() - .1 * ymax, 0)
+        ylim = plt.ylim()
+        plt.ylim(max(ylim[0], ymin), min(ylim[1], ymax))
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
         plt.xlabel('$R$')
-        plt.ylabel(r'$\delta\rho$')
+        #ax.set_xticklabels([])
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
 
         title = ''
         try:
@@ -1741,6 +1818,7 @@ class BLsim(object):
             pass
         title += '$t/ 2 \pi={t0:.1f}-{tf:.1f}$'.format(**data)
         plt.suptitle(title)
+        plt.tight_layout()
 
         if save or fn:
             if fn is None:
@@ -1749,7 +1827,7 @@ class BLsim(object):
             plt.savefig(fn)
             plt.close()
 
-
+        return data
 
     def sortedFFT(self):
         ffts = [out for out in self.fileDict.keys()
@@ -2252,15 +2330,15 @@ class BLsim(object):
 
     def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None, std_plot=False,
                          ret_m=None, smooth=False, sw=20, std=None, rsmooth=None, fn=None,
-                         save=None, ext='pdf'):
+                         save=None, ext='pdf', cout=None, add_max=None):
         ir = self.rloc(r)
         rslice = ir
         r = self.rc[ir]
         if modes is None:
             modes = self.main_modes(nm=nm)[::-1]
-        if not add_modes is None:
+        if add_modes is not None:
             add_modes = list(np.atleast_1d(add_modes))
-            modes += add_modes
+            modes.extend([m for m in add_modes if m not in modes][:add_max])
         modes = list(modes)
         handles = {}
         weight = None
@@ -2302,6 +2380,7 @@ class BLsim(object):
                 plt.fill_between(self.fft_time / tau, line - std[:,m], line + std[:,m], color=c, alpha=.1)
         opt = {'loc': 0, 'frameon': True, 'handlelength': .7, 'prop': {'size':8}, 'ncol': 3}
         modes.sort()
+        cd = {m: handles[m].get_color() for m in handles.keys()}
         handles = [handles[m] for m in modes]
         lbls = ['$%d$' % m for m in modes]
         leg = plt.legend(handles, lbls, **opt)
@@ -2313,8 +2392,10 @@ class BLsim(object):
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
         plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
         plt.xlim(np.floor(self.fft_time[0] / tau), np.ceil(self.fft_time[-1] / tau))
+        if cout:
+            return cd
 
-    def r_speed(self, r, fig=True, save=None, fn=None, ext='pdf', **kwarg):
+    def r_speed(self, r, fig=True, save=None, fn=None, ext='pdf', tmark=None, **kwarg):
         if fig is True:
             plt.figure()
         if not 'smooth' in kwarg:
@@ -2329,11 +2410,28 @@ class BLsim(object):
                 kwarg['rsmooth'] = -1
         except AttributeError:
             pass
-        self._r_phase_plotter(r, data, **kwarg)
+        cd = self._r_phase_plotter(r, data, cout=True, **kwarg)
         ylim = list(plt.ylim())
         ylim[0] = 0
         ylim[1] = 1
         plt.ylim(*ylim)
+        xlim = plt.xlim()
+        if tmark is not None:
+            tmark = np.atleast_1d(tmark)
+            for t in tmark:
+                c='k'
+                try:
+                    if len(t) > 1:
+                        m = t[1]
+                        t = t[0]
+                        c = cd.get(int(m), 'k')
+                except TypeError:
+                    pass
+                x = (t, t)
+                y = (ylim[0], ylim[0] + .05 * (ylim[1] - ylim[0]))
+                plt.plot(x, y, c=c)
+            plt.xlim(*xlim)
+            plt.ylim(*ylim)
         plt.ylabel('Speed')
         if fn and save is None:
             save = True
@@ -2538,7 +2636,8 @@ class BLsim(object):
         return None
 
     def diagnostic(self, rs=[-1, 1.2], save=False, fn=None, ext='png', figsize=None,
-                   sdir=None, subsample=None, sz=4, xmax=2.5, dpi=300, modes=None):
+                   sdir=None, subsample=None, sz=4, xmax=2.5, dpi=300, modes=None,
+                   add_modes=None, tmark=None, add_max=None):
         self.amp #make sure data is loaded
         #self.mode_mask()
         rs = np.atleast_1d(rs)
@@ -2553,16 +2652,17 @@ class BLsim(object):
             fig = plt.figure(figsize=figsize)
         gs = mpl.gridspec.GridSpec(ny, nx, top=.9, bottom=.1, hspace=.3)
 
+        ropt = dict(modes=modes, add_modes=add_modes, add_max=add_max, fig=False)
         for i, r in enumerate(rs):
             if r == -1:
                 r = .5 + .5 * self.rc[0]
             ax = plt.subplot(gs[0,i])
             plt.sca(ax)
-            self.r_amp(r, modes=modes, fig=False)
+            self.r_amp(r, **ropt)
 
             ax = plt.subplot(gs[1,i])
             plt.sca(ax)
-            self.r_speed(r, modes=modes, fig=False)
+            self.r_speed(r, tmark=tmark, **ropt)
 
         ax = plt.subplot(gs[0,nr])
         f = self.loadfile(self.files('cons')[-1])
@@ -2825,23 +2925,24 @@ class BLsim(object):
                        popt=kwargs)
             self._mr_plot(t, self.amp, self.fft_data._amp_std, **opt)
 
-    def my_fft_plots(self, save=True, quiet=False):
-        self.diagnostic(save=save, ext='png')
+    def my_fft_plots(self, save=True, quiet=False, diag=True):
+        if diag:
+            self.diagnostic(save=save, ext='png')
         self.mr_speed(range(100, int(self.fft_time[-1] / tau + .5) + 10, 100), save=1)
         if not quiet:
             print('Consider using the following:')
             print('    sim.speed_plots(modes)')
             print('    sim.get_speed(m, t0)')
 
-    def speed_plots(self, modes, rin=-1, rout=1.2, save=True):
+    def speed_plots(self, modes, rin=-1, rout=1.2, save=True, tmark=None):
         if rin == -1:
             rin = self.rc[0] * .5 + .5
         if save:
-            self.r_speed(rin, modes=modes, fn=self.name + '_rin.pdf')
-            self.r_speed(rout, modes=modes, fn=self.name + '_rout.pdf')
+            self.r_speed(rin, modes=modes, tmark=tmark, fn=self.name + '_rin.pdf')
+            self.r_speed(rout, modes=modes, tmark=tmark, fn=self.name + '_rout.pdf')
         else:
-            self.r_speed(rin, modes=modes)
-            self.r_speed(rout, modes=modes)
+            self.r_speed(rin, modes=modes, tmark=tmark)
+            self.r_speed(rout, modes=modes, tmark=tmark)
 
     def get_speed(self, m, t0, dt=50, r=-1, dr=10, fmt='.3f'):
         if r == -1:
@@ -2872,6 +2973,180 @@ class BLsim(object):
             except IndexError:
                 break
             i += dt
+
+    def mode_detect(self, r=None, save=True, fn=None, dt=10, nbin=3, emax=1e-4, smax=2e-4, dr=5,
+                    data_only=False, dw=.05, overlap=10, nskip=3):
+        if (not data_only) and (self._mode_detect is not None):
+            return self._mode_detect
+        if r is None:
+            r = [.5 + .5 * self.rc[0], 1.2]
+        r = np.atleast_1d(r)
+        ris = map(self.rloc, r)
+        dr = max(0, int(dr))
+        tlist = [0]
+        t = self.fft_time
+        while tlist[-1] < t[-1]:
+            tlist.append(tlist[-1] + dt * tau)
+        tlist = np.array(tlist)
+        ti = [0]
+        ti += [t[t < tlist[i+1]].argmax() for i in range(len(tlist) - 1)]
+        tslice = [slice(ti[i], ti[i+1]+1) for i in range(len(tlist) - 1)]
+        fits = np.empty((len(ris), len(ti) - 1, self.speed.shape[1], 6))
+        weights = np.minimum(np.nan_to_num(self.fft_data._speed_std), 1e99) ** -2
+        for i, ri in enumerate(ris):
+            s, w = np.average(self.speed[:,:,ri-dr:ri+dr+1], weights=weights[:,:,ri-dr:ri+dr+1], axis=2, returned=True)
+            for j in range(len(ti) - 1):
+                for m in range(self.speed.shape[1]):
+                    fits[i,j,m,0] = np.average(s[tslice[j], m], weights=w[tslice[j], m])
+                    fits[i,j,m,1:] = linregress(t[tslice[j]], s[tslice[j], m])
+        r = np.array([self.rc[i] for i in ris])
+        mask = np.logical_and(fits[:,:,:,0] < 1, fits[:,:,:,0] > 0)
+        mask = np.logical_and(mask, np.abs(fits[:,:,:,1]) < smax)
+        mask = np.logical_and(mask, np.abs(fits[:,:,:,5]) < emax)
+        if nskip:
+            mask[:,:nskip,:] = 0
+        run = np.maximum(boxcar(mask, 3, axis=1), boxcar(mask[:,::-1,:], 3, axis=1)[:,::-1,:])
+        data = dict(t=tlist, r=r, fits=fits, mask=np.logical_not(mask), run=run, tlist=tlist)
+        if data_only:
+            return data
+        self._mode_detect = modeData(data, sim=self, dw=dw, overlap=overlap)
+        return self._mode_detect
+
+    def main_plots(self, maps=False):
+        md = self.mode_detect()
+        md.write()
+        md.plot(save=True)
+        gmodes = list({int(m[0]) for m in md.g_modes()})
+        t = [(.5 * (m[1] + m[2]) / tau, m[0]) for m in md.g_modes()]
+        self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:])
+        self.my_fft_plots(diag=False, quiet=True)
+        self.speed_plots(gmodes, tmark=t[:])
+        if maps:
+            self.mk_maps()
+
+class modeData(object):
+    def __init__(self, data, sim=None, dw=.05, overlap=10):
+        self.sim = sim
+        self.dw = dw
+        self._dt = overlap * tau
+        mask = np.logical_not(data['mask'])
+        run = data['run']
+        r = data['r']
+        fits = data['fits']
+        tlist = data['tlist']
+        self.r = r
+        out = [[] for i in r]
+        for z in zip(*np.where(run == 3)):
+            w = fits[z[0], z[1], z[2], 0]
+            t0 = z[1]
+            t1 = t0
+            tmp = [i for i in out[z[0]] if (i[0] == z[2]) and (i[1] <= tlist[t0] <= i[2])]
+            if not tmp:
+            #if (not tmp) and (t0 < fits.shape[1] - 1):
+                while (run[z[0], t1 + 1, z[2]] == 3) and (abs(fits[z[0], t1 + 1, z[2], 0] - w) < dw * w):
+                    t1 += 1
+                    w = fits[z[0], t0:t1, z[2], 0].mean()
+                    if t1 >= run.shape[1] - 1:
+                        break
+                if t1 - t0 >= 3:
+                    t0 = tlist[t0]
+                    t1 = tlist[t1+1]
+                    out[z[0]].append([z[2], t0, t1, w])
+        self.mode_data = [np.array(i) for i in out]
+
+    def filter(self, data=None):
+        if data is None:
+            try:
+                return self._filter[:]
+            except AttributeError:
+                self._filter = [self.filter(i) for i in self.md]
+                return self._filter[:]
+        tmp = sorted(data, key=lambda x:x[0] - 1e-6 * (x[2] - x[1]))
+        out = []
+        for mode in tmp:
+            similar = [i for i in out if (mode[0] == i[0]) and (abs(mode[3] - i[3]) < self.dw * i[3])]
+            if not similar:
+                out.append(mode)
+        return np.array(out)
+
+    def write(self, fn=None):
+        if fn is None:
+            fn = self.sim.name + '_modes.csv'
+        rs = ["R = "+repr(i) for i in self.r]
+        rs.append('Global Modes')
+        data = self.filter()
+        data.append(self.filter(self.g_modes()))
+        out = ['# m, t_start, t_end, speed','']
+        for i, r in enumerate(rs):
+            out.append('# ' + r)
+            out += ['{0:d}, {1:.2f}, {2:.2}, {3:.3f}'.format(int(j[0]), *j[1:]) for j in data[i]]
+            out.append('')
+        with open(fn, 'w') as f:
+            f.write('\n'.join(out))
+        return
+
+    def plot(self, save=False, fn=None, ext='pdf', inc_global=True):
+        markers = 'o','+','x','.'
+        lbls = []
+        for i, r in enumerate(self.r):
+            plt.scatter(self.filter()[i][:,0], self.filter()[i][:,3], marker=markers[i])
+            lbls.append(r'$r={0:.2f}$'.format(r))
+        if inc_global:
+            data = self.g_modes()
+            plt.scatter(data[:,0], data[:,3], marker='*')
+            lbls.append('Global')
+        plt.legend(lbls)
+        plt.gca().xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        plt.xlabel('mode')
+        plt.ylabel(r'$\Omega_{\rm p}$')
+        if save or fn:
+            if fn is None:
+                fn = self.sim.name + '_dispersion.' + ext
+            plt.savefig(fn)
+            plt.close()
+        return
+
+
+    def __getitem__(self, item):
+        return self.mode_data[item]
+
+    @property
+    def md(self):
+        return self.mode_data
+
+    def g_modes(self):
+        try:
+            return self._g_modes
+        except AttributeError:
+            out = []
+            for mode in self[0]:
+                keep = True
+                t0 = mode[1]
+                t1 = mode[2]
+                for r in self[1:]:
+                    try:
+                        mlist = [i for i in r if (i[0] == mode[0]) and (abs(i[3] - mode[3]) < self.dw * mode[3])]
+                    except IndexError:
+                        mlist = []
+                    while mlist:
+                        if min(mlist[0][2], mode[2]) - max(mlist[0][1], mode[1]) < self._dt:
+                            mlist.pop(0)
+                        else:
+                            break
+                    if not mlist:
+                        keep = False
+                        break
+                    t0 = max(t0, mlist[0][1])
+                    t1 = min(t1, mlist[0][2])
+                if keep:
+                    out.append([mode[0], t0, t1, mode[3]])
+            self._g_modes = self.filter(np.array(out))
+        return self._g_modes
+
+
+
+
+
 
 class auxBLsim(BLsim):
     def mode_plot(self, data=None, cb=True, title=None, cbl=None, vmin=0,
@@ -3023,7 +3298,7 @@ class auxBLsim(BLsim):
         return out
 
 def refreshSim(sim):
-    attr = ['coarse_data', 'fft_time']
+    attr = ['coarse_data', 'fft_time', 'mode_detect']
     opt = {i: getattr(sim, '_' + i, None) for i in attr}
     return BLsim(sim.path, **opt)
 
