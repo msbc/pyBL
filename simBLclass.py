@@ -5,12 +5,13 @@ from __future__ import absolute_import, division, print_function
 #import h5py
 #from mayavi import mlab
 import numpy as np
+import pandas
 #import pdb
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.stats import scoreatpercentile as percentile
-from scipy.signal import gaussian
+from scipy.stats import linregress
 #import math
 import gc
 #import psutil
@@ -48,6 +49,12 @@ _ext = ['athdf', 'npy']
 #_file_fmts = ['BL.out2.%5.5d.athdf', 'disk.out1.%5.5d.athdf']
 _int_fmt = '%5.5d'
 _file_fmts = ['.'.join([a, 'out' + b, _int_fmt, c]) for a in _pre for b in _i for c in _ext]
+
+def boxcar(data, n, axis=None):
+    csum = data.cumsum(axis=axis)
+    tmp = np.roll(csum, n, axis=axis)
+    tmp[:,:n,:] = 0
+    return csum - tmp
 
 def spiral(r, rp, cs):
     return -np.sign(r - rp) * (2 / np.sqrt(r) + r / rp ** 1.5 - 3 / np.sqrt(rp)) / cs
@@ -2942,13 +2949,152 @@ class BLsim(object):
                 break
             i += dt
 
-    def mode_detect(self, r=None, save=True, fn=None):
+    def mode_detect(self, r=None, save=True, fn=None, dt=10, nbin=3, emax=1e-4, smax=2e-4, dr=5,
+                    data_only=False, dw=.05, overlap=10, nskip=3):
         if r is None:
             r = [.5 + .5 * self.rc[0], 1.2]
         r = np.atleast_1d(r)
-        ri = map(self.rloc, r)
-        for i in ri:
-            pass
+        ris = map(self.rloc, r)
+        dr = max(0, int(dr))
+        tlist = [0]
+        t = self.fft_time
+        while tlist[-1] < t[-1]:
+            tlist.append(tlist[-1] + dt * tau)
+        tlist = np.array(tlist)
+        ti = [0]
+        ti += [t[t < tlist[i+1]].argmax() for i in range(len(tlist) - 1)]
+        tslice = [slice(ti[i], ti[i+1]+1) for i in range(len(tlist) - 1)]
+        fits = np.empty((len(ris), len(ti) - 1, self.speed.shape[1], 6))
+        weights = np.minimum(np.nan_to_num(self.fft_data._speed_std), 1e99) ** -2
+        for i, ri in enumerate(ris):
+            s, w = np.average(self.speed[:,:,ri-dr:ri+dr+1], weights=weights[:,:,ri-dr:ri+dr+1], axis=2, returned=True)
+            for j in range(len(ti) - 1):
+                for m in range(self.speed.shape[1]):
+                    fits[i,j,m,0] = np.average(s[tslice[j], m], weights=w[tslice[j], m])
+                    fits[i,j,m,1:] = linregress(t[tslice[j]], s[tslice[j], m])
+        r = np.array([self.rc[i] for i in ris])
+        mask = np.logical_and(fits[:,:,:,0] < 1, fits[:,:,:,0] > 0)
+        mask = np.logical_and(mask, np.abs(fits[:,:,:,1]) < smax)
+        mask = np.logical_and(mask, np.abs(fits[:,:,:,5]) < emax)
+        if nskip:
+            mask[:,:nskip,:] = 0
+        run = np.maximum(boxcar(mask, 3, axis=1), boxcar(mask[:,::-1,:], 3, axis=1)[:,::-1,:])
+        data = dict(t=tlist, r=r, fits=fits, mask=np.logical_not(mask), run=run, tlist=tlist)
+        if data_only:
+            return data
+        return modeData(data, sim=self, dw=dw, overlap=overlap)
+
+class modeData(object):
+    def __init__(self, data, sim=None, dw=.05, overlap=10):
+        self.sim = sim
+        self.dw = dw
+        self._dt = overlap * tau
+        mask = np.logical_not(data['mask'])
+        run = data['run']
+        r = data['r']
+        fits = data['fits']
+        tlist = data['tlist']
+        self.r = r
+        out = [[] for i in r]
+        for z in zip(*np.where(run == 3)):
+            try:
+                wlist = [l[3] for l in out[z[0]] if l[0] == z[2]]
+            except IndexError:
+                wlist = [-10]
+            wlist = np.array(wlist)
+            w = fits[z[0], z[1], z[2], 0]
+            if (np.abs(wlist - w) >= dw * w).all():
+                t0 = z[1]
+                t1 = t0
+                while (run[z[0], t1 + 1, z[2]] == 3) and (abs(fits[z[0], t1 + 1, z[2], 0] - w) < dw * w):
+                    t1 += 1
+                    w = fits[z[0], t0:t1, z[2], 0].mean()
+                    if t1 == run.shape[1] - 1:
+                        break
+                if t1 - t0 >= 3:
+                    t0 = tlist[t0]
+                    t1 = tlist[t1+1]
+                    out[z[0]].append([z[2], t0, t1, w])
+        self.mode_data = [np.array(i) for i in out]
+
+    def write(self, fn=None):
+        if fn is None:
+            fn = self.sim.name + '_modes.csv'
+        rs = ["R = "+repr(i) for i in self.r]
+        rs.append('Global Modes')
+        data = self.md[:]
+        data.append(self.g_modes())
+        out = ['# m, t_start, t_end, speed','']
+        for i, r in enumerate(rs):
+            out.append('# ' + r)
+            out += ['{0:d}, {1:.2f}, {2:.2}, {3:.3f}'.format(int(j[0]), *j[1:]) for j in data[i]]
+            out.append('')
+        with open(fn, 'w') as f:
+            f.write('\n'.join(out))
+        return
+
+    def plot(self, save=False, fn=None, ext='pdf', inc_global=False):
+        markers = 'o','+','x','.'
+        lbls = []
+        for i, r in enumerate(self.r):
+            plt.scatter(self[i][:,0], self[i][:,3], marker=markers[i])
+            lbls.append(r'$r={0:.2f}$'.format(r))
+        if inc_global:
+            data = self.g_modes()
+            plt.scatter(data[:,0], data[:,3], marker='*')
+            lbls.append('Global')
+        plt.legend(lbls)
+        plt.gca().xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        plt.xlabel('mode')
+        plt.ylabel(r'$\Omega_{\rm p}$')
+        if save or fn:
+            if fn is None:
+                fn = self.sim.name + '_dispersion.' + ext
+            plt.savefig(fn)
+            plt.close()
+        return
+
+
+    def __getitem__(self, item):
+        return self.mode_data[item]
+
+    @property
+    def md(self):
+        return self.mode_data
+
+    def g_modes(self):
+        try:
+            return self._g_modes
+        except AttributeError:
+            out = []
+            for mode in self[0]:
+                keep = True
+                t0 = mode[1]
+                t1 = mode[2]
+                for r in self[1:]:
+                    try:
+                        mlist = [i for i in r if (i[0] == mode[0]) and (abs(i[3] - mode[3]) < self.dw * mode[3])]
+                    except IndexError:
+                        mlist = []
+                    while mlist:
+                        if min(mlist[0][2], mode[2]) - max(mlist[0][1], mode[1]) < self._dt:
+                            mlist.pop(0)
+                        else:
+                            break
+                    if not mlist:
+                        keep = False
+                        break
+                    t0 = max(t0, mlist[0][1])
+                    t1 = min(t1, mlist[0][2])
+                if keep:
+                    out.append([mode[0], t0, t1, mode[3]])
+            self._g_modes = np.array(out)
+        return self._g_modes
+
+
+
+
+
 
 class auxBLsim(BLsim):
     def mode_plot(self, data=None, cb=True, title=None, cbl=None, vmin=0,
