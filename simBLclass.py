@@ -2990,7 +2990,7 @@ class BLsim(object):
         md = self.mode_detect()
         md.write()
         md.plot(save=True)
-        gmodes = {m[0] for i in md.g_modes()}
+        gmodes = {m[0] for m in md.g_modes()}
         self.diagnostic(save=True, add_modes=gmodes)
         self.my_fft_plots(quiet=True)
         self.speed_plots(gmodes)
