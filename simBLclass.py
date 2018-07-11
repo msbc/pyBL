@@ -2337,7 +2337,7 @@ class BLsim(object):
             modes = self.main_modes(nm=nm)[::-1]
         if not add_modes is None:
             add_modes = list(np.atleast_1d(add_modes))
-            modes += add_modes
+            modes += [m for m in add_modes if m not in modes]
         modes = list(modes)
         handles = {}
         weight = None
@@ -2615,7 +2615,8 @@ class BLsim(object):
         return None
 
     def diagnostic(self, rs=[-1, 1.2], save=False, fn=None, ext='png', figsize=None,
-                   sdir=None, subsample=None, sz=4, xmax=2.5, dpi=300, modes=None):
+                   sdir=None, subsample=None, sz=4, xmax=2.5, dpi=300, modes=None,
+                   add_modes=None):
         self.amp #make sure data is loaded
         #self.mode_mask()
         rs = np.atleast_1d(rs)
@@ -2630,16 +2631,17 @@ class BLsim(object):
             fig = plt.figure(figsize=figsize)
         gs = mpl.gridspec.GridSpec(ny, nx, top=.9, bottom=.1, hspace=.3)
 
+        ropt = dict(modes=modes, add_modes=None, fig=False)
         for i, r in enumerate(rs):
             if r == -1:
                 r = .5 + .5 * self.rc[0]
             ax = plt.subplot(gs[0,i])
             plt.sca(ax)
-            self.r_amp(r, modes=modes, fig=False)
+            self.r_amp(r, **ropt)
 
             ax = plt.subplot(gs[1,i])
             plt.sca(ax)
-            self.r_speed(r, modes=modes, fig=False)
+            self.r_speed(r, **ropt)
 
         ax = plt.subplot(gs[0,nr])
         f = self.loadfile(self.files('cons')[-1])
@@ -2984,6 +2986,16 @@ class BLsim(object):
             return data
         return modeData(data, sim=self, dw=dw, overlap=overlap)
 
+    def main_plots(self, maps=False):
+        md = self.mode_detect()
+        md.write()
+        md.plot(save=True)
+        gmodes = {m[0] for i in md.g_modes()}
+        self.diagnostic(save=True, add_modes=gmodes)
+        self.my_fft_plots(quiet=True)
+        self.speed_plots(gmodes)
+        if maps:
+            self.mk_maps()
 
 class modeData(object):
     def __init__(self, data, sim=None, dw=.05, overlap=10):
