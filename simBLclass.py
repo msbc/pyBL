@@ -1518,7 +1518,7 @@ class CompositeFFTSet(object):
 class BLsim(object):
     def __init__(self, path, fmts=None, coarse_data=None, fft_time=None,
                  athinput=None, mode_mask=None, main_modes=None,
-                 phase_angle=None, rho_ref=None):
+                 phase_angle=None, rho_ref=None, mode_detect=None):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
@@ -1606,6 +1606,7 @@ class BLsim(object):
         self._mode_mask = mode_mask
         self._sigmas = [0,4]
         self._main_modes = main_modes
+        self._mode_detect = None
 
         return None
         # End init
@@ -2329,15 +2330,15 @@ class BLsim(object):
 
     def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None, std_plot=False,
                          ret_m=None, smooth=False, sw=20, std=None, rsmooth=None, fn=None,
-                         save=None, ext='pdf'):
+                         save=None, ext='pdf', cout=None, add_max=None):
         ir = self.rloc(r)
         rslice = ir
         r = self.rc[ir]
         if modes is None:
             modes = self.main_modes(nm=nm)[::-1]
-        if not add_modes is None:
+        if add_modes is not None:
             add_modes = list(np.atleast_1d(add_modes))
-            modes += [m for m in add_modes if m not in modes]
+            modes.extend([m for m in add_modes if m not in modes][:add_max])
         modes = list(modes)
         handles = {}
         weight = None
@@ -2379,6 +2380,7 @@ class BLsim(object):
                 plt.fill_between(self.fft_time / tau, line - std[:,m], line + std[:,m], color=c, alpha=.1)
         opt = {'loc': 0, 'frameon': True, 'handlelength': .7, 'prop': {'size':8}, 'ncol': 3}
         modes.sort()
+        cd = {m: handles[m].get_color() for m in handles.keys()}
         handles = [handles[m] for m in modes]
         lbls = ['$%d$' % m for m in modes]
         leg = plt.legend(handles, lbls, **opt)
@@ -2390,8 +2392,10 @@ class BLsim(object):
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
         plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
         plt.xlim(np.floor(self.fft_time[0] / tau), np.ceil(self.fft_time[-1] / tau))
+        if cout:
+            return cd
 
-    def r_speed(self, r, fig=True, save=None, fn=None, ext='pdf', **kwarg):
+    def r_speed(self, r, fig=True, save=None, fn=None, ext='pdf', tmark=None, **kwarg):
         if fig is True:
             plt.figure()
         if not 'smooth' in kwarg:
@@ -2406,11 +2410,28 @@ class BLsim(object):
                 kwarg['rsmooth'] = -1
         except AttributeError:
             pass
-        self._r_phase_plotter(r, data, **kwarg)
+        cd = self._r_phase_plotter(r, data, cout=True, **kwarg)
         ylim = list(plt.ylim())
         ylim[0] = 0
         ylim[1] = 1
         plt.ylim(*ylim)
+        xlim = plt.xlim()
+        if tmark is not None:
+            tmark = np.atleast_1d(tmark)
+            for t in tmark:
+                c='k'
+                try:
+                    if len(t) > 1:
+                        m = t[1]
+                        t = t[0]
+                        c = cd.get(int(m), 'k')
+                except TypeError:
+                    pass
+                x = (t, t)
+                y = (ylim[0], ylim[0] + .05 * (ylim[1] - ylim[0]))
+                plt.plot(x, y, c=c)
+            plt.xlim(*xlim)
+            plt.ylim(*ylim)
         plt.ylabel('Speed')
         if fn and save is None:
             save = True
@@ -2616,7 +2637,7 @@ class BLsim(object):
 
     def diagnostic(self, rs=[-1, 1.2], save=False, fn=None, ext='png', figsize=None,
                    sdir=None, subsample=None, sz=4, xmax=2.5, dpi=300, modes=None,
-                   add_modes=None):
+                   add_modes=None, tmark=None, add_max=None):
         self.amp #make sure data is loaded
         #self.mode_mask()
         rs = np.atleast_1d(rs)
@@ -2631,7 +2652,7 @@ class BLsim(object):
             fig = plt.figure(figsize=figsize)
         gs = mpl.gridspec.GridSpec(ny, nx, top=.9, bottom=.1, hspace=.3)
 
-        ropt = dict(modes=modes, add_modes=None, fig=False)
+        ropt = dict(modes=modes, add_modes=add_modes, add_max=add_max, fig=False)
         for i, r in enumerate(rs):
             if r == -1:
                 r = .5 + .5 * self.rc[0]
@@ -2641,7 +2662,7 @@ class BLsim(object):
 
             ax = plt.subplot(gs[1,i])
             plt.sca(ax)
-            self.r_speed(r, **ropt)
+            self.r_speed(r, tmark=tmark, **ropt)
 
         ax = plt.subplot(gs[0,nr])
         f = self.loadfile(self.files('cons')[-1])
@@ -2904,23 +2925,24 @@ class BLsim(object):
                        popt=kwargs)
             self._mr_plot(t, self.amp, self.fft_data._amp_std, **opt)
 
-    def my_fft_plots(self, save=True, quiet=False):
-        self.diagnostic(save=save, ext='png')
+    def my_fft_plots(self, save=True, quiet=False, diag=True):
+        if diag:
+            self.diagnostic(save=save, ext='png')
         self.mr_speed(range(100, int(self.fft_time[-1] / tau + .5) + 10, 100), save=1)
         if not quiet:
             print('Consider using the following:')
             print('    sim.speed_plots(modes)')
             print('    sim.get_speed(m, t0)')
 
-    def speed_plots(self, modes, rin=-1, rout=1.2, save=True):
+    def speed_plots(self, modes, rin=-1, rout=1.2, save=True, tmark=None):
         if rin == -1:
             rin = self.rc[0] * .5 + .5
         if save:
-            self.r_speed(rin, modes=modes, fn=self.name + '_rin.pdf')
-            self.r_speed(rout, modes=modes, fn=self.name + '_rout.pdf')
+            self.r_speed(rin, modes=modes, tmark=tmark, fn=self.name + '_rin.pdf')
+            self.r_speed(rout, modes=modes, tmark=tmark, fn=self.name + '_rout.pdf')
         else:
-            self.r_speed(rin, modes=modes)
-            self.r_speed(rout, modes=modes)
+            self.r_speed(rin, modes=modes, tmark=tmark)
+            self.r_speed(rout, modes=modes, tmark=tmark)
 
     def get_speed(self, m, t0, dt=50, r=-1, dr=10, fmt='.3f'):
         if r == -1:
@@ -2953,6 +2975,8 @@ class BLsim(object):
 
     def mode_detect(self, r=None, save=True, fn=None, dt=10, nbin=3, emax=1e-4, smax=2e-4, dr=5,
                     data_only=False, dw=.05, overlap=10, nskip=3):
+        if (not data_only) and (self._mode_detect is not None):
+            return self._mode_detect
         if r is None:
             r = [.5 + .5 * self.rc[0], 1.2]
         r = np.atleast_1d(r)
@@ -2984,16 +3008,18 @@ class BLsim(object):
         data = dict(t=tlist, r=r, fits=fits, mask=np.logical_not(mask), run=run, tlist=tlist)
         if data_only:
             return data
-        return modeData(data, sim=self, dw=dw, overlap=overlap)
+        self._mode_detect = modeData(data, sim=self, dw=dw, overlap=overlap)
+        return self._mode_detect
 
     def main_plots(self, maps=False):
         md = self.mode_detect()
         md.write()
         md.plot(save=True)
-        gmodes = {m[0] for m in md.g_modes()}
-        self.diagnostic(save=True, add_modes=gmodes)
-        self.my_fft_plots(quiet=True)
-        self.speed_plots(gmodes)
+        gmodes = list({int(m[0]) for m in md.g_modes()})
+        t = [(.5 * (m[1] + m[2]) / tau, m[0]) for m in md.g_modes()]
+        self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:])
+        self.my_fft_plots(diag=False, quiet=True)
+        self.speed_plots(gmodes, tmark=t[:])
         if maps:
             self.mk_maps()
 
@@ -3271,7 +3297,7 @@ class auxBLsim(BLsim):
         return out
 
 def refreshSim(sim):
-    attr = ['coarse_data', 'fft_time']
+    attr = ['coarse_data', 'fft_time', 'mode_detect']
     opt = {i: getattr(sim, '_' + i, None) for i in attr}
     return BLsim(sim.path, **opt)
 
