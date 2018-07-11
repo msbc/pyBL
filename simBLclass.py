@@ -3005,11 +3005,11 @@ class BLsim(object):
         mask = np.logical_and(mask, np.abs(fits[:,:,:,5]) < emax)
         if nskip:
             mask[:,:nskip,:] = 0
-        run = np.maximum(boxcar(mask, 3, axis=1), boxcar(mask[:,::-1,:], 3, axis=1)[:,::-1,:])
+        run = np.maximum(boxcar(mask, nbin, axis=1), boxcar(mask[:,::-1,:], nbin, axis=1)[:,::-1,:])
         data = dict(t=tlist, r=r, fits=fits, mask=np.logical_not(mask), run=run, tlist=tlist)
         if data_only:
             return data
-        self._mode_detect = modeData(data, sim=self, dw=dw, overlap=overlap)
+        self._mode_detect = modeData(data, sim=self, dw=dw, overlap=overlap, nbin=nbin)
         return self._mode_detect
 
     def main_plots(self, maps=False):
@@ -3020,14 +3020,16 @@ class BLsim(object):
         t = [(.5 * (m[1] + m[2]) / tau, m[0]) for m in md.g_modes()]
         self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:])
         self.my_fft_plots(diag=False, quiet=True)
-        self.speed_plots(gmodes, tmark=t[:])
+        if gmodes:
+            self.speed_plots(gmodes, tmark=t[:])
         if maps:
             self.mk_maps()
 
 class modeData(object):
-    def __init__(self, data, sim=None, dw=.05, overlap=10):
+    def __init__(self, data, sim=None, dw=.05, overlap=10, nbin=3):
         self.sim = sim
         self.dw = dw
+        self.nbin = nbin
         self._dt = overlap * tau
         mask = np.logical_not(data['mask'])
         run = data['run']
@@ -3036,19 +3038,19 @@ class modeData(object):
         tlist = data['tlist']
         self.r = r
         out = [[] for i in r]
-        for z in zip(*np.where(run == 3)):
+        for z in zip(*np.where(run == nbin)):
             w = fits[z[0], z[1], z[2], 0]
             t0 = z[1]
             t1 = t0
             tmp = [i for i in out[z[0]] if (i[0] == z[2]) and (i[1] <= tlist[t0] <= i[2])]
             if not tmp:
             #if (not tmp) and (t0 < fits.shape[1] - 1):
-                while (run[z[0], t1 + 1, z[2]] == 3) and (abs(fits[z[0], t1 + 1, z[2], 0] - w) < dw * w):
+                while (run[z[0], t1 + 1, z[2]] == nbin) and (abs(fits[z[0], t1 + 1, z[2], 0] - w) < dw * w):
                     t1 += 1
                     w = fits[z[0], t0:t1, z[2], 0].mean()
                     if t1 >= run.shape[1] - 1:
                         break
-                if t1 - t0 >= 3:
+                if t1 - t0 >= nbin:
                     t0 = tlist[t0]
                     t1 = tlist[t1+1]
                     out[z[0]].append([z[2], t0, t1, w])
