@@ -2853,8 +2853,9 @@ class BLsim(object):
             print(('{0:' + fmt + '}').format(out))
         return out
 
-    def mk_maps(self, vars='Rpseudo', dt=50, base_dir=None, file='cons'):
-        vars = np.atleast_1d(vars)
+    def mk_maps(self, var_list='Rpseudo', dt=50, base_dir=None, file='cons'):
+        var_list = np.atleast_1d(var_list)
+        fopt={'dpi': 300, 'figsize': (6,6)}
         path = self.name + '_maps'
         if base_dir is not None:
             path = os.path.join(base_dir, path)
@@ -2864,10 +2865,10 @@ class BLsim(object):
         while True:
             print(i)
             try:
-                for var in vars:
+                for var in var_list:
                     if var is not None:
                         var = str(var)
-                    self.loadfile(file, i).plot2d(var, sdir=path, save=True)
+                    self.loadfile(file, i).plot2d(var, sdir=path, save=True, fopt=fopt)
             except IndexError:
                 break
             i += dt
