@@ -2984,6 +2984,7 @@ class BLsim(object):
             return data
         return modeData(data, sim=self, dw=dw, overlap=overlap)
 
+
 class modeData(object):
     def __init__(self, data, sim=None, dw=.05, overlap=10):
         self.sim = sim
@@ -2997,19 +2998,16 @@ class modeData(object):
         self.r = r
         out = [[] for i in r]
         for z in zip(*np.where(run == 3)):
-            try:
-                wlist = [l[3] for l in out[z[0]] if l[0] == z[2]]
-            except IndexError:
-                wlist = [-10]
-            wlist = np.array(wlist)
             w = fits[z[0], z[1], z[2], 0]
-            if (np.abs(wlist - w) >= dw * w).all():
-                t0 = z[1]
-                t1 = t0
+            t0 = z[1]
+            t1 = t0
+            tmp = [i for i in out[z[0]] if (i[0] == z[2]) and (i[1] <= tlist[t0] <= i[2])]
+            if not tmp:
+            #if (not tmp) and (t0 < fits.shape[1] - 1):
                 while (run[z[0], t1 + 1, z[2]] == 3) and (abs(fits[z[0], t1 + 1, z[2], 0] - w) < dw * w):
                     t1 += 1
                     w = fits[z[0], t0:t1, z[2], 0].mean()
-                    if t1 == run.shape[1] - 1:
+                    if t1 >= run.shape[1] - 1:
                         break
                 if t1 - t0 >= 3:
                     t0 = tlist[t0]
@@ -3017,13 +3015,28 @@ class modeData(object):
                     out[z[0]].append([z[2], t0, t1, w])
         self.mode_data = [np.array(i) for i in out]
 
+    def filter(self, data=None):
+        if data is None:
+            try:
+                return self._filter[:]
+            except AttributeError:
+                self._filter = [self.filter(i) for i in self.md]
+                return self._filter[:]
+        tmp = sorted(data, key=lambda x:x[0] - 1e-6 * (x[2] - x[1]))
+        out = []
+        for mode in tmp:
+            similar = [i for i in out if (mode[0] == i[0]) and (abs(mode[3] - i[3]) < self.dw * i[3])]
+            if not similar:
+                out.append(mode)
+        return np.array(out)
+
     def write(self, fn=None):
         if fn is None:
             fn = self.sim.name + '_modes.csv'
         rs = ["R = "+repr(i) for i in self.r]
         rs.append('Global Modes')
-        data = self.md[:]
-        data.append(self.g_modes())
+        data = self.filter()
+        data.append(self.filter(self.g_modes()))
         out = ['# m, t_start, t_end, speed','']
         for i, r in enumerate(rs):
             out.append('# ' + r)
@@ -3033,11 +3046,11 @@ class modeData(object):
             f.write('\n'.join(out))
         return
 
-    def plot(self, save=False, fn=None, ext='pdf', inc_global=False):
+    def plot(self, save=False, fn=None, ext='pdf', inc_global=True):
         markers = 'o','+','x','.'
         lbls = []
         for i, r in enumerate(self.r):
-            plt.scatter(self[i][:,0], self[i][:,3], marker=markers[i])
+            plt.scatter(self.filter()[i][:,0], self.filter()[i][:,3], marker=markers[i])
             lbls.append(r'$r={0:.2f}$'.format(r))
         if inc_global:
             data = self.g_modes()
@@ -3088,7 +3101,7 @@ class modeData(object):
                     t1 = min(t1, mlist[0][2])
                 if keep:
                     out.append([mode[0], t0, t1, mode[3]])
-            self._g_modes = np.array(out)
+            self._g_modes = self.filter(np.array(out))
         return self._g_modes
 
 
