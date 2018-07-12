@@ -2975,7 +2975,7 @@ class BLsim(object):
             i += dt
 
     def mode_detect(self, r=None, save=True, fn=None, dt=10, nbin=3, emax=1e-4, smax=2e-4, dr=5,
-                    data_only=False, dw=.05, overlap=10, nskip=3):
+                    data_only=False, dw=.05, overlap=10, nskip=3, out_mult=2):
         if (not data_only) and (self._mode_detect is not None):
             return self._mode_detect
         if r is None:
@@ -3000,9 +3000,12 @@ class BLsim(object):
                     fits[i,j,m,0] = np.average(s[tslice[j], m], weights=w[tslice[j], m])
                     fits[i,j,m,1:] = linregress(t[tslice[j]], s[tslice[j], m])
         r = np.array([self.rc[i] for i in ris])
+        mult = np.ones_like(r)
+        mult[r > 1] = out_mult
+        mult = mult[:, np.newaxis, np.newaxis]
         mask = np.logical_and(fits[:,:,:,0] < 1, fits[:,:,:,0] > 0)
-        mask = np.logical_and(mask, np.abs(fits[:,:,:,1]) < smax)
-        mask = np.logical_and(mask, np.abs(fits[:,:,:,5]) < emax)
+        mask = np.logical_and(mask, np.abs(fits[:,:,:,1]) < smax * mult)
+        mask = np.logical_and(mask, np.abs(fits[:,:,:,5]) < emax * mult)
         if nskip:
             mask[:,:nskip,:] = 0
         run = np.maximum(boxcar(mask, nbin, axis=1), boxcar(mask[:,::-1,:], nbin, axis=1)[:,::-1,:])
