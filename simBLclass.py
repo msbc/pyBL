@@ -3046,8 +3046,8 @@ class modeData(object):
             t0 = z[1]
             t1 = t0
             tmp = [i for i in out[z[0]] if (i[0] == z[2]) and (i[1] <= tlist[t0] <= i[2])]
-            if not tmp:
-            #if (not tmp) and (t0 < fits.shape[1] - 1):
+            #if not tmp:
+            if (not tmp) and (t0 < fits.shape[1] - 1):
                 while (run[z[0], t1 + 1, z[2]] == nbin) and (abs(fits[z[0], t1 + 1, z[2], 0] - w) < dw * w):
                     t1 += 1
                     w = fits[z[0], t0:t1, z[2], 0].mean()
