@@ -1661,7 +1661,7 @@ class BLsim(object):
         shift[np.where(d < limit)] += tau
         return phase + shift.cumsum(axis=0)
 
-    def fluxes(self, t0, tf, tnorm=tau):
+    def fluxes(self, t0, tf, tnorm=tau, nsmooth=True):
         if not tnorm or tnorm is True:
             tnorm = 1
         t0 *= tnorm
@@ -1673,7 +1673,13 @@ class BLsim(object):
         ffts = self.sortedFFT()
         i = int(2 * t0 // dt - 2)
         i1 = int(2 * tf // dt - 2)
+        if nsmooth is True:
+            nsmooth = int((i1 - i) // 10)
+        if not nsmooth:
+            nsmooth = 1
+        print("ns:", nsmooth)
         out = {'dwdt': 0, 'drhodt': 0}
+        tsb = None
         while i <= i1:
             fn = ffts[i]
             ft = loadBLfile(fn, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
@@ -1681,16 +1687,15 @@ class BLsim(object):
                 print('t0', ft.t / tnorm, t0 / tnorm)
                 out['t0'] = ft.t / tnorm
                 out['dwdt'] -= np.real(ft['FT-vel2'][0])
-                out['drhodt'] -= np.real(ft['FT-dens'][0])
                 out['drho'] = np.real(ft['FT-dens'][0]) - self.rho_ref
+                tsa = ft.t
                 #print(ft['FT-vel2'][0])
-            if n == -1:
-                out['dwdt'] -= np.real(ft['FT-vel2'][0])
+            if n < nsmooth:
                 out['drhodt'] -= np.real(ft['FT-dens'][0])
-                t1 = ft.t / tnorm - out['t0']
-            if i == -i1 -1:
-                out['dwdt'] += np.real(ft['FT-vel2'][0])
+            elif i > i1 - nsmooth:
                 out['drhodt'] += np.real(ft['FT-dens'][0])
+                if tsb is None:
+                    tsb = ft.t
             tmp = ft.fluxes()
             try:
                 for k in keys:
@@ -1704,13 +1709,14 @@ class BLsim(object):
         print(n,i, i1)
         out['tf'] = ft.t / tnorm
         out['dwdt'] += np.real(ft['FT-vel2'][0])
-        out['drhodt'] += np.real(ft['FT-dens'][0])
+        #out['drhodt'] += np.real(ft['FT-dens'][0])
         #print(ft['FT-vel2'][0])
         #print(out['dw'])
         #out['dwdt'] /= tnorm * (out['tf'] - out['t0'] - t1) * self.rc * .5
         #out['drhodt'] /= tnorm * (out['tf'] - out['t0'] - t1) * self.rc * .5
         out['dwdt'] /= tnorm * (out['tf'] - out['t0']) * self.rc
-        out['drhodt'] /= tnorm * (out['tf'] - out['t0']) * self.rc
+        out['drhodt'] /= (tsb - tsa) * self.rc * nsmooth
+        print("t div", tnorm * (out['tf'] - out['t0']), dt * nsmooth, tsb - tsa)
 
         for k in keys:
             out[k] /= n
@@ -1784,7 +1790,7 @@ class BLsim(object):
         ymin = min(ymin[ri:ri2].min() - .1 * ymax, 0)
         ylim = plt.ylim()
         ylim = plt.ylim(max(ylim[0], ymin), min(ylim[1], ymax))
-        print(ylim)
+        #print(ylim)
         yl = 2e-4
         #plt.ylim(-yl, yl)
         plt.xlim(self.r[0], self.r[-1])
