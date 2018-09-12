@@ -1686,14 +1686,15 @@ class BLsim(object):
             if n == 0:
                 print('t0', ft.t / tnorm, t0 / tnorm)
                 out['t0'] = ft.t / tnorm
-                out['dwdt'] -= np.real(ft['FT-vel2'][0])
                 out['drho'] = np.real(ft['FT-dens'][0]) - self.rho_ref
                 tsa = ft.t
                 #print(ft['FT-vel2'][0])
             if n < nsmooth:
                 out['drhodt'] -= np.real(ft['FT-dens'][0])
+                out['dwdt'] -= np.real(ft['FT-vel2'][0])
             elif i > i1 - nsmooth:
                 out['drhodt'] += np.real(ft['FT-dens'][0])
+                out['dwdt'] += np.real(ft['FT-vel2'][0])
                 if tsb is None:
                     tsb = ft.t
             tmp = ft.fluxes()
@@ -1708,13 +1709,14 @@ class BLsim(object):
         print('tf', ft.t / tnorm, tf / tnorm)
         print(n,i, i1)
         out['tf'] = ft.t / tnorm
-        out['dwdt'] += np.real(ft['FT-vel2'][0])
+        #out['dwdt'] += np.real(ft['FT-vel2'][0])
         #out['drhodt'] += np.real(ft['FT-dens'][0])
         #print(ft['FT-vel2'][0])
         #print(out['dw'])
         #out['dwdt'] /= tnorm * (out['tf'] - out['t0'] - t1) * self.rc * .5
         #out['drhodt'] /= tnorm * (out['tf'] - out['t0'] - t1) * self.rc * .5
-        out['dwdt'] /= tnorm * (out['tf'] - out['t0']) * self.rc
+        #out['dwdt'] /= tnorm * (out['tf'] - out['t0']) * self.rc
+        out['dwdt'] /= (tsb - tsa) * self.rc * nsmooth
         out['drhodt'] /= (tsb - tsa) * self.rc * nsmooth
         print("t div", tnorm * (out['tf'] - out['t0']), dt * nsmooth, tsb - tsa)
 
