@@ -1737,10 +1737,12 @@ class BLsim(object):
         modes = sorted(range(norm.shape[0]), key=lambda x: -norm[x])
 
         if figsize is None:
-            figsize = (4.5,6.5)
-        plt.figure(figsize=figsize)
+            figsize = np.array((11,8.5)) * .8
+        fig = plt.figure(figsize=figsize)
+        gs = mpl.gridspec.GridSpec(3, 2, top=.93, left=.08, right=.98, bottom=.08, wspace=.15, hspace=.25)
+        #fig, axs = plt.subplots(3, 2, figsize=figsize, top=.7)
 
-        ax0 = plt.subplot(411)
+        ax0 = plt.subplot(gs[0,0])
         plt.plot(self.rc, cs, 'k-', label='$C_S$')
         for m in modes[:nm]:
             plt.plot(self.rc, csm[m], label=str(m))
@@ -1755,8 +1757,28 @@ class BLsim(object):
         plt.ylabel('$C_S$')
         #plt.setp(ax0.get_xticklabels(), fontsize=6)
 
+        ax = plt.subplot(gs[0,1])
+        for i, m in enumerate(modes[:nm]):
+            plt.plot(self.rc, csm[m], label=str(m), zorder=i+1)
+        ylim = plt.ylim()
+        plt.plot(self.rc, cs, 'k-', label='$C_S$', zorder=0)
+        plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls=':', label='sum', zorder=nm+2)
+        plt.xlim(self.r[0], 1.4)
+        plt.ylim(*ylim)
+        #plt.legend(ncol=nm + 2, **lopt)
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
+        #plt.ylim(*ylim)
+        #plt.xlabel('$R$')
+        plt.ylabel('$C_S$')
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.02))
+        locs, labels = plt.yticks()
+        dy = .2 * (locs[1]-locs[0])
+        ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(dy))
+        #plt.setp(ax0.get_xticklabels(), fontsize=6)
 
-        ax = plt.subplot(412, sharex=ax0)
+
+        ax = plt.subplot(gs[1,0], sharex=ax0)
         keys = [i for i in data.keys() if i[0] == 'C' and len(i) == 2]
         for k in keys:
             opt = {'label': '${0:}_{1:}$'.format(*k)}
@@ -1770,7 +1792,29 @@ class BLsim(object):
         #plt.xlabel('R')
         #plt.setp(ax.get_xticklabels(), visible=False)
 
-        ax = plt.subplot(413, sharex=ax0)
+        ax = plt.subplot(gs[1,1], sharex=ax0)
+        ri = self.rloc(1)
+        plt.plot(self.rc, data['drho'], label=r'$\delta\rho$')
+        plt.plot(self.rc, data['vphi'] / self.rc, label=r'$\Omega$')
+        op = self.rc**-3
+        op +=  self.mach**-2 * grad(self.rc, data['dens']) / (data['dens'] * self.rc)
+        op = np.sqrt(op)
+        plt.plot(self.rc, op, label=r'$\Omega(P)$', ls='--')
+        plt.plot(self.rc, self.rc**-1.5, label=r'$\Omega_{\rm k}$', lw=1, c='k', ls=':')
+        plt.plot(self.rc, -1e3*data['vr']*self.mach, label=r'$-10^3v_r/c_s$')
+        plt.legend(ncol=5, **lopt)
+        plt.xlim(self.r[0], self.r[-1])
+        ymax = data['drho'][ri:].max() * 1.05
+        ymin = min(data['drho'][ri:].min() - .1 * ymax, 0)
+        ylim = plt.ylim()
+        plt.ylim(max(ylim[0], ymin), min(ylim[1], ymax))
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
+        plt.xlabel('$R$')
+        #ax.set_xticklabels([])
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+
+        ax = plt.subplot(gs[2,0], sharex=ax0)
         plt.plot(self.rc, - data['Mdot'] * tau * self.rc, label=r'$\dot{M}$', c='k')
         ri = self.rloc(1.2)
         ri2 = self.rloc(2)
@@ -1797,27 +1841,32 @@ class BLsim(object):
         #plt.ylim(-yl, yl)
         plt.xlim(self.r[0], self.r[-1])
         #plt.setp(ax.get_xticklabels(), visible=False)
-
-        ax = plt.subplot(414, sharex=ax0)
-        ri = self.rloc(1)
-        plt.plot(self.rc, data['drho'], label=r'$\delta\rho$')
-        plt.plot(self.rc, data['vphi'] / self.rc, label=r'$\Omega$')
-        op = self.rc**-3
-        op +=  self.mach**-2 * grad(self.rc, data['dens']) / (data['dens'] * self.rc)
-        op = np.sqrt(op)
-        plt.plot(self.rc, op, label=r'$\Omega(P)$', ls='--')
-        plt.plot(self.rc, self.rc**-1.5, label=r'$\Omega_{\rm k}$', lw=1, c='k', ls=':')
-        plt.legend(ncol=4, **lopt)
-        plt.xlim(self.r[0], self.r[-1])
-        ymax = data['drho'][ri:].max() * 1.05
-        ymin = min(data['drho'][ri:].min() - .1 * ymax, 0)
-        ylim = plt.ylim()
-        plt.ylim(max(ylim[0], ymin), min(ylim[1], ymax))
-        plt.axhline(0, c='.5', ls=':', lw=1)
-        plt.axvline(1, c='.5', ls=':', lw=1)
         plt.xlabel('$R$')
-        #ax.set_xticklabels([])
-        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+
+        ax = plt.subplot(gs[2,1])
+        plt.xticks([], [])
+        plt.yticks([], [])
+        one = self.rloc(1)
+        mdot = data['Mdot'] * tau * self.rc
+        info = [['C_S', data['CS'][0,one]],
+               ['C_A', data['CA'][0,one]],
+               ['C_L', data['CL'][0,one]],
+               [r'\dot{M}', mdot[one]],
+               ]
+        info = ['$' + i[0] + '(R=1)=$'+ '{0:.3g}'.format(np.real(i[1])) for i in info]
+        info.append(r'$\dot{M}(R_{\rm min})=$' + '{0:.3g}'.format(mdot[0]))
+        info.append(r'$\dot{M}(R_{\rm max})=$' + '{0:.3g}'.format(mdot[-8:-2].mean()))
+        info.append(r'$2\pi\int r\delta\rho dr=$' + '{0:.3g}'.format(tau*np.sum(data['drho'] * self.rc * self.dr)))
+        tmp = self.rc[self.rc<1][np.argmin(np.abs(data['drho'][self.rc<1]))]
+        info.append(r'$2\pi\int_{'+'{:.2g}'.format(tmp)+r'}^4 r\delta\rho dr=$' + '{0:.3g}'.format(
+            tau*np.sum((data['drho'] * self.rc * self.dr)[self.rloc(tmp):]))
+                    )
+        ncol = 2
+        for i, s in enumerate(info):
+            ix = i % ncol
+            iy = i // ncol
+            plt.text(.9 / ncol * ix + .05, .88 - .12 * iy, s)
+
 
         title = ''
         try:
@@ -1825,8 +1874,11 @@ class BLsim(object):
         except:
             pass
         title += '$t/ 2 \pi={t0:.1f}-{tf:.1f}$'.format(**data)
-        plt.suptitle(title)
-        plt.tight_layout()
+        fig.suptitle(title)
+        #plt.tight_layout()
+        #fig.tight_layout(rect=[0, 0.0, 1, 0.5])
+        #fig.subplots_adjust(top=0.7)
+        #plt.subplots_adjust(left=0.2, wspace=0.8, top=0.5)
 
         if save or fn:
             if fn is None:
