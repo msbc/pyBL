@@ -2597,6 +2597,7 @@ class BLsim(object):
                             out.append(bf.plot2d(d, **kwargs))
                         if pop_title:
                             kwargs.pop('title')
+                        plt.close()
                 return out
         if not hasattr(bf, 'plot2d'):
             bf = self.loadfile(bf)
