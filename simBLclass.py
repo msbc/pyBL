@@ -26,6 +26,7 @@ except ImportError:
     from scipy.signal import fftconvolve
 from scipy.signal import argrelextrema
 import time
+import tarfile
 
 from . import athena_read as ar
 from . import helpers
@@ -154,7 +155,7 @@ def intr(dr, data, axis=-1):
 
 class BLfile(dict):
     def __init__(self, fn, sim_path=None, t=None, trim=True, data=None,
-                 defvar=None, ai_data=None, sim=None):
+                 defvar=None, ai_data=None, sim=None, file_handle=None):
         self.t = t
         self.sim = sim
         self._Qtrim = trim
@@ -166,7 +167,10 @@ class BLfile(dict):
         elif ai_data is not None:
             self.mach = 1. / ai_data['hydro']['iso_sound_speed']
         self.fn = _findAbsPath(fn, sim_path)
-        self.data = ar.athdf(self.fn)
+        if file_handle is None:
+            file_handle = fn
+        self._file_handle = file_handle
+        self.data = ar.athdf(file_handle)
         for i in self.data.keys():
             if i not in self:
                 self[i] = None
@@ -1584,12 +1588,19 @@ class BLsim(object):
             varlist = list(filter(None, [self.inputs[i].get('variable') for i in outs]))
             self._coarse_data = None
             self._fine_data = None
+            if os.path.isfile(os.path.join(self.path, 'fft.tar')):
+                self._tar = tarfile.open(os.path.join(self.path,'fft.tar'))
             for out in outs:
                 files = []
                 b = self.inputs[out].get('id', 'out' + out[6:])
                 searches = ['.'.join([a, b, c, ext]) for ext in _ext]
                 for search in searches:
                     files += [os.path.split(i)[-1] for i in glob(os.path.join(path, search))]
+                if b[:2] == 'FT':
+                    try:
+                        files += [i for i in self._tar.members() if b == i.split('.')[1]]
+                    except AttributeError:
+                        pass
                 self.fileDict[out] = sorted(files)
                 var = self.inputs[out].get('variable')
                 if varlist.count(var) == 1:
@@ -2105,7 +2116,10 @@ class BLsim(object):
         if not index is None:
             fn = self.files(fn)[index]
         if fn in self.filenames:
-            return loadBLfile(fn, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
+            try:
+                return loadBLfile(fn, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
+            except IOError:
+                return loadBLfile(fn, file_handle=self._tar.getmember(fn), sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
 
     def __mode_mask(self, data=None, info=False, amin=None):
         if self._mode_mask is None:
