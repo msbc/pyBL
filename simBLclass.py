@@ -139,10 +139,10 @@ def _findAbsPath(fn, sim_path=None):
         fn = os.path.join(sim_path, fn)
     return fn
 
-def _parse_file(fn):
+def _parse_file(fn, file_handle=None):
     ext = fn.split('.')[-1]
     if ext == 'athdf':
-        return BLfile(fn)
+        return BLfile(fn, file_handle=file_handle)
     if ext == 'npy':
         return np.load(fn)[()]
     raise IOError('Cannot identify file type of "{0:}"'.format(fn))
@@ -966,7 +966,7 @@ class BLFT(BLfile):
 
 def loadBLfile(fn, **kwargs):
     fn = _findAbsPath(fn, kwargs.get('sim_path', None))
-    data = _parse_file(fn)
+    data = _parse_file(fn, file_handle=kwargs.get('file_handle', None))
     ai_fn = kwargs.pop('athinput_fn', None)
     ai_data = kwargs.pop('ai_data', None)
     if ai_fn is None:
@@ -1589,7 +1589,13 @@ class BLsim(object):
             self._coarse_data = None
             self._fine_data = None
             if os.path.isfile(os.path.join(self.path, 'fft.tar')):
-                self._tar = tarfile.open(os.path.join(self.path,'fft.tar'))
+                self._tar = tarfile.open(os.path.join(self.path,'fft.tar'), 'r|')
+                tmp = [os.path.join(self.path, i) for i in ['cksum', 'hash']]
+                tmp = [i for i in tmp if os.path.isfile(i)][0]
+                with open(tmp) as f:
+                    lines = [i.strip().split(' ')[-1] for i in f.readlines()]
+                #lines = [os.path.join(self.path, i) for i in lines]
+                self._tfiles = [i for i in lines if i]
             for out in outs:
                 files = []
                 b = self.inputs[out].get('id', 'out' + out[6:])
@@ -1598,9 +1604,10 @@ class BLsim(object):
                     files += [os.path.split(i)[-1] for i in glob(os.path.join(path, search))]
                 if b[:2] == 'FT':
                     try:
-                        files += [i for i in self._tar.members() if b == i.split('.')[1]]
+                        files += [i for i in self._tfiles if b == i.split('.')[1]]
                     except AttributeError:
                         pass
+                    print(b, len(files))
                 self.fileDict[out] = sorted(files)
                 var = self.inputs[out].get('variable')
                 if varlist.count(var) == 1:
@@ -1693,7 +1700,14 @@ class BLsim(object):
         tsb = None
         while i <= i1:
             fn = ffts[i]
-            ft = loadBLfile(fn, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
+            try:
+                fh = self._tar.getmember(fn)
+            except KeyError:
+                fh = self._tar.getmember(os.path.split(fn)[-1])
+            except AttributeError:
+                fh = None
+            ft = loadBLfile(fn, file_handle=fh, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
+            print(ft)
             if n == 0:
                 print('t0', ft.t / tnorm, t0 / tnorm)
                 out['t0'] = ft.t / tnorm
@@ -2117,9 +2131,12 @@ class BLsim(object):
             fn = self.files(fn)[index]
         if fn in self.filenames:
             try:
-                return loadBLfile(fn, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
-            except IOError:
-                return loadBLfile(fn, file_handle=self._tar.getmember(fn), sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
+                fh = self._tar.getmember(fn)
+            except KeyError:
+                fh = self._tar.getmember(os.path.split(fn)[-1])
+            except AttributeError:
+                fh = None
+            return loadBLfile(fn, file_handle=fh, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
 
     def __mode_mask(self, data=None, info=False, amin=None):
         if self._mode_mask is None:
