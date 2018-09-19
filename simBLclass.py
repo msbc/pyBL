@@ -1702,9 +1702,9 @@ class BLsim(object):
         while i <= i1:
             fn = ffts[i]
             try:
-                fh = self._tar.getmember(fn)
+                fh = self._tar.extractfile(fn)
             except KeyError:
-                fh = self._tar.getmember(os.path.split(fn)[-1])
+                fh = self._tar.extractfile(os.path.split(fn)[-1])
             except AttributeError:
                 fh = None
             ft = loadBLfile(fn, file_handle=fh, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
@@ -2132,9 +2132,9 @@ class BLsim(object):
             fn = self.files(fn)[index]
         if fn in self.filenames:
             try:
-                fh = self._tar.getmember(fn)
+                fh = self._tar.extractfile(fn)
             except KeyError:
-                fh = self._tar.getmember(os.path.split(fn)[-1])
+                fh = self._tar.extractfile(os.path.split(fn)[-1])
             except AttributeError:
                 fh = None
             return loadBLfile(fn, file_handle=fh, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
