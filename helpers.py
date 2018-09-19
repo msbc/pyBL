@@ -379,3 +379,11 @@ def rolling_weighted_triangle_conv(x, w, window_size):
     if not window_size % 2:
         out = out[1:-1]
     return out
+
+def _x2_face(x, xmin=0, xmax=2*np.pi):
+    t = 2.0 * x - 1.0
+    w = 0.25 * (t * (t * t + 1.0)) + 0.5
+    return w * xmax + (1.0-w) * xmin
+
+def x2_face(xmin, xmax, xrat_root, nfx):
+    return _x2_face(np.arange(nfx, dtype=float) / (nfx - 1), xmin, xmax)

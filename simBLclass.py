@@ -153,9 +153,9 @@ def intr(dr, data, axis=-1):
     loc = [np.newaxis] * axis + [slice(None)]
     return (data * dr).sum(axis=axis)
 
-class BLfile(dict):
+class BLfileBase(dict):
     def __init__(self, fn, sim_path=None, t=None, trim=True, data=None,
-                 defvar=None, ai_data=None, sim=None, file_handle=None):
+                 defvar=None, ai_data=None, sim=None, file_handle=None, x2_face=None):
         self.t = t
         self.sim = sim
         self._Qtrim = trim
@@ -170,7 +170,8 @@ class BLfile(dict):
         if file_handle is None:
             file_handle = fn
         self._file_handle = file_handle
-        self.data = ar.athdf(file_handle)
+        self.data = ar.athdf(file_handle, face_func_2=x2_face, return_levels=True)
+        self.x2_face = x2_face
         for i in self.data.keys():
             if i not in self:
                 self[i] = None
@@ -267,7 +268,7 @@ class BLfile(dict):
 
     def __getitem__(self, key):
         try:
-            out = super(BLfile, self).__getitem__(key)
+            out = super(BLfileBase, self).__getitem__(key)
             if out is None:
                 out = self.data[key]
         except KeyError:
@@ -284,6 +285,11 @@ class BLfile(dict):
         data = self._parse_data(data)
         return (np.roll(data, -1, axis=axis) - np.roll(data, 1, axis=axis)) / (self.phic[2] - self.phic[0])
 
+    def rloc(self, r, subsample=None):
+        rc = self.rc[::subsample]
+        return np.abs(r - rc).argmin()
+
+class BLfile(BLfileBase):
     def fft(self, data, axis=-2, mag=False):
         try:
             data.shape
@@ -293,10 +299,6 @@ class BLfile(dict):
         if mag:
             out = np.absolute(out)
         return out
-
-    def rloc(self, r, subsample=None):
-        rc = self.rc[::subsample]
-        return np.abs(r - rc).argmin()
 
     def plot2d(self, data=None, fn=None, save=False, subsample=False, title=None,
                name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
@@ -1647,7 +1649,6 @@ class BLsim(object):
             except AttributeError:
                 self.loadfile('cons', args[0]).drho_plot()
 
-
     def draw_spiral(self, rp, phi0=0, opt=None):
         if opt is None:
             opt = {}
@@ -1881,11 +1882,11 @@ class BLsim(object):
         info = ['$' + i[0] + '(R=1)=$'+ '{0:.3g}'.format(np.real(i[1])) for i in info]
         info.append(r'$\dot{M}(R_{\rm min})=$' + '{0:.3g}'.format(mdot[0]))
         info.append(r'$\dot{M}(R_{\rm max})=$' + '{0:.3g}'.format(mdot[-8:-2].mean()))
-        info.append(r'$2\pi\int r\delta\rho dr=$' + '{0:.3g}'.format(tau*np.sum(data['drho'] * self.rc * self.dr)))
+        integrand = data['drho'] * self.rc * self.dr
+        info.append(r'$2\pi\int r\delta\rho dr=$' + '{0:.3g}'.format(tau*np.sum(integrand)))
         tmp = self.rc[self.rc<1][np.argmin(np.abs(data['drho'][self.rc<1]))]
-        info.append(r'$2\pi\int_{'+'{:.2g}'.format(tmp)+r'}^4 r\delta\rho dr=$' + '{0:.3g}'.format(
-            tau*np.sum((data['drho'] * self.rc * self.dr)[self.rloc(tmp):]))
-                    )
+        tmp = r'$2\pi\int_{'+'{:.2g}'.format(tmp)+r'}^4 r\delta\rho dr=$' + '{0:.3g}'.format(tau*np.sum(integrand[self.rloc(tmp):]))
+        info.append(tmp)
         ncol = 2
         for i, s in enumerate(info):
             ix = i % ncol
