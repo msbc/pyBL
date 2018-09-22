@@ -214,7 +214,7 @@ class BLfileBase(dict):
 
     @property
     def _defvar(self):
-        for i in [self._default_var, 'pseudo', 'dens', 'FT-mag', 'FT-Re']:
+        for i in filter(None, [self._default_var, 'pseudo', 'dens', 'FT-mag', 'FT-Re']):
             try:
                 if not self[i] is None:
                     return i
@@ -1272,7 +1272,7 @@ class FTdataFile(object):
         if nphi is None:
             nphi = sim.inputs['meshblock']['nx2']
         self.filename = filename
-        print(filename)
+        #print(filename)
         self.nr = nr
         self.nphi = nphi
         self.modes = np.arange(nphi)[np.newaxis,:,np.newaxis]
@@ -1609,7 +1609,7 @@ class BLsim(object):
                         files += [i for i in self._tfiles if b == i.split('.')[1]]
                     except AttributeError:
                         pass
-                    print(b, len(files))
+                    #print(b, len(files))
                 self.fileDict[out] = sorted(files)
                 var = self.inputs[out].get('variable')
                 if varlist.count(var) == 1:
@@ -2132,9 +2132,7 @@ class BLsim(object):
             fn = self.files(fn)[index]
         if fn in self.filenames:
             try:
-                fh = self._tar.extractfile(fn)
-            except KeyError:
-                fh = self._tar.extractfile(os.path.split(fn)[-1])
+                self._tar.extract(os.path.split(fn)[-1], self.path)
             except AttributeError:
                 fh = None
             return loadBLfile(fn, file_handle=fh, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
@@ -3394,6 +3392,33 @@ class auxBLsim(BLsim):
                 fn = self.name + '_cc_{:d}-{:d}.'.format(t1.t, t2.t) + ext
             t1.plot2d(out, title=title, vmax=1.1, phi_shift=np.pi, save=save, fn=fn)
         return out
+
+    def _verify_fft_tar(self):
+        tar = os.path.join(self.path, 'fft.tar')
+        if not os.path.isfile(tar):
+            return False
+        #n = len(glob(os.path.join(self.path, 'disk.FT*.athdf')))
+        hash = os.path.join(self.path, 'hash')
+        if not os.path.isfile(hash):
+            return False
+        cksum = os.path.join(self.path, 'cksum')
+        if not os.path.isfile(cksum):
+            return False
+        m = 0
+        with open(hash, 'r') as a:
+            with open(cksum, 'r') as b:
+                while True:
+                    al = a.readline()
+                    bl = b.readline()
+                    if al != bl:
+                        return False
+                    if (not al) and (not bl):
+                        break
+                    m +=1
+        #if m != n:
+        #    return False
+        return True
+
 
 def refreshSim(sim):
     attr = ['coarse_data', 'fft_time', 'mode_detect']
