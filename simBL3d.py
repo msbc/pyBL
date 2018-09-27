@@ -16,8 +16,22 @@ from . import helpers
 from . import simBLclass as blc
 
 tau = 2 * np.pi
-hpi = .5 * np.pi
+#hpi = .5 * np.pi
+hpi = 1.5708
 zero = 0.
+
+def line_plt(p1, p2, **popt):
+    if p1[0] == p2[0]:
+        dth = np.abs(p1[1] - p2[1])
+        nth = int(np.ceil(max(6, (dth / np.pi) * 100)))
+        #print(dth, nth)
+        th = np.linspace(p1[1], p2[1], nth)
+        plt.plot(p1[0] * np.sin(th), p1[0] * np.cos(th), **popt)
+    elif p1[1] == p2[1]:
+        th = p1[1]
+        r = np.array([p1[0], p2[0]])
+        plt.plot(r * np.sin(th), r * np.cos(th), **popt)
+    
 
 def plot_mesh(fn='/home/mcoleman/BLayer/3d_test/M09_a/mesh_structure.dat', data=None, save=False, fig_fn=None):
     if data is None:
@@ -75,7 +89,11 @@ def plot_mesh(fn='/home/mcoleman/BLayer/3d_test/M09_a/mesh_structure.dat', data=
 
     #ax = plt.subplot(122, projection='polar')
     #ax.plot(ax1_th - .5 * np.pi, ax1_r, 'k-', lw=1)
-    ax.plot(ax1_r * np.sin(ax1_th), ax1_r * np.cos(ax1_th), 'k-', lw=1)
+    if 0:
+        ax.plot(ax1_r * np.sin(ax1_th), ax1_r * np.cos(ax1_th), 'k-', lw=1)
+    else:
+        for i in range(ax1_r.size - 1):
+            line_plt((ax1_r[i], ax1_th[i]), (ax1_r[i+1], ax1_th[i+1]), c='k', lw=1)
     ax.set_aspect('equal', 'datalim')
     plt.xlim(0,None)
 
@@ -380,7 +398,11 @@ class BLfile(blc.BLfileBase):
     def r_theta_plot(self, data=None, phi=None, fn=None, save=False, title=None, name=None,
                      ext='png', popt=None, cb=True, cbl=None, zerocent=None, vmin=None, vmax=None,
                      cmap=None, cbopt=None, fig=None, fopt=None, ax=None, log=False, aspect=1,
-                     sdir=None, r_cut=None, ret_fn=False, rplot=1):
+                     sdir=None, r_cut=None, ret_fn=False, rplot=1, xs=1):
+        if xs is None:
+            xs = 1
+        if abs(xs) != 1:
+            raise ValueError('|xs| must be 1.')
         data, opt = self._data_opt_parser(data=data, vmax=vmax, vmin=vmin, zerocent=zerocent, cbl=cbl, name=name,
                                           r_cut=r_cut)
         if phi is None or phi == 'mean':
@@ -396,7 +418,7 @@ class BLfile(blc.BLfileBase):
 
         r = self.r[np.newaxis, :]
         theta = self.theta[:, np.newaxis]
-        x = r * np.sin(theta)
+        x = xs * r * np.sin(theta)
         y = r * np.cos(theta)
 
         fig, ax = self._fig_ax(fig, ax, aspect=aspect, fopt=opt['fopt'])
