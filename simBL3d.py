@@ -398,7 +398,7 @@ class BLfile(blc.BLfileBase):
     def r_theta_plot(self, data=None, phi=None, fn=None, save=False, title=None, name=None,
                      ext='png', popt=None, cb=True, cbl=None, zerocent=None, vmin=None, vmax=None,
                      cmap=None, cbopt=None, fig=None, fopt=None, ax=None, log=False, aspect=1,
-                     sdir=None, r_cut=None, ret_fn=False, rplot=1, xs=1):
+                     sdir=None, r_cut=None, ret_fn=False, rplot=1, both=False, xs=1):
         if xs is None:
             xs = 1
         if abs(xs) != 1:
@@ -408,6 +408,8 @@ class BLfile(blc.BLfileBase):
         if phi is None or phi == 'mean':
             data_slice = data.mean(axis=0)
             phi = 0.
+            if both:
+                raise ValueError('Cannot use mean and both together.')
         else:
             if type(phi) == float:
                 phi = self.phi_loc(phi)
@@ -425,6 +427,10 @@ class BLfile(blc.BLfileBase):
 
         #start plotting
         pcm = plt.pcolormesh(x, y, data_slice, **opt['popt'])
+        if both:
+            phi = (phi + self.phic.size // 2) % self.phic.size
+            data_slice = data[phi, :, :]
+            plt.pcolormesh(-x, y, data_slice, **opt['popt'])
         if rplot:
             rplot = np.atleast_1d(rplot)
             for r in rplot:
