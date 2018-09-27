@@ -428,7 +428,7 @@ class BLfile(blc.BLfileBase):
         #start plotting
         pcm = plt.pcolormesh(x, y, data_slice, **opt['popt'])
         if both:
-            phi = (phi + self.phic.size // 2) % self.phic.size
+            phi = int((phi + self.phic.size // 2) % self.phic.size)
             data_slice = data[phi, :, :]
             plt.pcolormesh(-x, y, data_slice, **opt['popt'])
         if rplot:
