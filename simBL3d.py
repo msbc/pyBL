@@ -411,7 +411,7 @@ class BLfile(blc.BLfileBase):
         else:
             if type(phi) == float:
                 phi = self.phi_loc(phi)
-            data_slice = data[:, phi, :]
+            data_slice = data[phi, :, :]
             phi = self.phic[phi]
         opt = self._opt_parser(data=data_slice, log=log, fopt=fopt, popt=popt, cbopt=cbopt, cmap=cmap, title=title,
                                **opt)
