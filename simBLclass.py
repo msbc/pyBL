@@ -1708,7 +1708,7 @@ class BLsim(object):
             except AttributeError:
                 fh = None
             ft = loadBLfile(fn, file_handle=fh, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
-            print(ft)
+            #print(ft)
             if n == 0:
                 print('t0', ft.t / tnorm, t0 / tnorm)
                 out['t0'] = ft.t / tnorm
