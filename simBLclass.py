@@ -1915,6 +1915,13 @@ class BLsim(object):
 
         return data
 
+    def flux_series(self, t0=None, delta_t=100, dt0=50, save=True, **kwargs):
+        if t0 is None:
+            t0 = np.arange(0, self.fft_time[-1], dt0)
+        for t in t0:
+            self.plot_fluxes(t, t + delta_t, save=save, **kwargs)
+
+
     def sortedFFT(self):
         ffts = [out for out in self.fileDict.keys()
                 if self.inputs.get(out, {}).get('variable') == "FT-Range"]
@@ -3106,7 +3113,7 @@ class BLsim(object):
         self._mode_detect = modeData(data, sim=self, dw=dw, overlap=overlap, nbin=nbin)
         return self._mode_detect
 
-    def main_plots(self, maps=False):
+    def main_plots(self, maps=False, fluxes=True):
         md = self.mode_detect()
         md.write()
         md.plot(save=True)
@@ -3118,6 +3125,8 @@ class BLsim(object):
             self.speed_plots(gmodes, tmark=t[:])
         if maps:
             self.mk_maps()
+        if fluxes:
+            self.flux_series()
 
 class modeData(object):
     def __init__(self, data, sim=None, dw=.05, overlap=10, nbin=3):
