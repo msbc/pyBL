@@ -5,4 +5,5 @@ Mach*stampede
 *.npy
 test/*
 .DS_Store
-mov/*
+mov
+.idea
