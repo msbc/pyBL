@@ -650,12 +650,15 @@ class BL3dSim(object):
         if files is None:
             files = self.files(key)
         for f in files:
+            print(f)
             try:
                 f.fn
             except AttributeError:
                 f = self.loadfile(f)
             try:
                 f.plot2(data=data, save=True)
+            except KeyboardInterrupt:
+                raise
             except:
                 print(f, "Failed")
 
