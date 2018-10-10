@@ -645,3 +645,17 @@ class BL3dSim(object):
         if fn in self.filenames:
             return BLfile(os.path.join(self.path, fn), sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
         raise ValueError('Unknown file.')
+
+    def mk_maps(self, files=None, key='out1', data=None):
+        if files is None:
+            files = self.files(key)
+        for f in files:
+            try:
+                f.fn
+            except AttributeError:
+                f = self.loadfile(f)
+            try:
+                f.plot2(data=data, save=True)
+            except:
+                print(f, "Failed")
+
