@@ -31,6 +31,7 @@ import tarfile
 from . import athena_read as ar
 from . import helpers
 from .helpers import rolling_weighted_triangle_conv as running_mean
+from .parmap import parmap
 
 
 _quiet = False
@@ -214,7 +215,13 @@ class BLfileBase(dict):
 
     @property
     def _defvar(self):
-        for i in filter(None, [self._default_var, 'pseudo', 'dens', 'FT-mag', 'FT-Re']):
+        try:
+            tmp = self.sim.defvar
+            if tmp:
+                return tmp
+        except AttributeError:
+            pass
+        for i in filter(None, [self._default_var, 'Rpseudo', 'pseudo', 'dens', 'FT-mag', 'FT-Re']):
             try:
                 if not self[i] is None:
                     return i
@@ -1680,7 +1687,7 @@ class BLsim(object):
         shift[np.where(d < limit)] += tau
         return phase + shift.cumsum(axis=0)
 
-    def fluxes(self, t0, tf, tnorm=tau, nsmooth=True):
+    def fluxes(self, t0, tf, tnorm=tau, nsmooth=True, progress=True):
         if not tnorm or tnorm is True:
             tnorm = 1
         t0 *= tnorm
@@ -1690,8 +1697,8 @@ class BLsim(object):
                 if self.inputs.get(i, {}).get('variable') == "FT-Range"]
         dt = self.inputs[ffts[0]]['dt']
         ffts = self.sortedFFT()
-        i = int(2 * t0 // dt - 2)
-        i1 = int(2 * tf // dt - 2)
+        i = int(2 * t0 // dt)
+        i1 = int(min(2 * tf // dt, len(ffts)))
         if nsmooth is True:
             nsmooth = int((i1 - i) // 10)
         if not nsmooth:
@@ -1699,18 +1706,16 @@ class BLsim(object):
         print("ns:", nsmooth)
         out = {'dwdt': 0, 'drhodt': 0}
         tsb = None
+        i0 = i
         while i <= i1:
+            if progress:
+                helpers.update_progress((i - i0) / (i1 - i0 + 1))
             fn = ffts[i]
-            try:
-                fh = self._tar.extractfile(fn)
-            except KeyError:
-                fh = self._tar.extractfile(os.path.split(fn)[-1])
-            except AttributeError:
-                fh = None
-            ft = loadBLfile(fn, file_handle=fh, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
-            #print(ft)
+            ft = self.loadfile(os.path.split(fn)[-1])
+            #ft = loadBLfile(fn, file_handle=fh, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
+            #print('File:', ft)
             if n == 0:
-                print('t0', ft.t / tnorm, t0 / tnorm)
+                print('t0', ft.t / tnorm, t0 / tnorm, i, ft.fn)
                 out['t0'] = ft.t / tnorm
                 out['drho'] = np.real(ft['FT-dens'][0]) - self.rho_ref
                 tsa = ft.t
@@ -1732,7 +1737,9 @@ class BLsim(object):
                 out.update(tmp)
             n += 1
             i += 1
-        print('tf', ft.t / tnorm, tf / tnorm)
+        if progress:
+            helpers.update_progress(1)
+        print('tf', ft.t / tnorm, tf / tnorm, i, ft.fn)
         print(n,i, i1)
         out['tf'] = ft.t / tnorm
         #out['dwdt'] += np.real(ft['FT-vel2'][0])
@@ -1751,7 +1758,7 @@ class BLsim(object):
         return out
 
     def plot_fluxes(self, t0=None, tf=None, nm=5, data=None, figsize=None, save=False,
-                    fn=None, ext='pdf', lopt=None, ff=1):
+                    fn=None, ext='pdf', lopt=None, ff=1, sdir=''):
         if lopt is None:
             lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
         if data is None:
@@ -1909,13 +1916,18 @@ class BLsim(object):
         if save or fn:
             if fn is None:
                 fn = '_flux_{:.1f}_{:.2f}.'.format(data['t0'], data['tf'] - data['t0'])
-                fn = self.name + fn + ext
+                fn = os.path.join(sdir, self.name + fn + ext)
+                if sdir:
+                    if not os.path.isdir(sdir):
+                        os.mkdir(sdir)
             plt.savefig(fn)
             plt.close()
 
         return data
 
-    def flux_series(self, t0=None, delta_t=100, dt0=50, save=True, **kwargs):
+    def flux_series(self, t0=None, delta_t=100, dt0=50, save=True, sdir=None, **kwargs):
+        if sdir is True:
+            sdir = self.name + '_fluxes'
         if t0 is None:
             t0 = np.arange(0, self.fft_time[-1], dt0)
         for t in t0:
@@ -2134,14 +2146,21 @@ class BLsim(object):
     def tloc(self, t):
         return np.abs(t - self.fft_time).argmin()
 
+    def extract_tar(self):
+        print('Extract')
+        self._tar.extractall(self.path)
+        self._tfiles = None
+
     def loadfile(self, fn, index=None):
         if not index is None:
             fn = self.files(fn)[index]
         if fn in self.filenames:
-            try:
-                self._tar.extract(os.path.split(fn)[-1], self.path)
-            except AttributeError:
-                fh = None
+            fh = None
+            tmp = [fn, os.path.split(fn)[-1], os.path.join(self.path, fn)]
+            tmp = np.array(map(os.path.exists, tmp))
+            if not tmp.any():
+                if fn in self._tfiles:
+                    self.extract_tar()
             return loadBLfile(fn, file_handle=fh, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
 
     def __mode_mask(self, data=None, info=False, amin=None):
@@ -2806,7 +2825,7 @@ class BLsim(object):
         if save or fn:
             if fn is None:
                 fn = self.name + '_diag.' + ext
-            if not sdir is None:
+            if sdir:
                 if not os.path.isdir(sdir):
                     os.mkdir(sdir)
                 fn = os.path.join(sdir, fn)
@@ -3062,7 +3081,8 @@ class BLsim(object):
         if not os.path.isdir(path):
             os.makedirs(path)
         while True:
-            print(i)
+            if i - 1 <= self.fft_time[-1] / tau:
+                print('Map of t/orb={:d}'.format(i))
             try:
                 for var in var_list:
                     if var is not None:
@@ -3113,20 +3133,37 @@ class BLsim(object):
         self._mode_detect = modeData(data, sim=self, dw=dw, overlap=overlap, nbin=nbin)
         return self._mode_detect
 
-    def main_plots(self, maps=False, fluxes=True):
-        md = self.mode_detect()
-        md.write()
-        md.plot(save=True)
-        gmodes = list({int(m[0]) for m in md.g_modes()})
-        t = [(.5 * (m[1] + m[2]) / tau, m[0]) for m in md.g_modes()]
-        self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:])
-        self.my_fft_plots(diag=False, quiet=True)
-        if gmodes:
-            self.speed_plots(gmodes, tmark=t[:])
-        if maps:
-            self.mk_maps()
-        if fluxes:
-            self.flux_series()
+    def main_plots(self, maps=False, fluxes=True, working_dir=None):
+        if working_dir is True:
+            working_dir = self.name
+        if not working_dir:
+            working_dir = os.getcwd()
+        if working_dir:
+            if not os.path.isdir(working_dir):
+                os.mkdir(working_dir)
+        pwd = os.getcwd()
+        try:
+            os.chdir(working_dir)
+            md = self.mode_detect()
+            md.write()
+            md.plot(save=True)
+            gmodes = list({int(m[0]) for m in md.g_modes()})
+            t = [(.5 * (m[1] + m[2]) / tau, m[0]) for m in md.g_modes()]
+            self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:])
+            self.my_fft_plots(diag=False, quiet=True)
+            if gmodes:
+                self.speed_plots(gmodes, tmark=t[:])
+            if maps:
+                self.mk_maps()
+            if fluxes:
+                self.flux_series()
+            self.main_plots(maps=maps, fluxes=fluxes, working_dir=None)
+        finally:
+            os.chdir(pwd)
+
+    def parse_func(self, func, *args, **kwargs):
+        return getattr(self, func)(*args, **kwargs)
+
 
 class modeData(object):
     def __init__(self, data, sim=None, dw=.05, overlap=10, nbin=3):
@@ -3438,7 +3475,87 @@ def refreshSim(sim):
 # End of BLsim class #
 ######################
 
-def mkplots(sims=None, path='', ext='png'):
+def parallel_compile(func, arglist, T=None):
+    '''Usage : parallel_compile(func, arglist=None, T=None)
+    Similar to comp_wrapper, but strings in arglist are not automatically turned
+    into zeussim_extended class instances.'''
+    out = parmap(func, arglist)
+    out = filter(None, out)
+    if T : out = zip(*out)
+    return out
+
+def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None, kwargs=None):
+    '''Usage : comp_wrapper(func, simlist=None, include=None, tmin=40, T=False, load_eos=False)
+    Evaluate function 'fun' on each simulation in 'simlist' and return the
+    compiled result, and use parallel processing to do so.
+
+    Keyword include (None):
+    Only simulations for which include(sim) are true will be
+    included in the output. If include=None then include defaults to the following
+    function: sim.t[-1] >= tmin
+
+    Keyword T (False):
+    Whether to transpose the output.
+
+    Keyword load_eos (False):
+    Whether to load EOS before computation.
+    '''
+    if not simlist:
+        dirs = [i for i in _dirs[::-1] if os.path.isdir(i)]
+        while True:
+            tmp = glob(os.path.join(dirs[0], '*/athinput.*'))
+            if tmp:
+                break
+            dirs.pop(0)
+        simlist = sorted(set(os.path.split(i)[0] for i in tmp))
+
+    sims = []
+
+    if not simlist: simlist = simlist4
+
+    if tmin == None: tmin = 200
+
+    if include == None:
+        def include(sim):
+            return sim.fft_time[-1] >= tmin
+    elif include == True:
+        def include(sim):
+            return True
+
+    def mapper(sim):
+        # if sim is a string
+        try:
+            sim.rstrip()
+            name = sim
+            sim = BLsim(sim)
+        # otherwise assume it's a simulation
+        except AttributeError:
+            name = sim.name
+        # if we get here there's no hope
+        except:
+            print('Bad sim : ' + name)
+            print(traceback.format_exc())
+            return None
+
+        try:
+            if include(sim):
+                if not callable(func):
+                    if args is None:
+                        args = []
+                    if kwargs is None:
+                        kwargs = {}
+                    sim.parse_func(func, *args, **kwargs)
+                return func(sim)
+        except KeyboardInterrupt:
+            raise
+        except:
+            print('Bad sim : ' + name)
+            print(traceback.format_exc())
+        return None
+
+    return parallel_compile(mapper, arglist=simlist, T=T)
+
+def _old_mkplots(sims=None, path='', ext='png'):
     if sims is None:
         sims = [i for i in glob(os.path.join(path, '*')) if os.path.isdir(i)]
     cwd = os.getcwd()
@@ -3451,8 +3568,9 @@ def mkplots(sims=None, path='', ext='png'):
                 sim = BLsim(os.path.join(path, sim))
             if path:
                 tmp = os.path.split(sim.path)[-1]
-                if not os.path.isdir(tmp):
-                    os.mkdir(tmp)
+                if tmp:
+                    if not os.path.isdir(tmp):
+                        os.mkdir(tmp)
                 os.chdir(tmp)
             else:
                 os.chdir(sim.path)
@@ -3460,15 +3578,16 @@ def mkplots(sims=None, path='', ext='png'):
             opt = dict(save=True, ext=ext, sdir=sdir)
             sim.mode_plot(main_plots=True, **opt)
             rdir = os.path.join(sdir, 'modes_at_r')
-            if not os.path.isdir(rdir):
-                os.mkdir(rdir)
+            if rdir:
+                if not os.path.isdir(rdir):
+                    os.mkdir(rdir)
             #opt['sdir'] = rdir
             os.chdir(rdir)
             for r in [.95,1,1.1,1.5,2,3]:
                 sim.mt_plot(r, log=True, **opt)
                 sim.mt_plot(r, log=False, vmin=0, **opt)
             os.chdir(cwd)
-            print('Finnished Simulation {0:}'.format(sim.name))
+            print('Finished simulation {0:}'.format(sim.name))
         except KeyboardInterrupt:
             raise
         except:

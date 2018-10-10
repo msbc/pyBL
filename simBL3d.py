@@ -524,13 +524,15 @@ class BLfile(blc.BLfileBase):
 
 
 class BL3dSim(object):
-    def __init__(self, path, athinput=None, x2_face=None, fmts=None):
+    def __init__(self, path, athinput=None, x2_face=None, fmts=None, defvar='Rpseudo'):
         if fmts is None:
             fmts = blc._file_fmts
         self.name = os.path.split(os.path.abspath(path))[-1]
         path = os.path.expanduser(path)
         if path == self.name and not os.path.isdir(path):
-            for d in blc._dirs:
+            dirs = blc._dirs[:]
+            dirs += [os.path.join(d, '3d') for d in dirs]
+            for d in dirs:
                 tmp = os.path.join(d, path)
                 if os.path.isdir(tmp):
                     path = tmp
@@ -558,6 +560,7 @@ class BL3dSim(object):
         self.fileDict = {}
         self.varDict = {}
         self.idDict = {}
+        self.defvar = defvar
         axes = []
         if not self.inputs:
             searches = [fmt.split('%')[0] + '*.' + fmt.split('d.')[-1] for fmt in fmts]
@@ -632,6 +635,13 @@ class BL3dSim(object):
 
     def loadfile(self, fn, index=None):
         if not index is None:
-            fn = self.files(fn)[index]
+            files = self.files(fn)
+            if index < 0 or files[-1].split('.')[2] == len(files):
+                fn = files[index]
+            else:
+                fn = list(files[0].split('.'))
+                fn[2] = '%5.5d' % index
+                fn = '.'.join(fn)
         if fn in self.filenames:
             return BLfile(os.path.join(self.path, fn), sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
+        raise ValueError('Unknown file.')
