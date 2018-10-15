@@ -646,7 +646,9 @@ class BL3dSim(object):
             return BLfile(os.path.join(self.path, fn), sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
         raise ValueError('Unknown file.')
 
-    def mk_maps(self, files=None, key='out1', data=None, skip_existing=True):
+    def mk_maps(self, files=None, key='out1', data=None, skip_existing=True, popt=None):
+        if popt is None:
+            popt = {}
         if files is None:
             files = self.files(key)
         for f in files:
@@ -662,7 +664,7 @@ class BL3dSim(object):
                     if os.path.exists(tmp):
                         mk_plt = False
                 if mk_plt:
-                    f.plot2(data=data, save=True)
+                    f.plot2(data=data, save=True, **popt)
                 else:
                     print(tmp + ' Exists. Skipping ' + f.fn)
             except KeyboardInterrupt:
