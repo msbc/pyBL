@@ -31,9 +31,9 @@ def line_plt(p1, p2, **popt):
         th = p1[1]
         r = np.array([p1[0], p2[0]])
         plt.plot(r * np.sin(th), r * np.cos(th), **popt)
-    
 
-def plot_mesh(fn='/home/mcoleman/BLayer/3d_test/M09_a/mesh_structure.dat', data=None, save=False, fig_fn=None):
+
+def plot_mesh(fn='mesh_structure.dat', data=None, save=False, fig_fn=None):
     if data is None:
         ax0_r = []
         ax0_phi = []
@@ -646,17 +646,25 @@ class BL3dSim(object):
             return BLfile(os.path.join(self.path, fn), sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
         raise ValueError('Unknown file.')
 
-    def mk_maps(self, files=None, key='out1', data=None):
+    def mk_maps(self, files=None, key='out1', data=None, skip_existing=True):
         if files is None:
             files = self.files(key)
         for f in files:
             print(f)
+            mk_plt = True
             try:
                 f.fn
             except AttributeError:
                 f = self.loadfile(f)
             try:
-                f.plot2(data=data, save=True)
+                if skip_existing:
+                    tmp = '.'.join(os.path.split(f.fn)[1].split('.')[:-1]) + '_map_plot.png'
+                    if os.path.exists(tmp):
+                        mk_plt = False
+                if mk_plt:
+                    f.plot2(data=data, save=True)
+                else:
+                    print(tmp + ' Exists. Skipping ' + f.fn)
             except KeyboardInterrupt:
                 raise
             except:
