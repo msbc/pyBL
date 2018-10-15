@@ -646,7 +646,9 @@ class BL3dSim(object):
             return BLfile(os.path.join(self.path, fn), sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
         raise ValueError('Unknown file.')
 
-    def mk_maps(self, files=None, key='out1', data=None):
+    def mk_maps(self, files=None, key='out1', data=None, popt=None):
+        if popt is None:
+            popt = {}
         if files is None:
             files = self.files(key)
         for f in files:
@@ -656,7 +658,7 @@ class BL3dSim(object):
             except AttributeError:
                 f = self.loadfile(f)
             try:
-                f.plot2(data=data, save=True)
+                f.plot2(data=data, save=True, **popt)
             except KeyboardInterrupt:
                 raise
             except:

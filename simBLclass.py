@@ -1698,7 +1698,7 @@ class BLsim(object):
         dt = self.inputs[ffts[0]]['dt']
         ffts = self.sortedFFT()
         i = int(2 * t0 // dt)
-        i1 = int(min(2 * tf // dt, len(ffts)))
+        i1 = int(min(2 * tf // dt, len(ffts) - 1))
         if nsmooth is True:
             nsmooth = int((i1 - i) // 10)
         if not nsmooth:
@@ -3071,7 +3071,9 @@ class BLsim(object):
             print(('{0:' + fmt + '}').format(out))
         return out
 
-    def mk_maps(self, var_list='Rpseudo', dt=50, base_dir=None, file='cons'):
+    def mk_maps(self, var_list='Rpseudo', dt=50, base_dir=None, file='cons', popt=None):
+        if popt is None:
+            popt = {}
         var_list = np.atleast_1d(var_list)
         fopt={'dpi': 300, 'figsize': (6,6)}
         path = self.name + '_maps'
@@ -3087,7 +3089,7 @@ class BLsim(object):
                 for var in var_list:
                     if var is not None:
                         var = str(var)
-                    self.loadfile(file, i).plot2d(var, sdir=path, save=True, fopt=fopt)
+                    self.loadfile(file, i).plot2d(var, sdir=path, save=True, fopt=fopt, **popt)
             except IndexError:
                 break
             i += dt
@@ -3133,7 +3135,7 @@ class BLsim(object):
         self._mode_detect = modeData(data, sim=self, dw=dw, overlap=overlap, nbin=nbin)
         return self._mode_detect
 
-    def main_plots(self, maps=False, fluxes=True, working_dir=None):
+    def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False):
         if working_dir is True:
             working_dir = self.name
         if not working_dir:
@@ -3144,20 +3146,25 @@ class BLsim(object):
         pwd = os.getcwd()
         try:
             os.chdir(working_dir)
+            if not quiet: print('    Mode detect')
             md = self.mode_detect()
             md.write()
             md.plot(save=True)
             gmodes = list({int(m[0]) for m in md.g_modes()})
             t = [(.5 * (m[1] + m[2]) / tau, m[0]) for m in md.g_modes()]
+            if not quiet: print('    Diagnostic')
             self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:])
+            if not quiet: print('    My fft')
             self.my_fft_plots(diag=False, quiet=True)
             if gmodes:
+                if not quiet: print('    Speed plots')
                 self.speed_plots(gmodes, tmark=t[:])
             if maps:
+                if not quiet: print('    Maps')
                 self.mk_maps()
             if fluxes:
-                self.flux_series()
-            self.main_plots(maps=maps, fluxes=fluxes, working_dir=None)
+                if not quiet: print('    Flux Series')
+                self.flux_series(sdir=True)
         finally:
             os.chdir(pwd)
 
@@ -3500,6 +3507,11 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
     Keyword load_eos (False):
     Whether to load EOS before computation.
     '''
+    if args is None:
+        args = []
+    if kwargs is None:
+        kwargs = {}
+
     if not simlist:
         dirs = [i for i in _dirs[::-1] if os.path.isdir(i)]
         while True:
@@ -3511,7 +3523,7 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
 
     sims = []
 
-    if not simlist: simlist = simlist4
+    #if not simlist: simlist = simlist4
 
     if tmin == None: tmin = 200
 
@@ -3533,23 +3545,19 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
             name = sim.name
         # if we get here there's no hope
         except:
-            print('Bad sim : ' + name)
+            print('Bad sim (no load): ' + name)
             print(traceback.format_exc())
             return None
 
         try:
             if include(sim):
                 if not callable(func):
-                    if args is None:
-                        args = []
-                    if kwargs is None:
-                        kwargs = {}
-                    sim.parse_func(func, *args, **kwargs)
+                    return sim.parse_func(func, *args, **kwargs)
                 return func(sim)
         except KeyboardInterrupt:
             raise
         except:
-            print('Bad sim : ' + name)
+            print('Bad sim (func err): ' + name)
             print(traceback.format_exc())
         return None
 
