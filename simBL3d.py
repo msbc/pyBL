@@ -729,3 +729,29 @@ class BL3dSim(object):
             except:
                 print(f, "Failed")
 
+    def mk_zooms(self, files=None, key='out1', data=None, skip_existing=True, popt=None):
+        if popt is None:
+            popt = {}
+        if files is None:
+            files = self.files(key)
+        for f in files:
+            print(f)
+            mk_plt = True
+            try:
+                f.fn
+            except AttributeError:
+                f = self.loadfile(f)
+            try:
+                if skip_existing:
+                    tmp = '.'.join(os.path.split(f.fn)[1].split('.')[:-1]) + '_zoom_plot.png'
+                    if os.path.exists(tmp):
+                        mk_plt = False
+                if mk_plt:
+                    f.zoom_plot(data=data, save=True, **popt)
+                else:
+                    print(tmp + ' Exists. Skipping ' + f.fn)
+            except KeyboardInterrupt:
+                raise
+            except:
+                print(f, "Failed")
+
