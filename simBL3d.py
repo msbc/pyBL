@@ -522,6 +522,63 @@ class BLfile(blc.BLfileBase):
         if save or fn:
             fn = self._save_fig(fn, self._prefix + '_map_plot.' + ext, sdir=sdir)
 
+    def zoom_plot(self, data=None, fn=None, title=None, name=True, ext='png', popt=None, save=False, phi_dot=0,
+                  cb=True, cbl=None, zerocent=None, vmin=None, vmax='98%', cmap=None, cbopt=None, phi_shift=0,
+                  fig=None, fopt=None, log=False, aspect=1, sdir=None, r_cut=None, ret_fn=False, rmax=1.6):
+        data, opt = self._data_opt_parser(data=data, vmax=vmax, vmin=vmin, zerocent=zerocent, cbl=cbl, name=name,
+                                          r_cut=r_cut)
+        i = np.argmax(self.thetac[self.thetac < .5 * np.pi])
+        data_slice = data[:,i:i+2,:].mean(axis=1)
+        opt = self._opt_parser(data=data_slice, log=log, popt=popt, cbopt=cbopt, cmap=cmap, title=title,
+                               **opt)
+        if fopt is None:
+            fopt = {'figsize': (8,6), 'dpi': 300}
+        if fig is None:
+            fig = plt.figure(**fopt)
+        _gsopt = dict(right=.9, width_ratios=[1,.15, .6, .05], top=.95, left=.1, bottom=.08, wspace=.05, hspace=.25)
+        gs = mpl.gridspec.GridSpec(1, 4, **_gsopt)
+        ax = plt.subplot(gs[0])
+        _opt = {}
+        _opt.update(opt)
+        _opt['cb'] = False
+        a0 = self.r_phi_plot(data, ax=ax, **_opt)
+        plt.xlim(-rmax, rmax)
+        plt.ylim(-rmax, rmax)
+        plt.xlabel('$x$')
+        plt.ylabel('$y$')
+
+        ax = plt.subplot(gs[2])
+        cax = plt.subplot(gs[3])
+        r = self.r[np.newaxis, :]
+        phi = self.phi[:, np.newaxis] + phi_shift + self.t * phi_dot
+        one = np.ones_like(r * phi)
+        x = r * one
+        y = phi / np.pi * one
+        a1 = ax.pcolormesh(x, y, data_slice, **opt['popt'])
+        plt.sca(ax)
+        plt.xlabel('$R$')
+        plt.ylabel(r'$\phi/\pi$')
+        plt.axvline(1., lw=1, ls=':', c='1')
+        ax.set_ylim(0, 2)
+        ax.set_xlim(self.r[0], rmax)
+
+        _opt = {}
+        _opt.update(opt)
+        _opt['cbopt']['cax'] = cax
+        _opt['name'] = None
+        _opt['title'] = False
+        self._labler(ax, a1, cb=cb, **{k: _opt.get(k) for k in ['title', 'cbl', 'cbopt']})
+
+        vmin, vmax = a0.get_clim()
+        tmp = a1.get_clim()
+        vmin = min(vmin, tmp[0])
+        vmax = max(vmax, tmp[1])
+
+        a0.set_clim(vmin, vmax)
+        a1.set_clim(vmin, vmax)
+
+        if save or fn:
+            fn = self._save_fig(fn, self._prefix + '_zoom_plot.' + ext, sdir=sdir)
 
 class BL3dSim(object):
     def __init__(self, path, athinput=None, x2_face=None, fmts=None, defvar='Rpseudo'):

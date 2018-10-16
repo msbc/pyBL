@@ -1708,8 +1708,6 @@ class BLsim(object):
         tsb = None
         i0 = i
         while i <= i1:
-            if progress:
-                helpers.update_progress((i - i0) / (i1 - i0 + 1))
             fn = ffts[i]
             ft = self.loadfile(os.path.split(fn)[-1])
             #ft = loadBLfile(fn, file_handle=fh, sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
@@ -1720,6 +1718,8 @@ class BLsim(object):
                 out['drho'] = np.real(ft['FT-dens'][0]) - self.rho_ref
                 tsa = ft.t
                 #print(ft['FT-vel2'][0])
+            if progress:
+                helpers.update_progress((i - i0) / (i1 - i0 + 1))
             if n < nsmooth:
                 out['drhodt'] -= np.real(ft['FT-dens'][0])
                 out['dwdt'] -= np.real(ft['FT-vel2'][0])
@@ -1758,11 +1758,11 @@ class BLsim(object):
         return out
 
     def plot_fluxes(self, t0=None, tf=None, nm=5, data=None, figsize=None, save=False,
-                    fn=None, ext='pdf', lopt=None, ff=1, sdir=''):
+                    fn=None, ext='pdf', lopt=None, ff=1, sdir='', progress=True):
         if lopt is None:
             lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
         if data is None:
-            data = self.fluxes(t0, tf)
+            data = self.fluxes(t0, tf, progress=progress)
         csm = np.real(data['CSm'])
         csm[0] = 0
         cs = data['CS'][0]
@@ -1927,11 +1927,12 @@ class BLsim(object):
 
     def flux_series(self, t0=None, delta_t=100, dt0=50, save=True, sdir=None, **kwargs):
         if sdir is True:
-            sdir = self.name + '_fluxes'
+            #sdir = self.name + '_fluxes'
+            sdir = 'fluxes'
         if t0 is None:
-            t0 = np.arange(0, self.fft_time[-1], dt0)
+            t0 = np.arange(0, self.fft_time[-1] / tau, dt0)
         for t in t0:
-            self.plot_fluxes(t, t + delta_t, save=save, **kwargs)
+            self.plot_fluxes(t, t + delta_t, save=save, sdir=sdir, **kwargs)
 
 
     def sortedFFT(self):
@@ -2942,7 +2943,7 @@ class BLsim(object):
 
 
     def _mr_plot(self, t, data, std, log=False, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False,
-                 fn=None, cbl=None, skip_m0=None, speed=False, popt=None, title=None, amp=False):
+                 fn=None, cbl=None, skip_m0=None, speed=False, popt=None, title=None, amp=False, sdir=None):
         tslice = slice(t - dt, t + dt + 1)
         weights = np.minimum(np.nan_to_num(std[tslice]), 1e99) ** -2
         _data, weight = np.average(data[tslice], weights=weights, axis=0, returned=True)
@@ -3009,13 +3010,21 @@ class BLsim(object):
         if fn and save is None:
             save = True
         if save:
+            if sdir is None:
+                sdir = ''
             if fn is None:
                 fn = helpers.sanitize_lbl(self.name) + '_mr.' + ext.lstrip('.')
+                fn = os.path.join(sdir, fn)
+            if sdir:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
             fig.savefig(fn)
             plt.close(fig)
 
     def mr_speed(self, ts, log=False, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
-                 cbl=None, **kwargs):
+                 cbl=None, sdir=None, **kwargs):
+        if sdir is True:
+            sdir = 'mr_speed'
         tlist = np.atleast_1d(ts)
         for t in tlist:
             if fn is None:
@@ -3025,7 +3034,7 @@ class BLsim(object):
             if cbl is None:
                 cbl = r'$\Omega_{\rm p}$'
             opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=_fn, cbl=cbl, speed=True,
-                       popt=kwargs)
+                       sdir=sdir, popt=kwargs)
             self._mr_plot(t, self.speed, self.fft_data._speed_std, **opt)
 
     def mr_amp(self, ts, log=True, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
@@ -3042,10 +3051,10 @@ class BLsim(object):
                        popt=kwargs)
             self._mr_plot(t, self.amp, self.fft_data._amp_std, **opt)
 
-    def my_fft_plots(self, save=True, quiet=False, diag=True):
+    def my_fft_plots(self, save=True, quiet=False, diag=True, sdir=None):
         if diag:
             self.diagnostic(save=save, ext='png')
-        self.mr_speed(range(100, int(self.fft_time[-1] / tau + .5) + 10, 100), save=1)
+        self.mr_speed(range(100, int(self.fft_time[-1] / tau + .5) + 10, 100), save=1, sdir=sdir)
         if not quiet:
             print('Consider using the following:')
             print('    sim.speed_plots(modes)')
@@ -3137,7 +3146,7 @@ class BLsim(object):
 
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False):
         if working_dir is True:
-            working_dir = self.name
+            working_dir = self.name + '_plots'
         if not working_dir:
             working_dir = os.getcwd()
         if working_dir:
@@ -3155,7 +3164,7 @@ class BLsim(object):
             if not quiet: print('    Diagnostic')
             self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:])
             if not quiet: print('    My fft')
-            self.my_fft_plots(diag=False, quiet=True)
+            self.my_fft_plots(diag=False, quiet=True, sdir=True)
             if gmodes:
                 if not quiet: print('    Speed plots')
                 self.speed_plots(gmodes, tmark=t[:])
@@ -3164,7 +3173,7 @@ class BLsim(object):
                 self.mk_maps()
             if fluxes:
                 if not quiet: print('    Flux Series')
-                self.flux_series(sdir=True)
+                self.flux_series(sdir=True, progress=(not quiet))
         finally:
             os.chdir(pwd)
 
@@ -3562,6 +3571,9 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
         return None
 
     return parallel_compile(mapper, arglist=simlist, T=T)
+
+def mkplots():
+    comp_wrapper('main_plots', kwargs=dict(quiet=True, working_dir=True))
 
 def _old_mkplots(sims=None, path='', ext='png'):
     if sims is None:
