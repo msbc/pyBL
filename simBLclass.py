@@ -171,7 +171,10 @@ class BLfileBase(dict):
         if file_handle is None:
             file_handle = fn
         self._file_handle = file_handle
-        self.data = ar.athdf(file_handle, face_func_2=x2_face, return_levels=True)
+        if data is None:
+            self.data = ar.athdf(file_handle, face_func_2=x2_face, return_levels=True)
+        else:
+            self.data = data
         self.x2_face = x2_face
         for i in self.data.keys():
             if i not in self:
@@ -3572,8 +3575,8 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
 
     return parallel_compile(mapper, arglist=simlist, T=T)
 
-def mkplots():
-    comp_wrapper('main_plots', kwargs=dict(quiet=True, working_dir=True))
+def mkplots(simlist=None):
+    comp_wrapper('main_plots', simlist=simlist, kwargs=dict(quiet=True, working_dir=True))
 
 def _old_mkplots(sims=None, path='', ext='png'):
     if sims is None:

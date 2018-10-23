@@ -137,6 +137,17 @@ class BLfile(blc.BLfileBase):
             return self.vel(key[3])
         if key == 'dens**2':
             return self['dens']**2
+        if key[0:4] == 'fft-':
+            try:
+                return self.fft(self[key[4:]])
+            except KeyError:
+                pass
+        if key[0:2] == 'd-':
+            try:
+                out = self[key[2:]]
+                return out - self.phi_mean(out)
+            except KeyError:
+                pass
         return None
 
     def vel(self, i):
@@ -157,7 +168,52 @@ class BLfile(blc.BLfileBase):
     def phi_loc(self, phi):
         return self.axis_loc(1, phi)
 
-    def plot_slice(self, sim_slice, data=None, fn=None, save=False, subsample=False, title=None,
+    def fft(self, data, axis=0, mag=False):
+        try:
+            data.shape
+        except AttributeError:
+            data = self[data]
+        out = np.fft.rfft(data, axis=axis)
+        if mag:
+            out = np.absolute(out)
+        return out
+
+    def theta_mean(self, data, weight=1, shape=False):
+        data = self._parse_data(data)
+        if hasattr(weight, 'lower'):
+            weight = self[weight]
+        dtheta = np.diff(self.theta)[np.newaxis, :, np.newaxis]
+        out = (data * weight * dtheta).mean(axis=1) / (weight * dtheta).mean(axis=1)
+        if shape:
+            out = out[:,np.newaxis,:]
+        return out
+
+    def r_mean(self, data, weight=1, shape=False):
+        data = self._parse_data(data)
+        if hasattr(weight, 'lower'):
+            weight = self[weight]
+        dr = np.diff(self.r)[np.newaxis, np.newaxis, :]
+        out = (data * weight * dr).mean(axis=2) / (weight * dr).mean(axis=2)
+        if shape:
+            out = out[:,:,np.newaxis]
+        return out
+
+    def phi_mean(self, data, weight=1, shape=True):
+        data = self._parse_data(data)
+        if hasattr(weight, 'lower'):
+            weight = self[weight]
+        dphi = np.diff(self.phi)[:, np.newaxis, np.newaxis]
+        out = (data * weight * dphi).mean(axis=0) / (weight * dphi).mean(axis=0)
+        if shape:
+            out = out[np.newaxis,:,:]
+        return out
+
+    def midplane(self, data):
+        data = self._parse_data(data)
+        i = np.argmax(self.thetac[self.thetac < .5 * np.pi])
+        return data[:, i:i + 2, :].mean(axis=1)
+
+    def _plot_slice(self, sim_slice, data=None, fn=None, save=False, subsample=False, title=None,
                    name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
                    vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                    ax=None, log=False, aspect=1, sdir=None, smooth=None,
@@ -351,6 +407,48 @@ class BLfile(blc.BLfileBase):
         if aspect:
             ax.set_aspect(aspect)
         return fig, ax
+
+    def fft_plot(self, data, weight=None, mmax=31, fn=None, save=False, title=None,
+                   name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
+                   vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
+                   ax=None, log=False, aspect=1, sdir=None, run_fft=None,
+                   r_cut=None, ret_fn=False, rplot=1):
+        data, opt = self._data_opt_parser(data=data, vmax=vmax, vmin=vmin, zerocent=zerocent, cbl=cbl, name=name,
+                                          r_cut=r_cut)
+        data_slice = data
+        if data.ndim == 3:
+            if weight is None:
+                weight = 'dens'
+            if run_fft is None:
+                run_fft = True
+        try:
+            if weight:
+                data_slice = self.theta_mean(data, weight=weight)
+        except ValueError:
+            data_slice = self.theta_mean(data, weight=weight)
+        if run_fft:
+            data_slice = self.fft(data, mag=True)
+        opt = self._opt_parser(data=data_slice, log=log, fopt=fopt, popt=popt, cbopt=cbopt, cmap=cmap, title=title,
+                               **opt)
+
+        x = self.r[np.newaxis, :]
+        y = np.arange(mmax + 1)[:, np.newaxis]
+        fig, ax = self._fig_ax(fig, ax, aspect=aspect, fopt=opt['fopt'])
+        pcm = ax.pcolormesh(x, y, data_slice, **opt['popt'])
+        if rplot:
+            rplot = np.atleast_1d(rplot)
+            for r in rplot:
+                plt.plot(r * np.cos(self.phic), r * np.sin(self.phic), lw=1, c='1', ls=':')
+        self._labler(ax, pcm, cb=cb, **{k: opt.get(k) for k in ['title', 'cbl', 'cbopt']})
+        plt.sca(ax)
+        plt.xlabel('$R$')
+        plt.ylabel('$m$')
+        if save or fn:
+            fn = self._save_fig(fn, self._prefix + '_r-theta_plot.' + ext, sdir=sdir)
+        if ret_fn:
+            return fn
+
+        return pcm
 
     def r_phi_plot(self, data=None, theta=None, fn=None, save=False, title=None,
                    name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
@@ -690,7 +788,7 @@ class BL3dSim(object):
             return self.fileDict[self.varDict[key]]
         raise ValueError('Cannot find "{0:}" files.'.format(key))
 
-    def loadfile(self, fn, index=None):
+    def loadfile(self, fn, index=None, data=None):
         if not index is None:
             files = self.files(fn)
             if index < 0 or files[-1].split('.')[2] == len(files):
@@ -700,7 +798,7 @@ class BL3dSim(object):
                 fn[2] = '%5.5d' % index
                 fn = '.'.join(fn)
         if fn in self.filenames:
-            return BLfile(os.path.join(self.path, fn), sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs)
+            return BLfile(os.path.join(self.path, fn), sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs, data=data)
         raise ValueError('Unknown file.')
 
     def mk_maps(self, files=None, key='out1', data=None, skip_existing=True, popt=None):
