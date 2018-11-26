@@ -31,6 +31,7 @@ import tarfile
 from . import athena_read as ar
 from . import helpers
 from .helpers import rolling_weighted_triangle_conv as running_mean
+from .helpers import grad, mod_grad
 from .parmap import parmap
 
 
@@ -52,6 +53,73 @@ _ext = ['athdf', 'npy']
 _int_fmt = '%5.5d'
 _file_fmts = ['.'.join([a, 'out' + b, _int_fmt, c]) for a in _pre for b in _i for c in _ext]
 
+def line_plt(p1, p2, **popt):
+    if p1[0] == p2[0]:
+        dth = np.abs(p1[1] - p2[1])
+        nth = int(np.ceil(max(6, (dth / np.pi) * 100)))
+        #print(dth, nth)
+        th = np.linspace(p1[1], p2[1], nth)
+        plt.plot(p1[0] * np.sin(th), p1[0] * np.cos(th), **popt)
+    elif p1[1] == p2[1]:
+        th = p1[1]
+        r = np.array([p1[0], p2[0]])
+        plt.plot(r * np.sin(th), r * np.cos(th), **popt)
+
+
+def plot_mesh(fn='mesh_structure.dat', data=None, save=False, fig_fn=None):
+    if data is None:
+        ax1_r = []
+        ax1_th = []
+        block = []
+        with open(fn, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if (not line) or line[0] == '#':
+                    if block:
+                        block = np.array(block)
+                        for i, point in enumerate(block):
+                            ax1_r.append(point[0])
+                            ax1_th.append(point[1])
+                        ax1_r.append(np.nan)
+                        ax1_th.append(np.nan)
+                    block = []
+                else:
+                    block.append(list(map(float, line.split(' '))))
+
+        ax1_r = np.array(ax1_r)
+        ax1_th = np.array(ax1_th)
+    else:
+        ax1_th, ax1_r = data
+
+    fig = plt.figure(figsize=(4,8))
+    ax = plt.subplot(111)#, projection='polar')
+
+    #ax = plt.subplot(121, projection='polar')
+    #ax.plot(ax0_phi, ax0_r, 'k-', lw=1)
+
+    #ax = plt.subplot(122, projection='polar')
+    #ax.plot(ax1_th - .5 * np.pi, ax1_r, 'k-', lw=1)
+    if 0:
+        ax.plot(ax1_r * np.sin(ax1_th), ax1_r * np.cos(ax1_th), 'k-', lw=1)
+    else:
+        for i in range(ax1_r.size - 1):
+            line_plt((ax1_r[i], ax1_th[i]), (ax1_r[i+1], ax1_th[i+1]), c='k', lw=1)
+    ax.set_aspect('equal', 'datalim')
+    #plt.xlim(0,None)
+
+    if save or fig_fn:
+        if fig_fn is None:
+            fig_fn = '3d_grid.pdf'
+        plt.savefig(fig_fn)
+        plt.close()
+
+    #phi = ax0_phi[np.isfinite(ax0_phi)]
+    #print("n_phi", 2 * np.pi / phi[phi > 0].min())
+    #th = ax1_th[np.isfinite(ax1_th)]
+    #print("n_theta", np.pi / (th[th > hpi].min() - hpi))
+
+    return ax1_th, ax1_r
+
 def boxcar(data, n, axis=None):
     csum = data.cumsum(axis=axis)
     tmp = np.roll(csum, n, axis=axis)
@@ -71,39 +139,6 @@ def and_neighbor(data, n=1, axis=0, pad=True):
     for i in xrange(-n, n+1):
         out = np.logical_and(out, np.roll(base, n, axis=axis))
     return out[loc + (slice(0,data.shape[axis]),)]
-
-def mod_grad(data, mod=1, axis=0):
-    loc = (slice(None),) * axis
-    out = np.zeros_like(data)
-    tmp = (data[loc + (slice(1, None),)] - data[loc + (slice(None, -1),)]) % mod
-    out[loc + (slice(1, None),)] = .5 * tmp
-    out[loc + (slice(None, -1),)] += .5 * tmp
-    out[loc + (0,)] *= 2
-    out[loc + (-1,)] *= 2
-    return out
-
-def grad(t, data, axis=0):
-    nd = len(data.shape)
-    if axis == -1:
-        axis += nd
-    loc = (slice(None),) * axis
-    l = loc + (slice(None, -2),)
-    c = loc + (slice(1, -1),)
-    r = loc + (slice(2, None),)
-    fill = [np.newaxis] * nd
-    fill[axis] = slice(None)
-    fill = tuple(fill)
-    Dinv =  (t[r[-1]] - t[l[-1]])[fill]**-1
-    dl = (t[c[-1]] - t[l[-1]])[fill]
-    dr = (t[r[-1]] - t[c[-1]])[fill]
-    rat = dr / dl
-    #norm = (dl * dr * D)**-2
-    out = np.zeros_like(data)
-    out[c] = (dl**-1 - dr**-1) * data[c] + Dinv / rat * data[r] - rat * Dinv * data[l]
-    #data[c] *= norm
-    out[loc + (0,)] = (data[loc + (1,)] - data[loc + (0,)]) / dl[loc + (0,)]
-    out[loc + (-1,)] = (data[loc + (-2,)] - data[loc + (-1,)]) / dr[loc + (-1,)]
-    return out
 
 def crudeDiff(t, data, axis=0, front=True):
     dt = np.diff(t)[(np.newaxis,) * axis + (slice(None),) + (np.newaxis,) * max(0, (len(data.shape) - axis - 1))]
@@ -286,6 +321,9 @@ class BLfileBase(dict):
         if self._Qtrim:
             return self._trim(out)
         return out
+
+    def load_all(self):
+        return self.data.load_all()
 
     def intr(self, data, axis=-1):
         data = self._parse_data(data)
@@ -3028,16 +3066,20 @@ class BLsim(object):
                  cbl=None, sdir=None, **kwargs):
         if sdir is True:
             sdir = 'mr_speed'
+        if sdir:
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
         tlist = np.atleast_1d(ts)
         for t in tlist:
             if fn is None:
                 _fn = helpers.sanitize_lbl(self.name) + '_mr_speed_{0:05d}.'.format(t) + ext.lstrip('.')
+                _fn = os.path.join(sdir, _fn)
             else:
               _fn = fn
             if cbl is None:
                 cbl = r'$\Omega_{\rm p}$'
             opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=_fn, cbl=cbl, speed=True,
-                       sdir=sdir, popt=kwargs)
+                       popt=kwargs)
             self._mr_plot(t, self.speed, self.fft_data._speed_std, **opt)
 
     def mr_amp(self, ts, log=True, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
@@ -3083,12 +3125,13 @@ class BLsim(object):
             print(('{0:' + fmt + '}').format(out))
         return out
 
-    def mk_maps(self, var_list='Rpseudo', dt=50, base_dir=None, file='cons', popt=None):
+    def mk_maps(self, var_list=['Rpseudo', 've'], dt=25, base_dir=None, file='cons', popt=None):
         if popt is None:
             popt = {}
         var_list = np.atleast_1d(var_list)
         fopt={'dpi': 300, 'figsize': (6,6)}
-        path = self.name + '_maps'
+        #path = self.name + '_maps'
+        path = 'maps'
         if base_dir is not None:
             path = os.path.join(base_dir, path)
         i = 0
@@ -3101,7 +3144,9 @@ class BLsim(object):
                 for var in var_list:
                     if var is not None:
                         var = str(var)
-                    self.loadfile(file, i).plot2d(var, sdir=path, save=True, fopt=fopt, **popt)
+                    if not os.path.isdir(os.path.join(path, var)):
+                        os.makedirs(os.path.join(path, var))
+                    self.loadfile(file, i).plot2d(var, sdir=os.path.join(path, var), save=True, fopt=fopt, **popt)
             except IndexError:
                 break
             i += dt
@@ -3575,8 +3620,8 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
 
     return parallel_compile(mapper, arglist=simlist, T=T)
 
-def mkplots(simlist=None):
-    comp_wrapper('main_plots', simlist=simlist, kwargs=dict(quiet=True, working_dir=True))
+def mkplots(simlist=None, maps=False):
+    comp_wrapper('main_plots', simlist=simlist, kwargs=dict(quiet=True, working_dir=True, maps=maps))
 
 def _old_mkplots(sims=None, path='', ext='png'):
     if sims is None:
