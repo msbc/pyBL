@@ -126,6 +126,8 @@ class BLfile(blc.BLfileBase):
         self.phi = self['x3f']
         self.phic = .5 * self.phi[1:] + .5 * self.phi[:-1]
         self._grid_shape = self.phic.size, self.thetac.size, self.rc.size
+        na = np.newaxis
+        self.coord = self.phic[:, na, na], self.thetac[na, :, na], self.rc[na, na, :]
         #self.grid = helpers.ndmesh(self.phi, self.theta, self.r)
         #p, t, r = self.grid
         #self.x = r * np.sin(t) * np.cos(p)
@@ -149,6 +151,36 @@ class BLfile(blc.BLfileBase):
             except KeyError:
                 pass
         return None
+
+    def ddr(self, data):
+        data = self._parse_data(data)
+        return helpers.grad(self.rc, data, 2)
+
+    def ddtheta(self, data):
+        data = self._parse_data(data)
+        return helpers.grad(self.thetac, data, 1)
+
+    def ddphi(self, data, axis=0):
+        data = self._parse_data(data)
+        return (np.roll(data, -1, axis=axis) - np.roll(data, 1, axis=axis)) / (self.phic[2] - self.phic[0])
+
+    def v_del_vr(self):
+        v1 = self['vel1']
+        v2 = self['vel2']
+        v3 = self['vel3']
+        ph, th, r = self.coord
+        return v1 * self.ddr(v1) + (v2 * self.ddtheta(v1) + v3 * self.ddphi(v1) / np.sin(th) - v2**2 - v3**2) / r
+
+    def grad(self, data):
+        data = self._parse_data(data)
+        ph, th, r = self.coord
+        return (self.ddphi(data) / (r * np.sin(th)), self.ddtheta(data) / r, self.ddr(data))
+
+    def div(self, data):
+        data = self._parse_data(data)
+        ph, th, r = self.coord
+        st = np.sin(th)
+        return (self.ddr(r**2 * data) / r + (self.ddtheta(data * st) + self.ddphi(data)) / st) / r
 
     def vel(self, i):
         return self['mom{0:}'.format(i)] / self['dens']
@@ -212,6 +244,26 @@ class BLfile(blc.BLfileBase):
         data = self._parse_data(data)
         i = np.argmax(self.thetac[self.thetac < .5 * np.pi])
         return data[:, i:i + 2, :].mean(axis=1)
+
+    def pres(self):
+        return self['dens'] * self.sim.mach**-2
+
+    def mom_r(self, pre=False, post=False, dvdt=None):
+        v1 = self['vel1']
+        if dvdt is None:
+            if pre is not False:
+                dl = self.t - pre.t
+                if post is not False:
+                    Dinv = (post.t - pre.t)**-1
+                    dr = post.t - self.t
+                    rat = dr / dl
+                    dvdt = (dl**-1 - dr**-1) * v1 + Dinv / rat * post['vel1'] - rat * Dinv * pre['vel1']
+                else:
+                    dvdt = (v1 - pre['vel1']) / dl
+            elif post is not False:
+                dvdt = (post['vel1'] - v1) / (post.t - self.t)
+        d = self['dens']
+        return [dvdt, self.v_del_vr(), self.ddr(d) / (d * self.sim.mach**2), 1. / self.coord[2]**2]
 
     def _plot_slice(self, sim_slice, data=None, fn=None, save=False, subsample=False, title=None,
                    name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
@@ -496,23 +548,26 @@ class BLfile(blc.BLfileBase):
     def r_theta_plot(self, data=None, phi=None, fn=None, save=False, title=None, name=None,
                      ext='png', popt=None, cb=True, cbl=None, zerocent=None, vmin=None, vmax=None,
                      cmap=None, cbopt=None, fig=None, fopt=None, ax=None, log=False, aspect=1,
-                     sdir=None, r_cut=None, ret_fn=False, rplot=1, both=False, xs=1):
+                     sdir=None, r_cut=None, ret_fn=False, rplot=1, both=False, xs=1, lim=None):
         if xs is None:
             xs = 1
         if abs(xs) != 1:
             raise ValueError('|xs| must be 1.')
         data, opt = self._data_opt_parser(data=data, vmax=vmax, vmin=vmin, zerocent=zerocent, cbl=cbl, name=name,
                                           r_cut=r_cut)
-        if phi is None or phi == 'mean':
-            data_slice = data.mean(axis=0)
-            phi = 0.
-            if both:
-                raise ValueError('Cannot use mean and both together.')
+        if data.ndim == 3:
+            if phi is None or phi == 'mean':
+                data_slice = data.mean(axis=0)
+                phi = 0.
+                if both:
+                    raise ValueError('Cannot use mean and both together.')
+            else:
+                if type(phi) == float:
+                    phi = self.phi_loc(phi)
+                data_slice = data[phi, :, :]
+                phi = self.phic[phi]
         else:
-            if type(phi) == float:
-                phi = self.phi_loc(phi)
-            data_slice = data[phi, :, :]
-            phi = self.phic[phi]
+            data_slice = data.copy()
         opt = self._opt_parser(data=data_slice, log=log, fopt=fopt, popt=popt, cbopt=cbopt, cmap=cmap, title=title,
                                **opt)
 
@@ -525,10 +580,16 @@ class BLfile(blc.BLfileBase):
 
         #start plotting
         pcm = plt.pcolormesh(x, y, data_slice, **opt['popt'])
+        if lim is not None:
+            plt.xlim(0, lim)
+            plt.ylim(-lim, lim)
         if both:
             phi = int((phi + self.phic.size // 2) % self.phic.size)
             data_slice = data[phi, :, :]
             plt.pcolormesh(-x, y, data_slice, **opt['popt'])
+            if lim is not None:
+                plt.xlim(-lim, lim)
+                plt.ylim(-lim, lim)
         if rplot:
             rplot = np.atleast_1d(rplot)
             for r in rplot:
@@ -538,7 +599,13 @@ class BLfile(blc.BLfileBase):
         plt.sca(ax)
         #save fig
         if save or fn:
-            fn = self._save_fig(fn, self._prefix + '_r-theta_plot.' + ext, sdir=sdir)
+            tmp = []
+            try:
+                tmp.append(self.sim.name)
+            except AttributeError:
+                pass
+            tmp += [self._prefix, opt['name'], 'r-theta_plot']
+            fn = self._save_fig(fn, '_'.join([i for i in tmp if i]) + '.' + ext, sdir=sdir)
         if ret_fn:
             return fn
 
@@ -552,12 +619,15 @@ class BLfile(blc.BLfileBase):
         if r is None:
             r=1.
         if type(r) == float:
-            r = self.theta_loc(r)
-        data_slice = data[:, r, :]
+            r = self.rloc(r)
+        data_slice = data[:, :, r]
         r = self.rc[r]
+        if name is None:
+            name = '$R={0:.2f}$'.format(r)
         opt = self._opt_parser(data=data_slice, log=log, fopt=fopt, popt=popt, cbopt=cbopt, cmap=cmap, title=title,
                                **opt)
-
+        if name:
+            opt['title'] += ' ' + name
         one = np.ones((self.phi.size, self.theta.size))
         x = self.phi[:, np.newaxis] * one
         y = self.theta[np.newaxis, :] * one
@@ -565,7 +635,7 @@ class BLfile(blc.BLfileBase):
         fig, ax = self._fig_ax(fig, ax, aspect=aspect, fopt=opt['fopt'])
 
         #start plotting
-        pcm = plt.pcolormesh(x, y, data_slice, **opt['popt'])
+        pcm = plt.pcolormesh(x, -y, data_slice, **opt['popt'])
         self._labler(ax, pcm, cb=cb, **{k: opt.get(k) for k in ['title', 'cbl', 'cbopt']})
 
         plt.sca(ax)
@@ -677,6 +747,101 @@ class BLfile(blc.BLfileBase):
 
         if save or fn:
             fn = self._save_fig(fn, self._prefix + '_zoom_plot.' + ext, sdir=sdir)
+
+    def mom1_plot(self, pre, post, data=None):
+        if data is None:
+            data = self.mom_r(pre, post)
+        _data = [i.copy() for i in data]
+        lbl = [r'$\partial_t v_r$', r'$(v\cdot\nabla v)_r$', r'$c_s^2\partial_r \rho/\rho$', r'$g_r$']
+        if data[0].ndim == 3:
+            for i in range(3):
+                _data[i] = self.midplane(_data[i]).mean(axis=0)
+            _data[3] = _data[3][0,0,:]
+        _data[3] = - self.rc**-2
+        plt.figure()
+        _gsopt = dict(right=.98, height_ratios=[1, .3], top=.95, left=.15, bottom=.08, wspace=.15, hspace=.15)
+        gs = mpl.gridspec.GridSpec(2, 1, **_gsopt)
+        ax0 = plt.subplot(gs[0])
+        for i in range(3):
+            plt.plot(self.rc, _data[i], label=lbl[i], zorder=4 - i)
+        i = 3
+        plt.plot(self.rc, _data[i], label=lbl[i], zorder=5, ls=':')
+        plt.legend()
+        plt.subplot(gs[1], sharex=ax0)
+        plt.plot(self.rc, _data[0] + _data[1] + _data[2] - _data[3], label='Residule')
+        return data
+
+    def _mom1_plots(self, pre, post, pseudo=True):
+        data = self.mom_r(pre, post)
+        data[3] *= np.ones_like(data[0])
+        tot = data[1] + data[2] + data[3]
+        pwd = os.getcwd()
+        if pseudo:
+            self.zoom_plot(phi=0, save=1)
+            self.r_theta_plot(phi=0, lim=1.2, save=1)
+        try:
+            path = 'midplane'
+            if not os.path.isdir(path):
+                os.mkdir(path)
+            os.chdir(path)
+            self.zoom_plot(data[0], cbl=r'$\partial_t v_r$', fn='figure_1.png')
+            self.zoom_plot(data[1], cbl=r'$(v\cdot\nabla v)_r$', fn='figure_2.png')
+            self.zoom_plot(data[2], cbl=r'$c_s^2\partial_r \rho/\rho$', fn='figure_3.png')
+            self.zoom_plot(data[3], cbl=r'$|g_r|$', fn='figure_4.png')
+            self.zoom_plot(tot    , cbl=r'$(v\cdot\nabla v)_r+c_s^2\partial_r \rho/\rho-g_r$', fn='figure_5.png')
+            os.chdir(pwd)
+            path = 'meridional'
+            if not os.path.isdir(path):
+                os.mkdir(path)
+            os.chdir(path)
+            opt = dict(vmax=1, phi=0, lim=1.2,)
+            self.r_theta_plot(data[0], cbl=r'$\partial_t v_r$', fn='figure_1.png', **opt)
+            self.r_theta_plot(data[1], cbl=r'$(v\cdot\nabla v)_r$', fn='figure_2.png', **opt)
+            self.r_theta_plot(data[2], cbl=r'$c_s^2\partial_r \rho/\rho$', fn='figure_3.png', **opt)
+            self.r_theta_plot(data[3], cbl=r'$|g_r|$', fn='figure_4.png', **opt)
+            self.r_theta_plot(tot, cbl=r'$(v\cdot\nabla v)_r+c_s^2\partial_r \rho/\rho-g_r$', fn='figure_5.png', **opt)
+        finally:
+            os.chdir(pwd)
+
+    def damp_vel(self, s=5.):
+        na = np.newaxis
+        r = self.rc[na, :]
+        th = self.thetac[:, na]
+        y = r * np.cos(th)
+        x = r * np.sin(th)
+        v1 = self['vel1'].mean(axis=0) * _window(y, (.6 * x)**1.7, s) * (np.tanh(4 * s * (r - .95)) + 1) * .5
+        v2 = self['vel2'].mean(axis=0) * _window(y, (.6 * x)**1.9, s) * (np.tanh(4 * s * (r - .95)) + 1) * .5
+        v3 = self['vel3'].mean(axis=0) * (1. - _window(y, (.75 * x)**1.5, s))
+        return v3, v2, v1
+
+    def write_IC(self, fn="blic.data", damp=True, sym=True):
+        out = [self['dens'].mean(axis=0)]
+        if damp:
+            out += list(self.damp_vel())[::-1]
+        else:
+            out += [self['vel' + str(i + 1)].mean(axis=0) for i in range(3)]
+        if sym:
+            for i in range(len(out)):
+                if i == 2:
+                    out[i] = .5 * out[i] - .5 * out[i][::-1]
+                else:
+                    out[i] = .5 * out[i] + .5 * out[i][::-1]
+        one = np.ones_like(out[0])
+        out.append(self.rc[np.newaxis, :] * one)
+        out.append(self.thetac[:, np.newaxis] * one)
+        out = np.array(out)
+        dR = np.diff(self.r)
+        dR0 = dR[0]
+        Rrat = np.mean(dR[1:] / dR[:-1])
+        print(out.shape)
+        with open(fn, 'wb') as f:
+            np.array(out.shape, 'int32').tofile(f)
+            np.array([Rrat, dR0], 'float64').tofile(f)
+            out.tofile(f)
+        return out
+
+def _window(x, x0, s=5.):
+    return (np.tanh(s * (x - x0)) * np.tanh(s * (x + x0)) + 1.) * .5
 
 class BL3dSim(object):
     def __init__(self, path, athinput=None, x2_face=None, fmts=None, defvar='Rpseudo'):
