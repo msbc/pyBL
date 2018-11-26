@@ -31,6 +31,8 @@ def labeler(name):
                 if i == 1:
                     sub = 'r'
                 elif i == 2:
+                    sub = r'\theta'
+                elif i == 3:
                     sub = r'\phi'
                 else:
                     raise TypeError
@@ -49,6 +51,39 @@ def labeler(name):
         return '$' + out + '$'
     except KeyError:
         return sanitize_lbl(name)
+
+def mod_grad(data, mod=1, axis=0):
+    loc = (slice(None),) * axis
+    out = np.zeros_like(data)
+    tmp = (data[loc + (slice(1, None),)] - data[loc + (slice(None, -1),)]) % mod
+    out[loc + (slice(1, None),)] = .5 * tmp
+    out[loc + (slice(None, -1),)] += .5 * tmp
+    out[loc + (0,)] *= 2
+    out[loc + (-1,)] *= 2
+    return out
+
+def grad(t, data, axis=0):
+    nd = len(data.shape)
+    if axis == -1:
+        axis += nd
+    loc = (slice(None),) * axis
+    l = loc + (slice(None, -2),)
+    c = loc + (slice(1, -1),)
+    r = loc + (slice(2, None),)
+    fill = [np.newaxis] * nd
+    fill[axis] = slice(None)
+    fill = tuple(fill)
+    Dinv =  (t[r[-1]] - t[l[-1]])[fill]**-1
+    dl = (t[c[-1]] - t[l[-1]])[fill]
+    dr = (t[r[-1]] - t[c[-1]])[fill]
+    rat = dr / dl
+    #norm = (dl * dr * D)**-2
+    out = np.zeros_like(data)
+    out[c] = (dl**-1 - dr**-1) * data[c] + Dinv / rat * data[r] - rat * Dinv * data[l]
+    #data[c] *= norm
+    out[loc + (0,)] = (data[loc + (1,)] - data[loc + (0,)]) / dl[loc + (0,)]
+    out[loc + (-1,)] = (data[loc + (-2,)] - data[loc + (-1,)]) / dr[loc + (-1,)]
+    return out
 
 def sanitize_lbl(name):
   '''sanitize_lbl(label):
