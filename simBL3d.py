@@ -10,7 +10,9 @@ import gc
 import os
 from glob import glob
 import sys
+import subprocess
 
+from .parmap import parmap
 from . import athena_read as ar
 from . import helpers
 from . import simBLclass as blc
@@ -112,11 +114,11 @@ def plot_mesh(fn='mesh_structure.dat', data=None, save=False, fig_fn=None):
 
 class BLfile(blc.BLfileBase):
     def __init__(self, fn, sim_path=None, t=None, data=None, defvar=None, ai_data=None, sim=None,
-                 file_handle=None, x2_face=None):
+                 file_handle=None, x2_face=None, num_ghost=0):
         if x2_face is None and sim is not None:
             x2_face = sim.x2_face
         super(BLfile, self).__init__(fn, sim_path=sim_path, t=t, data=data, defvar=defvar, ai_data=ai_data, sim=sim,
-                                     file_handle=file_handle, x2_face=x2_face, trim=False)
+                                     file_handle=file_handle, x2_face=x2_face, trim=False, num_ghost=num_ghost)
         self.r = self['x1f']
         self.dr = self.r[1:] - self.r[:-1]
         self.rc = .5 * self.r[1:] + .5 * self.r[:-1]
@@ -265,6 +267,34 @@ class BLfile(blc.BLfileBase):
         d = self['dens']
         return [dvdt, self.v_del_vr(), self.ddr(d) / (d * self.sim.mach**2), 1. / self.coord[2]**2]
 
+    def wave_power(self):
+        data = self.midplane('vel1').mean(axis=0)
+        data[self.rc <= 1.5] = 0
+        data[self.rc > 3.9] = 0
+        return self.intr(data**2)
+
+    def wave_power_2(self):
+        loc1 = slice(np.argmin(np.abs(self.rc - 1.2)), np.argmin(np.abs(self.rc - 3.8)) + 1)
+        dx1 = np.diff(self.r)
+        pi7 = np.pi / 7.
+        deg90 = np.pi * .5
+        loc2 = slice(np.argmin(np.abs(self.thetac - deg90 + pi7)), np.argmin(np.abs(self.thetac - deg90 - pi7)) + 1)
+        dx2 = np.diff(self.theta)
+        p = tau * self['pseudo'].mean(axis=0)
+        na = np.newaxis
+        da = dx1[na, loc1] * dx2[loc2, na] * self.rc[na, loc1]**2 * np.sin(self.thetac[loc2, na])
+        return np.sum(p[loc2, loc1]**2 * da) / np.sum(da)
+
+    def swp(self):
+        out = self['pseudo']
+        #out[self['dens'] == self['dens'].min()] = 0
+        out = out.mean(axis=(0,1))**2
+        out[self.rc > 1.1] = 0
+        return self.intr(out)
+
+    def rprof(self, data):
+        return self._parse_data(data).mean(axis=(0,1))
+
     def _plot_slice(self, sim_slice, data=None, fn=None, save=False, subsample=False, title=None,
                    name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
                    vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
@@ -338,6 +368,8 @@ class BLfile(blc.BLfileBase):
                 r_cut = .85
                 if vmax is None and vmin is None:
                     vmin = 'smart'
+                if zerocent is None:
+                    zerocent = True
             if data in ['vorticity', 'vortensity']:
                 if r_cut is None:
                     r_cut = .9
@@ -394,7 +426,10 @@ class BLfile(blc.BLfileBase):
             rloc = slice(None)
             if r_cut:
                 rloc = slice(self.rloc(r_cut), None)
-            tmp = helpers.smartlim(data[:, rloc], **tmp)
+            try:
+                tmp = helpers.smartlim(data[:, rloc], **tmp)
+            except (TypeError, IndexError):
+                tmp = helpers.smartlim(data, **tmp)
             if vmin == 'smart':
                 vmin = tmp[0]
             if vmax == 'smart':
@@ -501,6 +536,37 @@ class BLfile(blc.BLfileBase):
             return fn
 
         return pcm
+
+    def plot_rprof(self, data=None, theta=None, fn=None, save=False, title=None,
+                   name=None, ext='pdf', popt=None, fig=None, fopt=None, ret_fn=False,
+                   ax=None, log=False, aspect=None, sdir=None, xlim=None, ylim=None):
+        data, opt = self._data_opt_parser(data=data, name=name)
+        data = self.rprof(data)
+        opt = self._opt_parser(data=data, log=log, fopt=fopt, popt=popt, title=title,**opt)
+        fig, ax = self._fig_ax(fig, ax, aspect=aspect, fopt=opt['fopt'])
+        for i in ['vmin', 'vmax', 'cmap', 'norm']:
+            try:
+                opt['popt'].pop(i)
+            except KeyError:
+                pass
+        if opt.get('log'):
+            line = plt.semilogy(self.rc, data, **opt['popt'])
+        else:
+            line = plt.plot(self.rc, data, **opt['popt'])
+        plt.xlim(self.r[0], self.r[-1])
+        if xlim:
+            plt.xlim(*xlim)
+        if ylim:
+            plt.ylim(*ylim)
+        self._labler(ax, line, cb=False, **{k: opt.get(k) for k in ['title', 'cbl', 'cbopt']})
+
+        plt.sca(ax)
+        #save fig
+        if save or fn:
+            fn = self._save_fig(fn, self._prefix + '_rprof_plot.' + ext, sdir=sdir)
+        if ret_fn:
+            return fn
+        return
 
     def r_phi_plot(self, data=None, theta=None, fn=None, save=False, title=None,
                    name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
@@ -647,7 +713,7 @@ class BLfile(blc.BLfileBase):
 
         return pcm
 
-    def plot2(self, data=None, fn=None, save=False, title=None, name=None, ext='png', popt=None,
+    def plot2(self, data=None, phi=None, fn=None, save=False, title=None, name=None, ext='png', popt=None,
               cb=True, cbl=None, zerocent=None, vmin=None, vmax=None, cmap=None, cbopt=None,
               fig=None, fopt=None, log=False, aspect=1, sdir=None, r_cut=None, ret_fn=False):
         data, opt = self._data_opt_parser(data=data, vmax=vmax, vmin=vmin, zerocent=zerocent, cbl=cbl, name=name,
@@ -676,7 +742,7 @@ class BLfile(blc.BLfileBase):
         _opt['cbopt']['cax'] = cax
         _opt['name'] = None
         _opt['title'] = False
-        a1 = self.r_theta_plot(data, ax=ax, **_opt)
+        a1 = self.r_theta_plot(data, ax=ax, phi=phi, **_opt)
         ax.set_xlim(0, None)
 
         vmin, vmax = a0.get_clim()
@@ -873,8 +939,11 @@ class BL3dSim(object):
                 print('Multiple athena inputs detected. Using "{0:}".'.format(athinput))
         if os.path.isfile(athinput):
             self.inputs = ar.athinput(athinput)
+            self.athinput = athinput
         elif os.path.isfile(os.path.join(self.path, athinput)):
-            self.inputs = ar.athinput(os.path.join(self.path, athinput))
+            athinput = os.path.join(self.path, athinput)
+            self.inputs = ar.athinput(athinput)
+            self.athinput = athinput
         else:
             self.inputs = {}
         self.fileDict = {}
@@ -886,7 +955,10 @@ class BL3dSim(object):
             searches = [fmt.split('%')[0] + '*.' + fmt.split('d.')[-1] for fmt in fmts]
             raise NotImplementedError('Currently needs athinput.')
         else:
-            self.mach = 1. / self.inputs['hydro']['iso_sound_speed']
+            try:
+                self.mach = 1. / self.inputs['hydro']['iso_sound_speed']
+            except KeyError:
+                self.mach = 1. / self.inputs['hydro']['invMach']
             mesh = self.inputs['mesh']
             for i in [1, 2, 3]:
                 x = 'x' + str(i)
@@ -898,10 +970,12 @@ class BL3dSim(object):
                         if x2_face is None:
                             x2_face = helpers.x2_face
                         xf = x2_face(mesh[x + 'min'], mesh[x + 'max'], -1, nx + 1)
-                    else:
+                    elif rat != 1:
                         dx0 = (rat - 1.) / (rat**nx - 1.) * Dx
                         xf = np.ones(nx + 1) * mesh[x + 'min']
                         xf[1:] += (rat**np.arange(nx) * dx0).cumsum()
+                    else:
+                       xf = (np.arange(nx + 1) * Dx / nx) + mesh[x + 'min']
                 else:
                     xf = (np.arange(nx + 1) * Dx / nx) + mesh[x + 'min']
                 axes.append(xf)
@@ -938,6 +1012,30 @@ class BL3dSim(object):
     def __repr__(self):
         return '<BL3dSim "{0:}">'.format(self.name)
 
+    def run(self, athinput=None, args=None, rundir=None):
+        if athinput is None:
+            athinput = self.athinput
+        if not os.path.exists(athinput):
+            athinput = os.path.split(athinput)[1]
+        print(athinput)
+        if args is None:
+            args = []
+        if rundir is None:
+            rundir = self.path
+        pwd = os.getcwd()
+        try:
+            os.chdir(rundir)
+            if not os.path.exists(athinput):
+                athinput = os.path.split(athinput)[1]
+            run_command = ['./athena', '-i', athinput]
+            try:
+                subprocess.check_call(run_command + args)
+            except subprocess.CalledProcessError as err:
+                raise RuntimeError('Return code {0} from command \'{1}\''
+                                  .format(err.returncode, ' '.join(err.cmd)))
+        finally:
+            os.chdir(pwd)
+
     @property
     def filenames(self):
         return sum(self.fileDict.values(), [])
@@ -953,7 +1051,7 @@ class BL3dSim(object):
             return self.fileDict[self.varDict[key]]
         raise ValueError('Cannot find "{0:}" files.'.format(key))
 
-    def loadfile(self, fn, index=None, data=None):
+    def loadfile(self, fn, index=None, data=None, num_ghost=0):
         if not index is None:
             files = self.files(fn)
             if index < 0 or files[-1].split('.')[2] == len(files):
@@ -963,7 +1061,8 @@ class BL3dSim(object):
                 fn[2] = '%5.5d' % index
                 fn = '.'.join(fn)
         if fn in self.filenames:
-            return BLfile(os.path.join(self.path, fn), sim_path=os.path.abspath(self.path), sim=self, ai_data=self.inputs, data=data)
+            return BLfile(os.path.join(self.path, fn), sim_path=os.path.abspath(self.path), sim=self,
+                          ai_data=self.inputs, data=data, num_ghost=num_ghost)
         raise ValueError('Unknown file.')
 
     def mk_maps(self, files=None, key='out1', data=None, skip_existing=True, popt=None):
@@ -1018,3 +1117,81 @@ class BL3dSim(object):
             except:
                 print(f, "Failed")
 
+    def wp(self, key='out1', quiet=False, save=True, overwrite=False):
+        fn = os.path.join(self.path, "wave_power.csv")
+        if not overwrite:
+            if os.path.isfile(fn):
+                try:
+                    return np.loadtxt(fn, delimiter=",").T
+                except KeyboardInterrupt:
+                    raise
+                except:
+                    pass
+        out = []
+        for i in self.files(key):
+            bf = self.loadfile(i)
+            out.append((bf.t / tau, bf.wave_power_2()))
+            if not quiet: print(out[-1])
+        out = np.array(out).T
+        if save:
+            np.savetxt(fn, out.T, delimiter=",")
+        return out
+
+    def swp(self, key='out1', save=True, overwrite=False):
+        fn = os.path.join(self.path, "swp.csv")
+        if not overwrite:
+            if os.path.isfile(fn):
+                try:
+                    return np.loadtxt(fn, delimiter=",").T
+                except KeyboardInterrupt:
+                    raise
+                except:
+                    pass
+        out = []
+        for i in self.files(key):
+            bf = self.loadfile(i)
+            out.append((bf.t / tau, bf.swp()))
+        out = np.array(out).T
+        if save:
+            np.savetxt(fn, out.T, delimiter=",")
+        return out
+
+    def test_plots(self, overwrite=False, movie=False, ll=False):
+        name = helpers.sanitize_lbl(os.path.abspath(self.path).split('1d_tests/')[-1])
+
+        if movie:
+            mdir = os.path.join(os.path.abspath(self.path), 'movie')
+            def f(fn):
+                bf = self.loadfile(fn)
+                bf.plot_rprof(ext='png', save=True, sdir=mdir,
+                              xlim=[None, 1.2], name=name + r'$t/2\pi = {orbit:g}$')
+            if ll:
+                parmap(f, self.files('out1'))
+            else:
+                [f(i) for i in self.files('out1')]
+
+
+        out = self.swp(overwrite=overwrite)
+        plt.semilogy(*out)
+        plt.xlabel('$r$')
+        plt.ylabel(r'$\int v_r^2\rho dr$')
+        plt.title(name)
+        plt.savefig(os.path.join(self.path, 'power_time.pdf'))
+        plt.close()
+
+        bf = self.loadfile('out1', -1)
+        plt.plot(bf.rc, bf['pseudo'].mean(axis=(0,1)))
+        plt.xlabel('$r$')
+        plt.ylabel(r'$v_r\sqrt{\rho}$')
+        plt.title(name)
+        plt.savefig(os.path.join(self.path, 'pseudo.pdf'))
+        plt.close()
+
+        return out
+
+    def parse_func(self, func, *args, **kwargs):
+        return getattr(self, func)(*args, **kwargs)
+
+
+def comp_wrapper(func, simlist=None, include=True, tmin=30, T=False, args=None, kwargs=None, sim_class=BL3dSim):
+    return blc.comp_wrapper(func, simlist=simlist, include=include, tmin=tmin, T=T, args=args, kwargs=kwargs, sim_class=sim_class)

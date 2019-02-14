@@ -27,8 +27,10 @@ except ImportError:
 from scipy.signal import argrelextrema
 import time
 import tarfile
+import subprocess
 
 from . import athena_read as ar
+from .delayed_read import athdf
 from . import helpers
 from .helpers import rolling_weighted_triangle_conv as running_mean
 from .helpers import grad, mod_grad
@@ -190,7 +192,7 @@ def intr(dr, data, axis=-1):
     return (data * dr).sum(axis=axis)
 
 class BLfileBase(dict):
-    def __init__(self, fn, sim_path=None, t=None, trim=True, data=None,
+    def __init__(self, fn, sim_path=None, t=None, trim=True, data=None, num_ghost=0,
                  defvar=None, ai_data=None, sim=None, file_handle=None, x2_face=None):
         self.t = t
         self.sim = sim
@@ -201,13 +203,17 @@ class BLfileBase(dict):
         if sim is not None:
             self.mach = sim.mach
         elif ai_data is not None:
-            self.mach = 1. / ai_data['hydro']['iso_sound_speed']
+            try:
+                self.mach = 1. / self.inputs['hydro']['iso_sound_speed']
+            except KeyError:
+                self.mach = 1. / self.inputs['hydro']['invMach']
         self.fn = _findAbsPath(fn, sim_path)
         if file_handle is None:
             file_handle = fn
         self._file_handle = file_handle
         if data is None:
-            self.data = ar.athdf(file_handle, face_func_2=x2_face, return_levels=True)
+            #self.data = ar.athdf(file_handle, face_func_2=x2_face, return_levels=True, num_ghost=num_ghost)
+            self.data = athdf(file_handle, face_func_2=x2_face, return_levels=True)
         else:
             self.data = data
         self.x2_face = x2_face
@@ -230,6 +236,7 @@ class BLfileBase(dict):
             self.t = int(os.path.split(fn)[1].split('.')[2])
         if not 'Time' in self.data:
             self.data['Time'] = self.t
+        self.orbit = self.t / tau
         self._prefix = '.'.join(os.path.split(fn)[-1].split('.')[:-1])
         #if sim_path and not self.t is None:
         #    self.name = os.path.split(sim_path)[-1] + ' {0:05d}'.format(self.t)
@@ -916,6 +923,22 @@ class BLConsPrim(BL3Dfile):
         ax = plt.subplot(224)
         self.plot2d(var, ax=ax)
 
+    def wave_power(self):
+        data = self['vel1'].mean(axis=0)
+        data[self.rc <= 1.5] = 0
+        data[self.rc >3.9] = 0
+        return self.intr(data**2)
+
+    def wave_power_2(self):
+        data = self['pseudo']
+        mean = data.mean(axis=0)
+        delta = np.mean((data - mean[np.newaxis,:])**2, axis=0)
+        mean[self.rc <= 1.5] = 0
+        mean[self.rc >3.9] = 0
+        delta[self.rc <= 1.5] = 0
+        delta[self.rc >3.9] = 0
+        return self.intr(mean**2)-self.intr(delta)
+
 class BLcons(BLConsPrim):
     def _special_keys(self, key):
         if key[:3] == 'vel' and len(key) == 4:
@@ -1009,6 +1032,10 @@ class BLFT(BLfile):
         out['vr'] = np.real(v[0])
         return out
 
+    def wave_power(self):
+        data = np.real(self['FT-vel1'][0])
+        data[self.rc <= 1] = 0
+        return self.intr(data**2)
 
 ############################
 # End of BLfile subclasses #
@@ -1600,8 +1627,11 @@ class BLsim(object):
                 print('Multiple athena inputs detected. Using "{0:}".'.format(athinput))
         if os.path.isfile(athinput):
             self.inputs = ar.athinput(athinput)
+            self.athinput = athinput
         elif os.path.isfile(os.path.join(self.path, athinput)):
-            self.inputs = ar.athinput(os.path.join(self.path, athinput))
+            athinput = os.path.join(self.path, athinput)
+            self.inputs = ar.athinput(athinput)
+            self.athinput = athinput
         else:
             self.inputs = {}
         self.fileDict = {}
@@ -1612,7 +1642,10 @@ class BLsim(object):
             searches = [fmt.split('%')[0] + '*.' + fmt.split('d.')[-1] for fmt in fmts]
             raise NotImplementedError('Currently needs athinput.')
         else:
-            self.mach = 1. / self.inputs['hydro']['iso_sound_speed']
+            try:
+                self.mach = 1. / self.inputs['hydro']['iso_sound_speed']
+            except KeyError:
+                self.mach = 1. / self.inputs['hydro']['invMach']
             mesh = self.inputs['mesh']
             for i in [1, 2]:
                 x = 'x' + str(i)
@@ -1675,9 +1708,26 @@ class BLsim(object):
         self._sigmas = [0,4]
         self._main_modes = main_modes
         self._mode_detect = None
-
-        return None
         # End init
+
+    def run(self, athinput=None, args=None, rundir=None):
+        if athinput is None:
+            athinput = self.athinput
+        if args is None:
+            args = []
+        if rundir is None:
+            rundir = self.path
+        pwd = os.getcwd()
+        try:
+            os.chdir(rundir)
+            run_command = ['./athena', '-i', athinput]
+            try:
+                subprocess.check_call(run_command + args)
+            except subprocess.CalledProcessError as err:
+                raise RuntimeError('Return code {0} from command \'{1}\''
+                                  .format(err.returncode, ' '.join(err.cmd)))
+        finally:
+            os.chdir(pwd)
 
     @property
     def rho_ref(self):
@@ -3543,12 +3593,11 @@ def parallel_compile(func, arglist, T=None):
     '''Usage : parallel_compile(func, arglist=None, T=None)
     Similar to comp_wrapper, but strings in arglist are not automatically turned
     into zeussim_extended class instances.'''
-    out = parmap(func, arglist)
-    out = filter(None, out)
+    out = [i for i in parmap(func, arglist) if i is not None]
     if T : out = zip(*out)
     return out
 
-def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None, kwargs=None):
+def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None, kwargs=None, sim_class=BLsim):
     '''Usage : comp_wrapper(func, simlist=None, include=None, tmin=40, T=False, load_eos=False)
     Evaluate function 'fun' on each simulation in 'simlist' and return the
     compiled result, and use parallel processing to do so.
@@ -3596,7 +3645,7 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
         try:
             sim.rstrip()
             name = sim
-            sim = BLsim(sim)
+            sim = sim_class(sim)
         # otherwise assume it's a simulation
         except AttributeError:
             name = sim.name
@@ -3662,6 +3711,14 @@ def _old_mkplots(sims=None, path='', ext='png'):
             os.chdir(cwd)
             name = getattr(sim, 'name', sim)
             print('\n!!! Error\nUnable To finish Simulation {0:}.'.format(name))
+
+def sims_within(path, nmin=50):
+    out = []
+    for x in os.walk(path):
+        if glob(os.path.join(x[0], 'athinput.*')):
+            if len(glob(os.path.join(x[0], '*.athdf'))) >= nmin:
+                out.append(x[0])
+    return out
 
 if __name__ == '__main__':
     path = os.path.expanduser('~/BLayer')
