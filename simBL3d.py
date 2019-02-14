@@ -537,7 +537,7 @@ class BLfile(blc.BLfileBase):
 
         return pcm
 
-    def plot_rprof(self, data=None, theta=None, fn=None, save=False, title=None,
+    def plot_rprof(self, data=None, theta=None, fn=None, save=False, title=None, zerocent=False,
                    name=None, ext='pdf', popt=None, fig=None, fopt=None, ret_fn=False,
                    ax=None, log=False, aspect=None, sdir=None, xlim=None, ylim=None):
         data, opt = self._data_opt_parser(data=data, name=name)
@@ -558,6 +558,9 @@ class BLfile(blc.BLfileBase):
             plt.xlim(*xlim)
         if ylim:
             plt.ylim(*ylim)
+        if zerocent:
+            ylim = np.abs(plt.ylim()).max()
+            plt.ylim(-ylim, ylim)
         self._labler(ax, line, cb=False, **{k: opt.get(k) for k in ['title', 'cbl', 'cbopt']})
 
         plt.sca(ax)
@@ -1163,7 +1166,7 @@ class BL3dSim(object):
             mdir = os.path.join(os.path.abspath(self.path), 'movie')
             def f(fn):
                 bf = self.loadfile(fn)
-                bf.plot_rprof(ext='png', save=True, sdir=mdir,
+                bf.plot_rprof(ext='png', save=True, sdir=mdir, zerocent=True,
                               xlim=[None, 1.2], name=name + r'$t/2\pi = {orbit:g}$')
             if ll:
                 parmap(f, self.files('out1'))
