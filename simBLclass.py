@@ -3227,7 +3227,7 @@ class BLsim(object):
             r = [.5 + .5 * self.rc[0], 1.2]
         r = np.atleast_1d(r)
         ris = list(map(self.rloc, r))
-        dr = list(max(0, int(dr)))
+        dr = max(0, int(dr))
         tlist = [0]
         t = self.fft_time
         while tlist[-1] < t[-1]:
@@ -3371,8 +3371,9 @@ class modeData(object):
             lbls.append(r'$r={0:.2f}$'.format(r))
         if inc_global:
             data = self.g_modes()
-            plt.scatter(data[:,0], data[:,3], marker='*')
-            lbls.append('Global')
+            if data:
+                plt.scatter(data[:,0], data[:,3], marker='*')
+                lbls.append('Global')
         plt.legend(lbls)
         plt.gca().xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
         plt.xlabel('mode')
