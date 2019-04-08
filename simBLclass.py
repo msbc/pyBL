@@ -1866,6 +1866,7 @@ class BLsim(object):
         gs = mpl.gridspec.GridSpec(3, 2, top=.93, left=.08, right=.98, bottom=.08, wspace=.15, hspace=.25)
         #fig, axs = plt.subplots(3, 2, figsize=figsize, top=.7)
 
+        # C_S, C_S,m zoom_in
         ax0 = plt.subplot(gs[0,0])
         plt.plot(self.rc, cs, 'k-', label='$C_S$')
         for m in modes[:nm]:
@@ -1881,6 +1882,7 @@ class BLsim(object):
         plt.ylabel('$C_S$')
         #plt.setp(ax0.get_xticklabels(), fontsize=6)
 
+        # C_S, C_S,m zoom_in
         ax = plt.subplot(gs[0,1])
         for i, m in enumerate(modes[:nm]):
             plt.plot(self.rc, csm[m], label=str(m), zorder=i+1)
@@ -1901,37 +1903,52 @@ class BLsim(object):
         ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(dy))
         #plt.setp(ax0.get_xticklabels(), fontsize=6)
 
-
+        # C_L, C_A, C_S
         ax = plt.subplot(gs[1,0], sharex=ax0)
         keys = [i for i in data.keys() if i[0] == 'C' and len(i) == 2]
+        ymax = []
+        ymin = []
         for k in keys:
             opt = {'label': '${0:}_{1:}$'.format(*k)}
             if k == 'CS':
                 opt['c'] = 'k'
             plt.plot(self.rc, data[k][0], **opt)
+            ymax = data[k][0,3:-3].max()
+            ymin = data[k][0,3:-3].min()
         plt.legend(ncol=3, **lopt)
         plt.axhline(0, c='.5', ls=':', lw=1)
         plt.axvline(1, c='.5', ls=':', lw=1)
         plt.xlim(self.r[0], self.r[-1])
+        ymin, ymax = min(ymin), max(ymax)
+        dy = (ymax - ymin) * .05
+        plt.ylim(ymin - dy, ymax + dy)
         #plt.xlabel('R')
         #plt.setp(ax.get_xticklabels(), visible=False)
 
+        # d-rho, Omega
         ax = plt.subplot(gs[1,1], sharex=ax0)
         ri = self.rloc(1)
-        plt.plot(self.rc, data['drho'], label=r'$\delta\rho$')
-        plt.plot(self.rc, data['vphi'] / self.rc, label=r'$\Omega$')
+        handles = []
+        handles.append(plt.plot(self.rc, data['drho'], label=r'$\delta\rho$', zorder=0))
+        handles.append(plt.plot(self.rc, data['vphi'] / self.rc, label=r'$\Omega$', zorder=1))
         op = self.rc**-3
         op +=  self.mach**-2 * grad(self.rc, data['dens']) / (data['dens'] * self.rc)
         op = np.sqrt(op)
-        plt.plot(self.rc, op, label=r'$\Omega(P)$', ls='--')
-        plt.plot(self.rc, self.rc**-1.5, label=r'$\Omega_{\rm k}$', lw=1, c='k', ls=':')
-        plt.plot(self.rc, -1e3*data['vr']*self.mach, label=r'$-10^3v_r/c_s$')
+        handles.append(plt.plot(self.rc, op, label=r'$\Omega(P)$', ls='--', zorder=2))
+        handles.append(plt.plot(self.rc, -1e3*data['vr']*self.mach, label=r'$-10^3v_r/c_s$', zorder=4))
+        ylim = plt.ylim()
+        handles.insert(3,
+            plt.plot(self.rc, self.rc ** -1.5, label=r'$\Omega_{\rm k}$', lw=1, c='k',
+                     ls=':', zorder=3))
         plt.legend(ncol=5, **lopt)
         plt.xlim(self.r[0], self.r[-1])
-        ymax = data['drho'][ri:].max() * 1.05
-        ymin = min(data['drho'][ri:].min() - .1 * ymax, 0)
-        ylim = plt.ylim()
-        plt.ylim(max(ylim[0], ymin), min(ylim[1], ymax))
+        if 0:
+            ymax = data['drho'][ri:].max() * 1.05
+            ymin = min(data['drho'][ri:].min() - .1 * ymax, 0)
+            ylim = plt.ylim()
+            plt.ylim(max(ylim[0], ymin), None)#min(ylim[1], ymax))
+        else:
+            plt.ylim(*ylim)
         plt.axhline(0, c='.5', ls=':', lw=1)
         plt.axvline(1, c='.5', ls=':', lw=1)
         plt.xlabel('$R$')
@@ -3242,14 +3259,18 @@ class BLsim(object):
         self._mode_detect = modeData(data, sim=self, dw=dw, overlap=overlap, nbin=nbin)
         return self._mode_detect
 
-    def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False):
+    def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
+                   sub_dir=True):
         if working_dir is True:
             working_dir = self.name + '_plots'
         if not working_dir:
             working_dir = os.getcwd()
-        if working_dir:
-            if not os.path.isdir(working_dir):
-                os.mkdir(working_dir)
+        if sub_dir:
+            working_dir = os.path.join(working_dir, self.name)
+        if not os.path.isdir(working_dir):
+            os.mkdir(working_dir)
+        if fluxes:
+            flux_dir = os.path.join(working_dir, 'fluxes')
         pwd = os.getcwd()
         try:
             os.chdir(working_dir)
@@ -3271,7 +3292,7 @@ class BLsim(object):
                 self.mk_maps()
             if fluxes:
                 if not quiet: print('    Flux Series')
-                self.flux_series(sdir=True, progress=(not quiet))
+                self.flux_series(sdir=flux_dir, progress=(not quiet))
         finally:
             os.chdir(pwd)
 
