@@ -2047,7 +2047,7 @@ class BLsim(object):
     def sortedFFT(self):
         ffts = [out for out in self.fileDict.keys()
                 if self.inputs.get(out, {}).get('variable') == "FT-Range"]
-        ffts.sort(key=lambda x: self.inputs.get(out, {}).get('start_time', 0))
+        ffts.sort(key=lambda x: self.inputs.get(x, {}).get('start_time', 0))
         n = max([len(self.fileDict[i]) for i in ffts])
         out = []
         for i in range(n):
