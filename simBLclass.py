@@ -3226,8 +3226,8 @@ class BLsim(object):
         if r is None:
             r = [.5 + .5 * self.rc[0], 1.2]
         r = np.atleast_1d(r)
-        ris = map(self.rloc, r)
-        dr = max(0, int(dr))
+        ris = list(map(self.rloc, r))
+        dr = list(max(0, int(dr)))
         tlist = [0]
         t = self.fft_time
         while tlist[-1] < t[-1]:
@@ -3261,7 +3261,7 @@ class BLsim(object):
         return self._mode_detect
 
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
-                   sub_dir=True):
+                   sub_dir=False):
         if working_dir is True:
             working_dir = self.name + '_plots'
         if not working_dir:
@@ -3754,8 +3754,12 @@ if __name__ == '__main__':
                         help='Path to search for simulations')
     args = parser.parse_args()
     path = os.path.expanduser(args.path)
-    tmp = os.path.join(path, 'M{0:}.')
+    tmp = os.path.join(path, 'M{0:}.*')
     d = '[0-9]'
+    print(tmp.format(d))
     sims = glob(tmp.format(d)) + glob(tmp.format(d*2))
+    sims = [sims[0]]
     print(sims)
+    if not sims:
+        raise RuntimeError('No sims found.')
     mkplots(sims, maps=args.maps)
