@@ -4,6 +4,7 @@ from __future__ import absolute_import, division, print_function
 #from builtins import (bytes, str, open, super, range, zip, round, input, int, pow, object)
 #import h5py
 #from mayavi import mlab
+import argparse
 import numpy as np
 import pandas
 #import pdb
@@ -3742,11 +3743,19 @@ def sims_within(path, nmin=50):
     return out
 
 if __name__ == '__main__':
-    path = os.path.expanduser('~/BLayer')
-    tmp = os.path.join(path, 'Mach{0:}stampede')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-m', '--maps',
+                        default=False,
+                        action='store_true',
+                        help='Create maps of pertibations in the simulations.')
+    parser.add_argument('-p', '--path',
+                        type=str,
+                        default='~/data/pleiades_data/bl',
+                        help='Path to search for simulations')
+    args = parser.parse_args()
+    path = os.path.expanduser(args.path)
+    tmp = os.path.join(path, 'M{0:}.')
     d = '[0-9]'
     sims = glob(tmp.format(d)) + glob(tmp.format(d*2))
     print(sims)
-    #path = '/home/mcoleman/data/perseus_data/'
-    #sims = None
-    mkplots(sims, path=path)
+    mkplots(sims, maps=args.maps)
