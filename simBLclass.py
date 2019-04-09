@@ -3759,7 +3759,6 @@ if __name__ == '__main__':
     d = '[0-9]'
     print(tmp.format(d))
     sims = glob(tmp.format(d)) + glob(tmp.format(d*2))
-    sims = [sims[0]]
     print(sims)
     if not sims:
         raise RuntimeError('No sims found.')
