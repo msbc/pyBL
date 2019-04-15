@@ -1920,7 +1920,7 @@ class BLsim(object):
         plt.axhline(0, c='.5', ls=':', lw=1)
         plt.axvline(1, c='.5', ls=':', lw=1)
         plt.xlim(self.r[0], self.r[-1])
-        ymin, ymax = min(ymin), max(ymax)
+        ymin, ymax = np.real(ymin).min(), np.real(ymax).max()
         dy = (ymax - ymin) * .05
         plt.ylim(ymin - dy, ymax + dy)
         #plt.xlabel('R')
@@ -3271,8 +3271,10 @@ class BLsim(object):
             working_dir = os.path.join(working_dir, self.name)
         if not os.path.isdir(working_dir):
             os.mkdir(working_dir)
-        if fluxes:
-            flux_dir = os.path.join(working_dir, 'fluxes')
+        #if fluxes:
+        #    flux_dir = os.path.join(working_dir, 'fluxes')
+        #if not os.path.isdir(flux_dir):
+        #    os.mkdir(flux_dir)
         pwd = os.getcwd()
         try:
             os.chdir(working_dir)
@@ -3294,7 +3296,7 @@ class BLsim(object):
                 self.mk_maps()
             if fluxes:
                 if not quiet: print('    Flux Series')
-                self.flux_series(sdir=flux_dir, progress=(not quiet))
+                self.flux_series(sdir=True, progress=(not quiet))
         finally:
             os.chdir(pwd)
 
@@ -3372,7 +3374,7 @@ class modeData(object):
             lbls.append(r'$r={0:.2f}$'.format(r))
         if inc_global:
             data = self.g_modes()
-            if data:
+            if np.any(data):
                 plt.scatter(data[:,0], data[:,3], marker='*')
                 lbls.append('Global')
         plt.legend(lbls)
