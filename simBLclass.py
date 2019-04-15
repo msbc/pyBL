@@ -1994,6 +1994,7 @@ class BLsim(object):
                ['C_A', data['CA'][0,one]],
                ['C_L', data['CL'][0,one]],
                [r'\dot{M}', mdot[one]],
+               [r'\alpha_{\rm eff}', data['CS'][0,one] * self.mach**2]
                ]
         info = ['$' + i[0] + '(R=1)=$'+ '{0:.3g}'.format(np.real(i[1])) for i in info]
         info.append(r'$\dot{M}(R_{\rm min})=$' + '{0:.3g}'.format(mdot[0]))
