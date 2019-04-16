@@ -1860,6 +1860,7 @@ class BLsim(object):
         cs = data['CS'][0]
         norm = self.intr(np.abs(csm))
         modes = sorted(range(norm.shape[0]), key=lambda x: -norm[x])
+        ri = self.rloc(1)
 
         if figsize is None:
             figsize = np.array((11,8.5)) * .8
@@ -1914,8 +1915,8 @@ class BLsim(object):
             if k == 'CS':
                 opt['c'] = 'k'
             plt.plot(self.rc, data[k][0], **opt)
-            ymax = data[k][0,3:-3].max()
-            ymin = data[k][0,3:-3].min()
+            ymax.append(np.real(data[k][0,ri:-5]).max())
+            ymin.append(np.real(data[k][0,ri:-5]).min())
         plt.legend(ncol=3, **lopt)
         plt.axhline(0, c='.5', ls=':', lw=1)
         plt.axvline(1, c='.5', ls=':', lw=1)
@@ -1928,28 +1929,28 @@ class BLsim(object):
 
         # d-rho, Omega
         ax = plt.subplot(gs[1,1], sharex=ax0)
-        ri = self.rloc(1)
-        handles = []
+        handles = list()
+        ymax = [data['drho'][ri:-5].max(), (data['vphi'] / self.rc)[ri:-5].max()]
+        ymin = [data['drho'][ri:-5].min(), (data['vphi'] / self.rc)[ri:-5].min()]
         handles.append(plt.plot(self.rc, data['drho'], label=r'$\delta\rho$', zorder=0))
         handles.append(plt.plot(self.rc, data['vphi'] / self.rc, label=r'$\Omega$', zorder=1))
         op = self.rc**-3
         op +=  self.mach**-2 * grad(self.rc, data['dens']) / (data['dens'] * self.rc)
         op = np.sqrt(op)
+        ymax.append(op[ri:-5].max())
+        ymin.append(op[ri:-5].min())
         handles.append(plt.plot(self.rc, op, label=r'$\Omega(P)$', ls='--', zorder=2))
         handles.append(plt.plot(self.rc, -1e3*data['vr']*self.mach, label=r'$-10^3v_r/c_s$', zorder=4))
-        ylim = plt.ylim()
+        ymax.append((-1e3 * self.mach * data['vr'])[ri:-5].max())
+        ymin.append((-1e3 * self.mach * data['vr'])[ri:-5].min())
         handles.insert(3,
             plt.plot(self.rc, self.rc ** -1.5, label=r'$\Omega_{\rm k}$', lw=1, c='k',
                      ls=':', zorder=3))
         plt.legend(ncol=5, **lopt)
         plt.xlim(self.r[0], self.r[-1])
-        if 0:
-            ymax = data['drho'][ri:].max() * 1.05
-            ymin = min(data['drho'][ri:].min() - .1 * ymax, 0)
-            ylim = plt.ylim()
-            plt.ylim(max(ylim[0], ymin), None)#min(ylim[1], ymax))
-        else:
-            plt.ylim(*ylim)
+        ymax = max(ymax) * 1.05
+        ymin = min(min(ymin) - .1 * ymax, 0)
+        plt.ylim(ymin, ymax)
         plt.axhline(0, c='.5', ls=':', lw=1)
         plt.axvline(1, c='.5', ls=':', lw=1)
         plt.xlabel('$R$')
