@@ -192,6 +192,16 @@ def intr(dr, data, axis=-1):
     loc = [np.newaxis] * axis + [slice(None)]
     return (data * dr).sum(axis=axis)
 
+def parse_not_overwrite(overwrite, fn):
+    if overwrite:
+        return False
+    try:
+        if os.path.isfile(fn):
+            return True
+    except TypeError:
+        pass
+    return False
+
 class BLfileBase(dict):
     def __init__(self, fn, sim_path=None, t=None, trim=True, data=None, num_ghost=0,
                  defvar=None, ai_data=None, sim=None, file_handle=None, x2_face=None):
@@ -360,7 +370,8 @@ class BLfile(BLfileBase):
                name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                ax=None, log=False, aspect=1, sdir=None, smooth=None,
-               phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1):
+               phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1,
+               overwrite=True):
         '''Plot 2D sim data'''
         if fopt is None:
             fopt = {}
@@ -473,6 +484,19 @@ class BLfile(BLfileBase):
             if save and fn is None:
                 fn = self._prefix + '_' + name + '_plot.' + ext
 
+        if save or fn:
+            save = True
+            if fn is None:
+                fn = self._prefix + '_plot.' + ext
+            if not sdir is None:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            if ret_fn:
+                return fn
+            return None
+
         #start plotting
         pcm = plt.pcolormesh(x, y, data, **_popt)
         if rplot:
@@ -491,13 +515,7 @@ class BLfile(BLfileBase):
 
         plt.sca(ax)
         #save fig
-        if save or fn:
-            if fn is None:
-                fn = self._prefix + '_plot.' + ext
-            if not sdir is None:
-                if not os.path.isdir(sdir):
-                    os.mkdir(sdir)
-                fn = os.path.join(sdir, fn)
+        if save:
             plt.savefig(fn)
             plt.close()
         if ret_fn:
@@ -1850,7 +1868,29 @@ class BLsim(object):
         return out
 
     def plot_fluxes(self, t0=None, tf=None, nm=5, data=None, figsize=None, save=False,
-                    fn=None, ext='pdf', lopt=None, ff=1, sdir='', progress=True):
+                    fn=None, ext='pdf', lopt=None, ff=1, sdir='', progress=True,
+                    overwrite=True):
+        if save or fn:
+            save = True
+            if fn is None:
+                tnorm = tau
+                t0 *= tnorm
+                tf *= tnorm
+                ffts = [i for i in self.fileDict.keys()
+                        if self.inputs.get(i, {}).get('variable') == "FT-Range"]
+                dt = self.inputs[ffts[0]]['dt']
+                ffts = self.sortedFFT()
+                i = int(2 * t0 // dt)
+                i1 = int(min(2 * tf // dt, len(ffts) - 1))
+                t0 = self.loadfile(os.path.split(ffts[i])[-1]).t / tnorm
+                tf = self.loadfile(os.path.split(ffts[i1])[-1]).t / tnorm
+                fn = '_flux_{:.1f}_{:.2f}.'.format(t0, tf - t0)
+                fn = os.path.join(sdir, self.name + fn + ext)
+                if sdir:
+                    if not os.path.isdir(sdir):
+                        os.mkdir(sdir)
+        if parse_not_overwrite(overwrite, fn):
+            return data
         if lopt is None:
             lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
         if data is None:
@@ -2623,7 +2663,14 @@ class BLsim(object):
         if cout:
             return cd
 
-    def r_speed(self, r, fig=True, save=None, fn=None, ext='pdf', tmark=None, **kwarg):
+    def r_speed(self, r, fig=True, save=None, fn=None, ext='pdf', tmark=None,
+                overwrite=True, **kwarg):
+        if fn and save is None:
+            save = True
+        if save and fn is None:
+            fn = helpers.sanitize_lbl(self.name) + '_r_speed.' + ext.lstrip('.')
+        if parse_not_overwrite(overwrite, fn):
+            return None
         if fig is True:
             plt.figure()
         if not 'smooth' in kwarg:
@@ -2661,11 +2708,7 @@ class BLsim(object):
             plt.xlim(*xlim)
             plt.ylim(*ylim)
         plt.ylabel('Speed')
-        if fn and save is None:
-            save = True
         if save:
-            if fn is None:
-                fn = helpers.sanitize_lbl(self.name) + '_r_speed.' + ext.lstrip('.')
             plt.savefig(fn)
             plt.close()
         return None
@@ -2866,7 +2909,17 @@ class BLsim(object):
 
     def diagnostic(self, rs=[-1, 1.2], save=False, fn=None, ext='png', figsize=None,
                    sdir=None, subsample=None, sz=4, xmax=2.5, dpi=300, modes=None,
-                   add_modes=None, tmark=None, add_max=None):
+                   add_modes=None, tmark=None, add_max=None, overwrite=True):
+        if save or fn:
+            save = True
+            if fn is None:
+                fn = self.name + '_diag.' + ext
+            if sdir:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            return None
         self.amp #make sure data is loaded
         #self.mode_mask()
         rs = np.atleast_1d(rs)
@@ -2934,13 +2987,7 @@ class BLsim(object):
                 txt = '{0:s}: {1:}'.format(par, info[par])
             ax.text(.00 + .4 * (j % ncol), 1. - .5 * .12 * (j // ncol + 3), txt)
             j += 1
-        if save or fn:
-            if fn is None:
-                fn = self.name + '_diag.' + ext
-            if sdir:
-                if not os.path.isdir(sdir):
-                    os.mkdir(sdir)
-                fn = os.path.join(sdir, fn)
+        if save:
             plt.savefig(fn)
             plt.close()
             return fn
@@ -3053,8 +3100,22 @@ class BLsim(object):
             plt.close()
 
 
-    def _mr_plot(self, t, data, std, log=False, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False,
-                 fn=None, cbl=None, skip_m0=None, speed=False, popt=None, title=None, amp=False, sdir=None):
+    def _mr_plot(self, t, data, std, log=False, norm=None, dt=5, dr=.01, ext='pdf',
+                 fig=None, ax=None, save=False, fn=None, cbl=None, skip_m0=None,
+                 speed=False, popt=None, title=None, amp=False, sdir=None,
+                 overwrite=True):
+        if save or fn:
+            save = True
+            if sdir is None:
+                sdir = ''
+            if fn is None:
+                fn = helpers.sanitize_lbl(self.name) + '_mr.' + ext.lstrip('.')
+                fn = os.path.join(sdir, fn)
+            if sdir:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+        if parse_not_overwrite(overwrite, fn):
+            return None
         tslice = slice(t - dt, t + dt + 1)
         weights = np.minimum(np.nan_to_num(std[tslice]), 1e99) ** -2
         _data, weight = np.average(data[tslice], weights=weights, axis=0, returned=True)
@@ -3118,22 +3179,12 @@ class BLsim(object):
             plt.title(title)
         plt.axvline(1, lw=1, c='k', ls=':')
 
-        if fn and save is None:
-            save = True
         if save:
-            if sdir is None:
-                sdir = ''
-            if fn is None:
-                fn = helpers.sanitize_lbl(self.name) + '_mr.' + ext.lstrip('.')
-                fn = os.path.join(sdir, fn)
-            if sdir:
-                if not os.path.isdir(sdir):
-                    os.mkdir(sdir)
             fig.savefig(fn)
             plt.close(fig)
 
     def mr_speed(self, ts, log=False, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
-                 cbl=None, sdir=None, **kwargs):
+                 cbl=None, sdir=None, overwrite=True, **kwargs):
         if sdir is True:
             sdir = 'mr_speed'
         if sdir:
@@ -3148,8 +3199,9 @@ class BLsim(object):
               _fn = fn
             if cbl is None:
                 cbl = r'$\Omega_{\rm p}$'
-            opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=_fn, cbl=cbl, speed=True,
-                       popt=kwargs)
+            opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax,
+                       save=save, fn=_fn, cbl=cbl, speed=True, popt=kwargs,
+                       overwrite=overwrite)
             self._mr_plot(t, self.speed, self.fft_data._speed_std, **opt)
 
     def mr_amp(self, ts, log=True, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
@@ -3166,24 +3218,28 @@ class BLsim(object):
                        popt=kwargs)
             self._mr_plot(t, self.amp, self.fft_data._amp_std, **opt)
 
-    def my_fft_plots(self, save=True, quiet=False, diag=True, sdir=None):
+    def my_fft_plots(self, save=True, quiet=False, diag=True, sdir=None, overwrite=True):
         if diag:
-            self.diagnostic(save=save, ext='png')
-        self.mr_speed(range(100, int(self.fft_time[-1] / tau + .5) + 10, 100), save=1, sdir=sdir)
+            self.diagnostic(save=save, ext='png', overwrite=overwrite)
+        self.mr_speed(range(100, int(self.fft_time[-1] / tau + .5) + 10, 100), save=1,
+                      sdir=sdir, overwrite=overwrite)
         if not quiet:
             print('Consider using the following:')
             print('    sim.speed_plots(modes)')
             print('    sim.get_speed(m, t0)')
 
-    def speed_plots(self, modes, rin=-1, rout=1.2, save=True, tmark=None):
+    def speed_plots(self, modes, rin=-1, rout=1.2, save=True, tmark=None,
+                    overwrite=True):
         if rin == -1:
             rin = self.rc[0] * .5 + .5
+        opt = dict(modes=modes, tmark=tmark)
         if save:
-            self.r_speed(rin, modes=modes, tmark=tmark, fn=self.name + '_rin.pdf')
-            self.r_speed(rout, modes=modes, tmark=tmark, fn=self.name + '_rout.pdf')
+            opt['overwrite'] = overwrite
+            self.r_speed(rin, fn=self.name + '_rin.pdf', **opt)
+            self.r_speed(rout, fn=self.name + '_rout.pdf', **opt)
         else:
-            self.r_speed(rin, modes=modes, tmark=tmark)
-            self.r_speed(rout, modes=modes, tmark=tmark)
+            self.r_speed(rin, **opt)
+            self.r_speed(rout, **opt)
 
     def get_speed(self, m, t0, dt=50, r=-1, dr=10, fmt='.3f'):
         if r == -1:
@@ -3195,7 +3251,8 @@ class BLsim(object):
             print(('{0:' + fmt + '}').format(out))
         return out
 
-    def mk_maps(self, var_list=['Rpseudo', 've'], dt=25, base_dir=None, file='cons', popt=None):
+    def mk_maps(self, var_list=['Rpseudo', 've'], dt=25, base_dir=None, file='cons',
+                overwrite=True, popt=None):
         if popt is None:
             popt = {}
         var_list = np.atleast_1d(var_list)
@@ -3216,7 +3273,7 @@ class BLsim(object):
                         var = str(var)
                     if not os.path.isdir(os.path.join(path, var)):
                         os.makedirs(os.path.join(path, var))
-                    self.loadfile(file, i).plot2d(var, sdir=os.path.join(path, var), save=True, fopt=fopt, **popt)
+                    self.loadfile(file, i).plot2d(var, sdir=os.path.join(path, var), save=True, fopt=fopt, overwrite=overwrite, **popt)
             except IndexError:
                 break
             i += dt
@@ -3263,7 +3320,7 @@ class BLsim(object):
         return self._mode_detect
 
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
-                   sub_dir=False):
+                   sub_dir=False, overwrite=True):
         if working_dir is True:
             working_dir = self.name + '_plots'
         if not working_dir:
@@ -3286,18 +3343,19 @@ class BLsim(object):
             gmodes = list({int(m[0]) for m in md.g_modes()})
             t = [(.5 * (m[1] + m[2]) / tau, m[0]) for m in md.g_modes()]
             if not quiet: print('    Diagnostic')
-            self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:])
+            self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:],
+                            overwrite=overwrite)
             if not quiet: print('    My fft')
-            self.my_fft_plots(diag=False, quiet=True, sdir=True)
+            self.my_fft_plots(diag=False, quiet=True, sdir=True, overwrite=overwrite)
             if gmodes:
                 if not quiet: print('    Speed plots')
-                self.speed_plots(gmodes, tmark=t[:])
+                self.speed_plots(gmodes, tmark=t[:], overwrite=overwrite)
             if maps:
                 if not quiet: print('    Maps')
-                self.mk_maps()
+                self.mk_maps(overwrite=overwrite)
             if fluxes:
                 if not quiet: print('    Flux Series')
-                self.flux_series(sdir=True, progress=(not quiet))
+                self.flux_series(sdir=True, progress=(not quiet), overwrite=overwrite)
         finally:
             os.chdir(pwd)
 
