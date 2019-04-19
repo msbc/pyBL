@@ -3936,8 +3936,9 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
 
     return parallel_compile(mapper, arglist=simlist, T=T)
 
-def mkplots(simlist=None, maps=False):
-    comp_wrapper('main_plots', simlist=simlist, kwargs=dict(quiet=True, working_dir=True, maps=maps))
+def mkplots(simlist=None, maps=False, overwrite=True):
+    opt = dict(quiet=True, working_dir=True, maps=maps, overwrite=overwrite)
+    comp_wrapper('main_plots', simlist=simlist, kwargs=opt)
 
 def _old_mkplots(sims=None, path='', ext='png'):
     if sims is None:
@@ -3997,13 +3998,27 @@ if __name__ == '__main__':
                         type=str,
                         default='~/data/pleiades_data/bl',
                         help='Path to search for simulations')
+    parser.add_argument('-o', '--overwrite',
+                        default=False,
+                        action='store_true',
+                        help='Overwrite existing plots')
+    parser.add_argument('-i',
+                        type=int,
+                        default=None,
+                        help='Simulation index')
     args = parser.parse_args()
     path = os.path.expanduser(args.path)
     tmp = os.path.join(path, 'M{0:}.*')
     d = '[0-9]'
     print(tmp.format(d))
-    sims = glob(tmp.format(d)) + glob(tmp.format(d*2))
+    sims = sorted(glob(tmp.format(d)) + glob(tmp.format(d*2)))
+    if i is not None:
+        sims = [sims[i]]
     print(sims)
     if not sims:
         raise RuntimeError('No sims found.')
-    mkplots(sims, maps=args.maps)
+    if len(sims) > 1:
+        mkplots(sims, maps=args.maps, overwrite=args.overwrite)
+    else:
+        BLsim(sims[0]).main_plots(quiet=True, working_dir=True, maps=args.maps,
+                                  overwrite=args.overwrite)
