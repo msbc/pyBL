@@ -406,6 +406,31 @@ class BLfile(BLfileBase):
             if cbl is None:
                 cbl = helpers.labeler(data)
                 name = data
+
+        if name:
+            if name in [True, 1]:
+                name = ''
+            if title is None:
+                #title = self.name + ' ' + self.t_str + ' ' + name
+                title = self.name + ' ' + name
+                if self.sim:
+                    title = self.sim.name + r' $t/2\pi = {0:g}$'.format(self.t / tau)
+            if save and fn is None:
+                fn = self._prefix + '_' + name + '_plot.' + ext
+
+        if save or fn:
+            save = True
+            if fn is None:
+                fn = self._prefix + '_plot.' + ext
+            if not sdir is None:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            if ret_fn:
+                return fn
+            return None
+
         data = self._parse_data(data)
         if type(data) != np.ndarray:
             raise TypeError('Data has type "{:}", not ndarray.'.format(type(data)))
@@ -473,30 +498,6 @@ class BLfile(BLfileBase):
             ax = plt.gca()
         if aspect:
             ax.set_aspect(aspect)
-
-        if name:
-            if name in [True, 1]:
-                name = ''
-            if title is None:
-                #title = self.name + ' ' + self.t_str + ' ' + name
-                title = self.name + ' ' + name
-                if self.sim:
-                    title = self.sim.name + r' $t/2\pi = {0:g}$'.format(self.t / tau)
-            if save and fn is None:
-                fn = self._prefix + '_' + name + '_plot.' + ext
-
-        if save or fn:
-            save = True
-            if fn is None:
-                fn = self._prefix + '_plot.' + ext
-            if not sdir is None:
-                if not os.path.isdir(sdir):
-                    os.mkdir(sdir)
-                fn = os.path.join(sdir, fn)
-        if parse_not_overwrite(overwrite, fn):
-            if ret_fn:
-                return fn
-            return None
 
         #start plotting
         pcm = plt.pcolormesh(x, y, data, **_popt)
@@ -1864,19 +1865,21 @@ class BLsim(object):
         # CS
         ax = plt.subplot(411)
         for j in js:
-            plt.plot(t, self.mach**2 * data[:, 0, ilist[j]])
+            plt.plot(t, 1e5 * self.mach**2 * data[:, 0, ilist[j]])
         #plt.ylim(-.5e-4, 1e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
-        plt.ylabel(r'$C_S$')
+        plt.ylabel(r'$10^5C_S$')
         plt.legend(lbls, ncol=len(ilist), **lopt)
+        plt.yscale('symlog')
 
         # Mdot
         plt.subplot(412, sharex=ax)
         for j in js:
-            plt.plot(t, data[:, -2, ilist[j]])
+            plt.plot(t, 1e6 * data[:, -2, ilist[j]])
         #plt.ylim(-.5e-4, 2e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
-        plt.ylabel(r'$\dot{M}$')
+        plt.ylabel(r'$10^6\dot{M}$')
+        plt.yscale('symlog')
 
         # dS
         plt.subplot(413, sharex=ax)
