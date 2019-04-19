@@ -1639,8 +1639,8 @@ class CompositeFFTSet(object):
 
 class BLsim(object):
     def __init__(self, path, fmts=None, coarse_data=None, fft_time=None,
-                 athinput=None, mode_mask=None, main_modes=None,
-                 phase_angle=None, rho_ref=None, mode_detect=None):
+                 athinput=None, mode_mask=None, main_modes=None, sfd=None,
+                 phase_angle=None, rho_ref=None, mode_detect=None, flux_data=None):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
@@ -1749,6 +1749,8 @@ class BLsim(object):
         self._sigmas = [0,4]
         self._main_modes = main_modes
         self._mode_detect = None
+        self._flux_data = flux_data
+        self._sfd = sfd
         # End init
 
     def _map_asist(self, fn, func, args, kwargs):
@@ -1784,20 +1786,21 @@ class BLsim(object):
         return np.array(self.map_files('ffts', 'flux_data', ll=ll), 'float32')
 
     def load_flux_data(self, ll=True):
-        try:
-            return self._flux_series
-        except AttributeError:
+        if self._flux_data is not None:
+            return self._flux_data
+        else:
             fn = os.path.join(self.path, 'flux_data.npz')
             try:
                 out = np.load(fn)['arr_0']
             except IOError:
                 out = self._mk_flux_data(ll=ll)
                 np.savez(fn, out)
-            self._flux_series = out
+            self._flux_data = out
             return out
 
     @property
     def flux_data(self):
+        # cs, ca, cl, md, dd
         return self.load_flux_data()
 
     def _smooth_flux_data(self, data=None):
@@ -1809,17 +1812,93 @@ class BLsim(object):
 
     @property
     def smooth_flux_data(self):
-        try:
-            return self._sfd
-        except AttributeError:
+        if self._sfd is None:
             self._sfd = self._smooth_flux_data()
-            return self._sfd
+        return self._sfd
 
     def r_cavity(self):
         i1 = self.rloc(1)
         i3 = self.rloc(3)
         i = i1 + np.abs(self.smooth_flux_data[:,0,i1:i3]).argmin(axis=-1)
         return self.rc[i]
+
+    def r_peak(self):
+        i1 = self.rloc(1)
+        i3 = self.rloc(3.9)
+        i = i1 + self.smooth_flux_data[:,0,i1:i3].argmax(axis=-1)
+        return self.rc[i]
+
+    def my_flux_plot(self, data=None, rlist=None, lopt=None, overwrite=True, save=False,
+                     fn=None, sdir='', ext='pdf', fig=None, fopt=None):
+        if save or fn:
+            save = True
+            if fn is None:
+                fn = os.path.join(sdir, self.name + '_flux_vs_time.' + ext)
+                if sdir:
+                    if not os.path.isdir(sdir):
+                        os.mkdir(sdir)
+        if parse_not_overwrite(overwrite, fn):
+            return data
+
+        if rlist is None:
+            rlist = [1 - 4 / self.mach**2, 1, 1.5, 2, 3]
+        if lopt is None:
+            lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7,
+                        loc=0)
+        rlist = np.atleast_1d(rlist)
+        ilist = [self.rloc(r) for r in rlist]
+        lbls = ['R={0:.2g}'.format(r) for r in rlist]
+        js = range(len(ilist))
+        if data is None:
+            data = self.smooth_flux_data
+        t = np.arange(data.shape[0]) * self.fft_dt
+        i1 = self.rloc(1)
+
+        if fopt is None:
+            fopt = dict()
+        if fig is None:
+            _fopt = dict(figsize=(5,7), dpi=300)
+            _fopt.update(fopt)
+            fig = plt.figure(**_fopt)
+
+        # CS
+        ax = plt.subplot(411)
+        for j in js:
+            plt.plot(t, self.mach**2 * data[:, 0, ilist[j]])
+        #plt.ylim(-.5e-4, 1e-5)
+        plt.axhline(0, lw=1, c='k', ls=':')
+        plt.ylabel(r'$C_S$')
+        plt.legend(lbls, ncol=len(ilist), **lopt)
+
+        # Mdot
+        plt.subplot(412, sharex=ax)
+        for j in js:
+            plt.plot(t, data[:, -2, ilist[j]])
+        #plt.ylim(-.5e-4, 2e-5)
+        plt.axhline(0, lw=1, c='k', ls=':')
+        plt.ylabel(r'$\dot{M}$')
+
+        # dS
+        plt.subplot(413, sharex=ax)
+        for j in js:
+            plt.semilogy(t, np.sqrt(data[:, -1, ilist[j]]))
+        #plt.ylim(-.001, .01)
+        plt.axhline(0, lw=1, c='k', ls=':')
+        plt.ylabel(r'$\left<\Sigma^2\right>/\left<\Sigma\right>^2-1$')
+
+        # R
+        plt.subplot(414, sharex=ax)
+        plt.plot(t, self.r_cavity())
+        plt.plot(t, self.r_peak())
+        #plt.ylim(1, 3)
+        plt.ylabel(r'$R$')
+        plt.legend(['Cavity', 'Peak'], **lopt)
+        plt.xlabel(r'$t/2\pi$')
+        plt.xlim(0, 600)
+
+        if save:
+            plt.savefig(fn)
+            plt.close()
 
     def run(self, athinput=None, args=None, rundir=None):
         if athinput is None:
@@ -3445,6 +3524,8 @@ class BLsim(object):
                             overwrite=overwrite)
             if not quiet: print('    My fft')
             self.my_fft_plots(diag=False, quiet=True, sdir=True, overwrite=overwrite)
+            if not quiet: print('    Flux vs time')
+            self.my_flux_plot(save=True, overwrite=overwrite)
             if gmodes:
                 if not quiet: print('    Speed plots')
                 self.speed_plots(gmodes, tmark=t[:], overwrite=overwrite)
@@ -3764,7 +3845,7 @@ class auxBLsim(BLsim):
 
 
 def refreshSim(sim):
-    attr = ['coarse_data', 'fft_time', 'mode_detect']
+    attr = ['coarse_data', 'fft_time', 'mode_detect', 'sfd', 'flux_data']
     opt = {i: getattr(sim, '_' + i, None) for i in attr}
     return BLsim(sim.path, **opt)
 
