@@ -373,7 +373,7 @@ class BLfile(BLfileBase):
                ax=None, log=False, aspect=1, sdir=None, smooth=None,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1,
                overwrite=True):
-        '''Plot 2D sim data'''
+        """Plot 2D sim data"""
         if fopt is None:
             fopt = {}
         if popt is None:
@@ -3857,15 +3857,15 @@ def refreshSim(sim):
 ######################
 
 def parallel_compile(func, arglist, T=None):
-    '''Usage : parallel_compile(func, arglist=None, T=None)
+    """Usage : parallel_compile(func, arglist=None, T=None)
     Similar to comp_wrapper, but strings in arglist are not automatically turned
-    into zeussim_extended class instances.'''
+    into zeussim_extended class instances."""
     out = [i for i in parmap(func, arglist) if i is not None]
     if T : out = zip(*out)
     return out
 
 def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None, kwargs=None, sim_class=BLsim):
-    '''Usage : comp_wrapper(func, simlist=None, include=None, tmin=40, T=False, load_eos=False)
+    """Usage : comp_wrapper(func, simlist=None, include=None, tmin=40, T=False, load_eos=False)
     Evaluate function 'fun' on each simulation in 'simlist' and return the
     compiled result, and use parallel processing to do so.
 
@@ -3879,7 +3879,7 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
 
     Keyword load_eos (False):
     Whether to load EOS before computation.
-    '''
+    """
     if args is None:
         args = []
     if kwargs is None:
