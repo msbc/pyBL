@@ -11,6 +11,7 @@ import pandas
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+import scipy
 from scipy.stats import scoreatpercentile as percentile
 from scipy.stats import linregress
 #import math
@@ -1038,7 +1039,7 @@ class BLFT(BLfile):
 
     def fluxes(self):
         u = self['FT-vel2']
-        r2 = tau*(self.rc)[np.newaxis, :]**2
+        r2 = tau * self.rc[np.newaxis, :]**2
         out = {'CL': r2 * self['FT-CL'],
                'CA': r2 * u[0][np.newaxis, :] * self['FT-Mdot']}
         for i in ['Mdot', 'dens']:
@@ -1050,6 +1051,27 @@ class BLFT(BLfile):
         out['vphi'] = np.real(u[0])
         out['vr'] = np.real(v[0])
         return out
+
+    def flux_data(self):
+        r2 = tau * self.rc ** 2
+        cl = r2 * np.real(self['FT-CL-Re'][0])
+        u = np.real(self['FT-vel2-Re'])[0]
+        md = np.real(self['FT-Mdot-Re'][0])
+        ca = r2 * u * md
+        cs = cl - ca
+        d = np.real(self['FT-dens-Re'][0])
+        d2 = np.real(self['FT-dens**2-Re'][0])
+        dd = d2 / d**2 - 1.0
+        i1 = self.rloc(1)
+        i3 = self.rloc(3)
+        tmp = cs.copy()
+        tmp[:i1] = np.inf
+        tmp[-5:] = np.inf
+        ic = np.abs(tmp).argmin()
+        tmp[:i1] = 0
+        tmp[-5:] = 0
+        ip = tmp.argmax()
+        return np.array([cs, ca, cl, md, dd])
 
     def wave_power(self):
         data = np.real(self['FT-vel1'][0])
@@ -1729,6 +1751,76 @@ class BLsim(object):
         self._mode_detect = None
         # End init
 
+    def _map_asist(self, fn, func, args, kwargs):
+        try:
+            fn.fn
+        except AttributeError:
+            fn = self.loadfile(fn)
+        try:
+            if str(func) == func:
+                func = getattr(fn, func)
+        except TypeError:
+            return func(fn, *args, **kwargs)
+        return func(*args, **kwargs)
+
+    def map_files(self, files, func, *args, imin=None, imax=None, ll=False, **kwargs):
+        try:
+            if str(files) == files:
+                if files == 'ffts':
+                    files = [os.path.split(i)[1] for i in self.sortedFFT()]
+                else:
+                    files = self.files(files)[imin:imax]
+        except TypeError:
+            pass
+        if ll:
+            def f(fn):
+                return self._map_asist(fn, func, args, kwargs)
+            out = parmap(f, files)
+        else:
+            out = [self._map_asist(fn, func, args, kwargs) for fn in files]
+        return out
+
+    def _mk_flux_data(self, ll=True):
+        return np.array(self.map_files('ffts', 'flux_data', ll=ll), 'float32')
+
+    def load_flux_data(self, ll=True):
+        try:
+            return self._flux_series
+        except AttributeError:
+            fn = os.path.join(self.path, 'flux_data.npz')
+            try:
+                out = np.load(fn)['arr_0']
+            except IOError:
+                out = self._mk_flux_data(ll=ll)
+                np.savez(fn, out)
+            self._flux_series = out
+            return out
+
+    @property
+    def flux_data(self):
+        return self.load_flux_data()
+
+    def _smooth_flux_data(self, data=None):
+        if data is None:
+            data = self.flux_data
+        out = .5 * (data[::2] + data[1::2])[:-2]
+        out = scipy.signal.savgol_filter(out, 101, 1, axis=0)
+        return scipy.signal.savgol_filter(out, 21, 1, axis=-1)
+
+    @property
+    def smooth_flux_data(self):
+        try:
+            return self._sfd
+        except AttributeError:
+            self._sfd = self._smooth_flux_data()
+            return self._sfd
+
+    def r_cavity(self):
+        i1 = self.rloc(1)
+        i3 = self.rloc(3)
+        i = i1 + np.abs(self.smooth_flux_data[:,0,i1:i3]).argmin(axis=-1)
+        return self.rc[i]
+
     def run(self, athinput=None, args=None, rundir=None):
         if athinput is None:
             athinput = self.athinput
@@ -1796,6 +1888,12 @@ class BLsim(object):
         shift = np.zeros_like(phase)
         shift[np.where(d < limit)] += tau
         return phase + shift.cumsum(axis=0)
+
+    @property
+    def fft_dt(self):
+        ffts = [i for i in self.fileDict.keys()
+                if self.inputs.get(i, {}).get('variable') == "FT-Range"]
+        return self.inputs[ffts[0]]['dt'] / tau
 
     def fluxes(self, t0, tf, tnorm=tau, nsmooth=True, progress=True):
         if not tnorm or tnorm is True:
