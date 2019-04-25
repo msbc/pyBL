@@ -4004,12 +4004,17 @@ if __name__ == '__main__':
                         default=False,
                         action='store_true',
                         help='Overwrite existing plots')
+    parser.add_argument('-q', '--quiet',
+                        default=None,
+                        action='store_true',
+                        help='Minimize output to stdout')
     parser.add_argument('-i',
                         type=int,
                         default=None,
                         help='Simulation index')
     args = parser.parse_args()
     path = os.path.expanduser(args.path)
+    quiet = args.quiet
     tmp = os.path.join(path, 'M{0:}.*')
     d = '[0-9]'
     print(tmp.format(d))
@@ -4020,7 +4025,11 @@ if __name__ == '__main__':
     if not sims:
         raise RuntimeError('No sims found.')
     if len(sims) > 1:
+        if quiet is None:
+            quiet = True
         mkplots(sims, maps=args.maps, overwrite=args.overwrite)
     else:
-        BLsim(sims[0]).main_plots(quiet=True, working_dir=True, maps=args.maps,
+        if quiet is None:
+            quiet = False
+        BLsim(sims[0]).main_plots(quiet=quiet, working_dir=True, maps=args.maps,
                                   overwrite=args.overwrite)
