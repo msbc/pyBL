@@ -1809,7 +1809,10 @@ class BLsim(object):
     def _smooth_flux_data(self, data=None):
         if data is None:
             data = self.flux_data
-        out = .5 * (data[::2] + data[1::2])[:-2]
+        try:
+            out = .5 * (data[::2] + data[1::2])[:-2]
+        except ValueError:
+            out = .5 * (data[:-1:2] + data[1::2])[:-2]
         out = scipy.signal.savgol_filter(out, 101, 1, axis=0)
         return scipy.signal.savgol_filter(out, 21, 1, axis=-1)
 
@@ -3613,8 +3616,11 @@ class modeData(object):
         markers = 'o','+','x','.'
         lbls = []
         for i, r in enumerate(self.r):
-            plt.scatter(self.filter()[i][:,0], self.filter()[i][:,3], marker=markers[i])
-            lbls.append(r'$r={0:.2f}$'.format(r))
+            try:
+                plt.scatter(self.filter()[i][:,0], self.filter()[i][:,3], marker=markers[i])
+                lbls.append(r'$r={0:.2f}$'.format(r))
+            except IndexError:
+                pass
         if inc_global:
             data = self.g_modes()
             if np.any(data):
