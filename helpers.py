@@ -24,7 +24,7 @@ except ImportError:
 
 def labeler(name):
     sub = None
-    for vec in ['mom', 'vel', 'mag', 'B']:
+    for vec in ['mom', 'vel', 'mag', 'Bcc']:
         if name[:len(vec)] == vec:
             try:
                 i = int(name[len(vec):])
@@ -38,7 +38,7 @@ def labeler(name):
                     raise TypeError
                 name = vec
             except TypeError:
-                pass
+                print(name[len(vec):])
     try:
         out = {'vel': 'v', 'mom': r'\rho v', 'mag': 'B', 'dens': r'\rho',
                'pres': 'P', 'Rpseudo': r'rv_r\sqrt{\rho}', 'pseudo': r'v_r\sqrt{\rho}',

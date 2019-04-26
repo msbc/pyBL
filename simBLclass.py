@@ -266,6 +266,13 @@ class BLfileBase(dict):
         self._grid_shape = self.phic.size, self.rc.size
         self._default_var = defvar
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        del self.data
+        return False
+
     def __repr__(self):
         path, fn = os.path.split(self.fn)
         meh, head = os.path.split(path)
@@ -3437,7 +3444,7 @@ class BLsim(object):
         return out
 
     def mk_maps(self, var_list=['Rpseudo', 've'], dt=25, base_dir=None, file='cons',
-                overwrite=True, popt=None):
+                overwrite=True, popt=None, thumbnail=True):
         if popt is None:
             popt = {}
         var_list = np.atleast_1d(var_list)
@@ -3449,19 +3456,44 @@ class BLsim(object):
         i = 0
         if not os.path.isdir(path):
             os.makedirs(path)
-        while True:
-            if i - 1 <= self.fft_time[-1] / tau:
-                print('Map of t/orb={:d}'.format(i))
-            try:
+        with self.loadfile(file, -1) as bf:
+            tf = int(bf.t / tau + .5)
+        times = list(range(0, tf + 1, dt))
+        print(tf, dt, times)
+        opt = dict(save=True, fopt=fopt, overwrite=overwrite, **popt)
+        tn_fn = os.path.join(path, self.name + '_thumbnails.png')
+        if overwrite and os.path.isfile(tn_fn):
+            thumbnail = False
+        inc = []
+        if thumbnail:
+            tn = plt.figure(figsize=(10,8))
+            gs = mpl.gridspec.GridSpec(3,4, wspace=0, hspace=0, top=.95, bottom=.01,
+                                       left=.01, right=.99)
+            axs = [plt.subplot(i) for i in gs]
+            sample = len(times) // 12
+            inc = times[1::sample]
+        for i in times:
+            i = int(i)
+            print('Map of t/orb={:d}'.format(i))
+            with self.loadfile(file, i) as bf:
+                if i in inc:
+                    ax = axs.pop(0)
+                    bf.plot2d(str(var_list[0]), ax=ax, cb=False, title=False)
+                    x = self.r[-1] * 0.9
+                    ax.text(-x, x, '{:02d}'.format(i), ha='left', va='top')
+                    ax.set_yticklabels([])
+                    ax.set_xticklabels([])
+                    ax.tick_params(direction="in")
                 for var in var_list:
                     if var is not None:
                         var = str(var)
                     if not os.path.isdir(os.path.join(path, var)):
                         os.makedirs(os.path.join(path, var))
-                    self.loadfile(file, i).plot2d(var, sdir=os.path.join(path, var), save=True, fopt=fopt, overwrite=overwrite, **popt)
-            except IndexError:
-                break
-            i += dt
+                    bf.plot2d(var, sdir=os.path.join(path, var), **opt)
+        if thumbnail:
+            plt.suptitle(self.name)
+            tn.savefig(tn_fn)
+            plt.close(tn)
 
     def mode_detect(self, r=None, save=True, fn=None, dt=10, nbin=3, emax=1e-4, smax=2e-4, dr=5,
                     data_only=False, dw=.05, overlap=10, nskip=3, out_mult=2):
