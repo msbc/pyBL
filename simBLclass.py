@@ -3386,7 +3386,8 @@ class BLsim(object):
         for t in tlist:
             if fn is None:
                 _fn = helpers.sanitize_lbl(self.name) + '_mr_speed_{0:05d}.'.format(t) + ext.lstrip('.')
-                _fn = os.path.join(sdir, _fn)
+                if sdir:
+                    _fn = os.path.join(sdir, _fn)
             else:
               _fn = fn
             if cbl is None:
@@ -3397,23 +3398,32 @@ class BLsim(object):
             self._mr_plot(t, self.speed, self.fft_data._speed_std, **opt)
 
     def mr_amp(self, ts, log=True, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None, save=False, fn=None,
-                 cbl=None, **kwargs):
+                 cbl=None, sdir=None, overwrite=True, **kwargs):
+        if sdir is True:
+            sdir = 'mr_speed'
+        if sdir:
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
         tlist = np.atleast_1d(ts)
         for t in tlist:
             if fn is None:
                 _fn = helpers.sanitize_lbl(self.name) + '_mr_amp_{0:05d}.'.format(t) + ext.lstrip('.')
+                if sdir:
+                    _fn = os.path.join(sdir, _fn)
             else:
               _fn = fn
             if cbl is None:
                 cbl = r'$|A_m|$'
             opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax, save=save, fn=_fn, cbl=cbl, amp=True,
-                       popt=kwargs)
+                       overwrite=overwrite, popt=kwargs)
             self._mr_plot(t, self.amp, self.fft_data._amp_std, **opt)
 
     def my_fft_plots(self, save=True, quiet=False, diag=True, sdir=None, overwrite=True):
         if diag:
             self.diagnostic(save=save, ext='png', overwrite=overwrite)
         self.mr_speed(range(100, int(self.fft_time[-1] / tau + .5) + 10, 100), save=1,
+                      sdir=sdir, overwrite=overwrite)
+        self.mr_amp(range(100, int(self.fft_time[-1] / tau + .5) + 10, 100), save=1,
                       sdir=sdir, overwrite=overwrite)
         if not quiet:
             print('Consider using the following:')
