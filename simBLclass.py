@@ -741,6 +741,58 @@ class BLConsPrim(BL3Dfile):
     def vortensity(self, dvphi=False):
         return self.vorticity(dvphi=dvphi) / self['dens']
 
+    def plt_vortensity(self, init=None, fopt=None, vmax=None, fig=None, sdir=None,
+                       fn=None, save=False, overwrite=False, ext='png'):
+        if save or fn:
+            save = True
+            if fn is None:
+                fn = self._prefix + '_delta_vortensity.' + ext
+            if not sdir is None:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            return init, None
+
+        if init is None:
+            if self.t == 0:
+                init = self.vortensity().mean(axis=0)
+            else:
+                init = self.sim.loadfile('cons', 0).vortensity().mean(axis=0)
+        dv = self.vortensity() - init[np.newaxis, :]
+
+        if fopt is None:
+            fopt = dict()
+        if fig is None:
+            _fopt = dict(figsize=(5, 5), dpi=300)
+            _fopt.update(fopt)
+            fig = plt.figure(**_fopt)
+
+        gs = mpl.gridspec.GridSpec(2, 2, height_ratios=[1,.22], width_ratios=[1,.05],
+                                   top=.95, bottom=.09, left=.13, right=.85, wspace=.01,
+                                   hspace=.15)
+        ax0 = plt.subplot(gs[0,0])
+        cax = plt.subplot(gs[0, 1])
+        pcm = self.plot2d(dv, fig=fig, ax=ax0, vmax=vmax, cb=False, name=True)
+        cb = plt.colorbar(pcm, ax=ax0, cax=cax)
+        cb.set_label(r'$\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_0$')
+        pos0 = np.array(ax0.get_position())
+        posc = np.array(cax.get_position())
+        cax.set_position([posc[0,0], pos0[0,1], posc[1,0] - posc[0,0], pos0[1,1] - pos0[0,1]])
+        ax = plt.subplot(gs[1,0])
+        plt.plot(self.rc, dv.mean(axis=0))
+        ylim = plt.ylim()
+        plt.ylim(max(-1, ylim[0]), min(dv.mean(axis=0)[5:-5].max() * 1.1, ylim[1]))
+        plt.axhline(0, c='k', lw=1, ls=':')
+        plt.xlabel(r'$R$')
+        plt.ylabel(r'$\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_0$')
+
+        if save:
+            plt.savefig(fn)
+            plt.close()
+
+        return ax0, cax, ax
+
     def vi(self):
         return self.rc[np.newaxis,:]**2 * self.vorticity(True)
 
@@ -3453,10 +3505,12 @@ class BLsim(object):
             print(('{0:' + fmt + '}').format(out))
         return out
 
-    def mk_maps(self, var_list=['Rpseudo', 've'], dt=25, base_dir=None, file='cons',
+    def mk_maps(self, var_list=None, dt=25, base_dir=None, file='cons',
                 overwrite=True, popt=None, thumbnail=True):
         if popt is None:
             popt = {}
+        if var_list is None:
+            var_list=['Rpseudo', 've', 'd_vortensity']
         var_list = np.atleast_1d(var_list)
         fopt={'dpi': 300, 'figsize': (6,6)}
         #path = self.name + '_maps'
@@ -3499,7 +3553,12 @@ class BLsim(object):
                         var = str(var)
                     if not os.path.isdir(os.path.join(path, var)):
                         os.makedirs(os.path.join(path, var))
-                    bf.plot2d(var, sdir=os.path.join(path, var), **opt)
+                    sdir = os.path.join(path, var)
+                    if var == 'd_vortensity':
+                        bf.plt_vortensity(vmax=1, save=True, overwrite=overwrite,
+                                          sdir=sdir)
+                    else:
+                        bf.plot2d(var, sdir=sdir, **opt)
         if thumbnail:
             plt.suptitle(self.name)
             tn.savefig(tn_fn)
