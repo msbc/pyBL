@@ -1147,7 +1147,7 @@ class BLFT(BLfile):
         tmp[:i1] = 0
         tmp[-5:] = 0
         ip = tmp.argmax()
-        return np.array([cs, ca, cl, md, dd])
+        return np.array([cs, ca, cl, md, dd, d])
 
     def wave_power(self):
         data = np.real(self['FT-vel1'][0])
@@ -1861,12 +1861,14 @@ class BLsim(object):
     def _mk_flux_data(self, ll=True):
         return np.array(self.map_files('ffts', 'flux_data', ll=ll), 'float32')
 
-    def load_flux_data(self, ll=True):
+    def load_flux_data(self, ll=True, overwite=False):
         if self._flux_data is not None:
             return self._flux_data
         else:
             fn = os.path.join(self.path, 'flux_data.npz')
             try:
+                if overwite:
+                    raise IOError
                 out = np.load(fn)['arr_0']
             except IOError:
                 out = self._mk_flux_data(ll=ll)
@@ -1876,7 +1878,7 @@ class BLsim(object):
 
     @property
     def flux_data(self):
-        # cs, ca, cl, md, dd
+        # cs, ca, cl, md, dd, d
         return self.load_flux_data()
 
     def _smooth_flux_data(self, data=None):
@@ -1894,6 +1896,10 @@ class BLsim(object):
         if self._sfd is None:
             self._sfd = self._smooth_flux_data()
         return self._sfd
+
+    def get_alpha(self):
+        sd = self.smooth_flux_data
+        return self.mach**2 * sd[0] / (tau * self.rc**2 * sd[5])
 
     def r_cavity(self):
         i1 = self.rloc(1)
@@ -1953,7 +1959,7 @@ class BLsim(object):
         # Mdot
         plt.subplot(412, sharex=ax)
         for j in js:
-            plt.plot(t, 1e6 * data[:, -2, ilist[j]])
+            plt.plot(t, 1e6 * data[:, 3, ilist[j]])
         #plt.ylim(-.5e-4, 2e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$10^6\dot{M}$')
@@ -1962,7 +1968,7 @@ class BLsim(object):
         # dS
         plt.subplot(413, sharex=ax)
         for j in js:
-            plt.semilogy(t, np.sqrt(data[:, -1, ilist[j]]))
+            plt.semilogy(t, np.sqrt(data[:, 4, ilist[j]]))
         #plt.ylim(-.001, .01)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$\left<\Sigma^2\right>/\left<\Sigma\right>^2-1$')
