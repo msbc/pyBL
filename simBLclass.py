@@ -795,7 +795,7 @@ class BLConsPrim(BL3Dfile):
             plt.savefig(fn)
             plt.close()
 
-        return ax0, cax, ax
+        return init
 
     def vi(self):
         return self.rc[np.newaxis,:]**2 * self.vorticity(True)
@@ -1024,6 +1024,16 @@ class BLConsPrim(BL3Dfile):
         delta[self.rc <= 1.5] = 0
         delta[self.rc >3.9] = 0
         return self.intr(mean**2)-self.intr(delta)
+
+    def d_vortensity_prof(self, init=None):
+        if init is None:
+            if self.t == 0:
+                init = self.vortensity().mean(axis=0)
+            else:
+                init = self.sim.loadfile('cons', 0).vortensity().mean(axis=0)
+        dv = (self.vortensity() - init[np.newaxis, :]) * self.rc[np.newaxis, :]**2
+        return dv.mean(axis=0)
+
 
 class BLcons(BLConsPrim):
     def _special_keys(self, key):
@@ -3540,6 +3550,7 @@ class BLsim(object):
             axs = [plt.subplot(i) for i in gs]
             sample = len(times) // 12
             inc = times[1::sample]
+        init = None
         for i in times:
             i = int(i)
             print('Map of t/orb={:d}'.format(i))
@@ -3559,8 +3570,8 @@ class BLsim(object):
                         os.makedirs(os.path.join(path, var))
                     sdir = os.path.join(path, var)
                     if var == 'd_vortensity':
-                        bf.plt_vortensity(vmax=True, save=True, overwrite=overwrite,
-                                          sdir=sdir)
+                        init = bf.plt_vortensity(vmax=True, save=True, init=init,
+                                                 overwrite=overwrite, sdir=sdir)
                     else:
                         bf.plot2d(var, sdir=sdir, **opt)
         if thumbnail:
@@ -3642,6 +3653,7 @@ class BLsim(object):
             if gmodes:
                 if not quiet: print('    Speed plots')
                 self.speed_plots(gmodes, tmark=t[:], overwrite=overwrite)
+            self.vortensity_profiles(save=True, overwrite=overwrite)
             if maps:
                 if not quiet: print('    Maps')
                 self.mk_maps(overwrite=overwrite)
@@ -3654,6 +3666,62 @@ class BLsim(object):
     def parse_func(self, func, *args, **kwargs):
         return getattr(self, func)(*args, **kwargs)
 
+    def vortensity_profiles(self, times=None, files=None, cmap=None, popt=None, fn=None,
+                            init=None, data=None, t0=None, save=False, fig=None, sdir=None,
+                            overwrite=False, ext='pdf'):
+        if save or fn:
+            save = True
+            if sdir is None:
+                sdir = ''
+            if fn is None:
+                fn = helpers.sanitize_lbl(self.name) + '_vortensity_prof.' + ext
+                fn = os.path.join(sdir, fn)
+            if sdir:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+        if parse_not_overwrite(overwrite, fn):
+            return None
+        if files is None:
+            if times is None:
+                times = np.arange(50, 601, 50, dtype=int)
+            files = [self.files('cons')[t] for t in times]
+        if t0 is None:
+            t0 = times[0]
+        if init is None:
+            init = self.loadfile('cons', t0).vortensity().mean(axis=0)
+        if data is None:
+            data = self.map_files(files, 'd_vortensity_prof', init=init)
+        data = np.array(data)
+        if cmap is None:
+            cmap = plt.get_cmap()
+        elif hasattr(cmap, 'lower'):
+            cmap = plt.get_cmap(cmap)
+        colors = cmap(np.linspace(0, 1, len(files)))
+        if popt is None:
+            popt = dict()
+        _popt = dict(lw=1, ls='-')
+        _popt.update(popt)
+
+        fig = plt.figure()
+        for i, d in enumerate(data):
+            lbl = r'$t/2\pi={:d}$'.format(times[i])
+            plt.plot(self.rc, d, c=colors[i], label=lbl, **_popt)
+        # plt.legend(loc=1)
+        il = self.rloc(1.05)
+        ir = self.rloc(3.5)
+        ylim = data[:, il:ir].min(), data[:, il:ir].max()
+        dy = (ylim[1] - ylim[0]) * .05
+        plt.ylim(ylim[0] - dy, ylim[1] + dy)
+        plt.xlim(self.r[0], self.r[-1])
+        plt.xlabel('$R$')
+        lbl = r'$R^2\left(\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_{'
+        lbl += str(t0)+r'}\right)$'
+        plt.ylabel(lbl)
+        plt.title(helpers.sanitize_lbl(self.name))
+        if save:
+            plt.savefig(fn)
+            plt.close()
+        return
 
 class modeData(object):
     def __init__(self, data, sim=None, dw=.05, overlap=10, nbin=3):
