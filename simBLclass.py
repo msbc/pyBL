@@ -467,7 +467,7 @@ class BLfile(BLfileBase):
             if '%' == vmax[-1]:
                 tmp['high'] = float(vmax[:-1])
                 vmax = 'smart'
-        except TypeError:
+        except (TypeError, IndexError):
             pass
         if 'smart' in [vmin, vmax]:
             rloc = slice(None)
@@ -759,7 +759,9 @@ class BLConsPrim(BL3Dfile):
                 init = self.vortensity().mean(axis=0)
             else:
                 init = self.sim.loadfile('cons', 0).vortensity().mean(axis=0)
-        dv = self.vortensity() - init[np.newaxis, :]
+        dv = (self.vortensity() - init[np.newaxis, :]) * self.rc[np.newaxis, :]**2
+        if vmax is True:
+            vmax = dv.mean(axis=0)[self.rloc(1):self.rloc(3)].max()
 
         if fopt is None:
             fopt = dict()
@@ -773,9 +775,11 @@ class BLConsPrim(BL3Dfile):
                                    hspace=.15)
         ax0 = plt.subplot(gs[0,0])
         cax = plt.subplot(gs[0, 1])
-        pcm = self.plot2d(dv, fig=fig, ax=ax0, vmax=vmax, cb=False, name=True)
+        pcm = self.plot2d(dv, fig=fig, ax=ax0, vmax=vmax, cb=False, name=True,
+                          zerocent=True)
         cb = plt.colorbar(pcm, ax=ax0, cax=cax)
-        cb.set_label(r'$\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_0$')
+        lbl = r'$R^2\left(\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_0\right)$'
+        cb.set_label(lbl)
         pos0 = np.array(ax0.get_position())
         posc = np.array(cax.get_position())
         cax.set_position([posc[0,0], pos0[0,1], posc[1,0] - posc[0,0], pos0[1,1] - pos0[0,1]])
@@ -785,7 +789,7 @@ class BLConsPrim(BL3Dfile):
         plt.ylim(max(-1, ylim[0]), min(dv.mean(axis=0)[5:-5].max() * 1.1, ylim[1]))
         plt.axhline(0, c='k', lw=1, ls=':')
         plt.xlabel(r'$R$')
-        plt.ylabel(r'$\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_0$')
+        plt.ylabel(lbl)
 
         if save:
             plt.savefig(fn)
@@ -3555,7 +3559,7 @@ class BLsim(object):
                         os.makedirs(os.path.join(path, var))
                     sdir = os.path.join(path, var)
                     if var == 'd_vortensity':
-                        bf.plt_vortensity(vmax=1, save=True, overwrite=overwrite,
+                        bf.plt_vortensity(vmax=True, save=True, overwrite=overwrite,
                                           sdir=sdir)
                     else:
                         bf.plot2d(var, sdir=sdir, **opt)
