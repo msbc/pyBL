@@ -1861,13 +1861,13 @@ class BLsim(object):
     def _mk_flux_data(self, ll=True):
         return np.array(self.map_files('ffts', 'flux_data', ll=ll), 'float32')
 
-    def load_flux_data(self, ll=True, overwite=False):
+    def load_flux_data(self, ll=True, overwrite=False):
         if self._flux_data is not None:
             return self._flux_data
         else:
             fn = os.path.join(self.path, 'flux_data.npz')
             try:
-                if overwite:
+                if overwrite:
                     raise IOError
                 out = np.load(fn)['arr_0']
             except IOError:
