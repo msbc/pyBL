@@ -440,7 +440,7 @@ class BLfile(BLfileBase):
                 return fn
             return None
         if display:
-            print('Map of t/orb={:d}'.format(int(self.orbit+.5)))
+            print('    Map of t/orb={:d}'.format(int(self.orbit+.5)))
 
         data = self._parse_data(data)
         if type(data) != np.ndarray:
