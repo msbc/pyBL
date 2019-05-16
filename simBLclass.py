@@ -381,7 +381,7 @@ class BLfile(BLfileBase):
                vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                ax=None, log=False, aspect=1, sdir=None, smooth=None,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1,
-               overwrite=True):
+               overwrite=True, display=False):
         """Plot 2D sim data"""
         if fopt is None:
             fopt = {}
@@ -439,6 +439,8 @@ class BLfile(BLfileBase):
             if ret_fn:
                 return fn
             return None
+        if display:
+            print('Map of t/orb={:d}'.format(int(self.orbit+.5)))
 
         data = self._parse_data(data)
         if type(data) != np.ndarray:
@@ -3544,7 +3546,7 @@ class BLsim(object):
         with self.loadfile(file, -1) as bf:
             tf = int(bf.t / tau + .5)
         times = list(range(0, tf + 1, dt))
-        print(tf, dt, times)
+        #print(tf, dt, times)
         opt = dict(save=True, fopt=fopt, overwrite=overwrite, **popt)
         tn_fn = os.path.join(path, self.name + '_thumbnails.png')
         if overwrite and os.path.isfile(tn_fn):
@@ -3560,11 +3562,11 @@ class BLsim(object):
         init = None
         for i in times:
             i = int(i)
-            print('Map of t/orb={:d}'.format(i))
             with self.loadfile(file, i) as bf:
                 if i in inc:
                     ax = axs.pop(0)
-                    bf.plot2d(str(var_list[0]), ax=ax, cb=False, title=False)
+                    bf.plot2d(str(var_list[0]), ax=ax, cb=False, title=False,
+                              display=True)
                     x = self.r[-1] * 0.9
                     ax.text(-x, x, '{:02d}'.format(i), ha='left', va='top')
                     ax.set_yticklabels([])
@@ -3660,6 +3662,7 @@ class BLsim(object):
             if gmodes:
                 if not quiet: print('    Speed plots')
                 self.speed_plots(gmodes, tmark=t[:], overwrite=overwrite)
+            if not quiet: print('    Vortensity profiles')
             self.vortensity_profiles(save=True, overwrite=overwrite)
             if maps:
                 if not quiet: print('    Maps')
