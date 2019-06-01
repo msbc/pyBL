@@ -662,7 +662,7 @@ class BLfile(blc.BLfileBase):
         if rplot:
             rplot = np.atleast_1d(rplot)
             for r in rplot:
-                plt.plot(r * np.cos(self.phic), r * np.sin(self.phic), lw=1, c='1', ls=':')
+                plt.plot(r * np.sin(self.thetac), r * np.cos(self.thetac), lw=1, c='1', ls=':')
         self._labler(ax, pcm, cb=cb, **{k: opt.get(k) for k in ['title', 'cbl', 'cbopt']})
 
         plt.sca(ax)
