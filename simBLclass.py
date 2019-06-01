@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-from __future__ import absolute_import, division, print_function
+#from __future__ import absolute_import, division, print_function
 #from builtins import (bytes, str, open, super, range, zip, round, input, int, pow, object)
 #import h5py
 #from mayavi import mlab
@@ -381,7 +381,7 @@ class BLfile(BLfileBase):
                vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                ax=None, log=False, aspect=1, sdir=None, smooth=None,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1,
-               overwrite=True, display=False):
+               overwrite=True, display=False, minmax=True, txt_opt=None):
         """Plot 2D sim data"""
         if fopt is None:
             fopt = {}
@@ -400,12 +400,12 @@ class BLfile(BLfileBase):
             data = self._defvar
         if hasattr(data, 'lower'):
             if data in ['pseudo', 'Rpseudo'] and r_cut is None:
-                r_cut = .85
+                r_cut = 1.03
                 if vmax is None and vmin is None:
-                    vmin = 'smart'
+                    vmin = '99.5%'
             if data in ['vorticity', 'vortensity']:
                 if r_cut is None:
-                    r_cut = .9
+                    r_cut = 1.03
                 if zerocent is None:
                     zerocent = True
                 if vmax is None and vmin is None:
@@ -512,6 +512,19 @@ class BLfile(BLfileBase):
 
         #start plotting
         pcm = plt.pcolormesh(x, y, data, **_popt)
+        if minmax:
+            if r_cut is None:
+                r_cut = 1.03
+            dmin = data[:, self.rloc(r_cut):-5].min()
+            dmax = data[:, self.rloc(r_cut):-5].max()
+            txt = 'max: {0:.4g}\nmin: {1:.4g}'.format(dmax, dmin)
+            x = .99 * self.r[-1]
+            _txt_opt = dict(x=-x, y=x, ha='left', va='top')
+            try:
+                _txt_opt.update(txt_opt)
+            except TypeError:
+                pass
+            plt.text(_txt_opt.pop('x'), _txt_opt.pop('y'), txt, **_txt_opt)
         if rplot:
             rplot = np.atleast_1d(rplot)
             for r in rplot:
@@ -1951,7 +1964,7 @@ class BLsim(object):
         # CS
         ax = plt.subplot(411)
         for j in js:
-            plt.plot(t, 1e5 * self.mach**2 * data[:, 0, ilist[j]])
+            plt.plot(t, 1e6 * data[:, 0, ilist[j]])
         #plt.ylim(-.5e-4, 1e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$10^5C_S$')
@@ -2174,7 +2187,7 @@ class BLsim(object):
         gs = mpl.gridspec.GridSpec(3, 2, top=.93, left=.08, right=.98, bottom=.08, wspace=.15, hspace=.25)
         #fig, axs = plt.subplots(3, 2, figsize=figsize, top=.7)
 
-        # C_S, C_S,m zoom_in
+        # C_S, C_S,m
         ax0 = plt.subplot(gs[0,0])
         plt.plot(self.rc, cs, 'k-', label='$C_S$')
         for m in modes[:nm]:
@@ -2197,7 +2210,8 @@ class BLsim(object):
         ylim = plt.ylim()
         plt.plot(self.rc, cs, 'k-', label='$C_S$', zorder=0)
         plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls=':', label='sum', zorder=nm+2)
-        plt.xlim(self.r[0], 1.4)
+        cs_rmax = min(self.rc[cs.argmax()] * 1.01, 2)
+        plt.xlim(self.r[0], cs_rmax)
         plt.ylim(*ylim)
         #plt.legend(ncol=nm + 2, **lopt)
         plt.axhline(0, c='.5', ls=':', lw=1)
@@ -2214,54 +2228,75 @@ class BLsim(object):
         # C_L, C_A, C_S
         ax = plt.subplot(gs[1,0], sharex=ax0)
         keys = [i for i in data.keys() if i[0] == 'C' and len(i) == 2]
-        ymax = []
-        ymin = []
+        yu = []
+        yl = []
         for k in keys:
             opt = {'label': '${0:}_{1:}$'.format(*k)}
             if k == 'CS':
                 opt['c'] = 'k'
             plt.plot(self.rc, data[k][0], **opt)
-            ymax.append(np.real(data[k][0,ri:-5]).max())
-            ymin.append(np.real(data[k][0,ri:-5]).min())
+            yu.append(np.real(data[k][0,ri:-5]).max())
+            yl.append(np.real(data[k][0,ri:-5]).min())
         plt.legend(ncol=3, **lopt)
         plt.axhline(0, c='.5', ls=':', lw=1)
         plt.axvline(1, c='.5', ls=':', lw=1)
         plt.xlim(self.r[0], self.r[-1])
-        ymin, ymax = np.real(ymin).min(), np.real(ymax).max()
-        dy = (ymax - ymin) * .05
-        plt.ylim(ymin - dy, ymax + dy)
+        yl, yu = np.real(yl).min(), np.real(yu).max()
+        dy = (yu - yl) * .05
+        plt.ylim(yl - dy, yu + dy)
         #plt.xlabel('R')
         #plt.setp(ax.get_xticklabels(), visible=False)
 
         # d-rho, Omega
         ax = plt.subplot(gs[1,1], sharex=ax0)
         handles = list()
-        ymax = [data['drho'][ri:-5].max(), (data['vphi'] / self.rc)[ri:-5].max()]
-        ymin = [data['drho'][ri:-5].min(), (data['vphi'] / self.rc)[ri:-5].min()]
+        omega = data['vphi'] / self.rc
+        ok = self.rc ** -1.5
+        yu = [data['drho'][ri:-5].max(), omega[ri:-5].max()]
+        yl = [data['drho'][ri:-5].min(), omega[ri:-5].min()]
         handles.append(plt.plot(self.rc, data['drho'], label=r'$\delta\rho$', zorder=0))
-        handles.append(plt.plot(self.rc, data['vphi'] / self.rc, label=r'$\Omega$', zorder=1))
+        handles.append(plt.plot(self.rc, omega, label=r'$\Omega$', zorder=1))
         op = self.rc**-3
         op +=  self.mach**-2 * grad(self.rc, data['dens']) / (data['dens'] * self.rc)
         op = np.sqrt(op)
-        ymax.append(op[ri:-5].max())
-        ymin.append(op[ri:-5].min())
+        yu.append(op[ri:-5].max())
+        yl.append(op[ri:-5].min())
         handles.append(plt.plot(self.rc, op, label=r'$\Omega(P)$', ls='--', zorder=2))
         handles.append(plt.plot(self.rc, -1e3*data['vr']*self.mach, label=r'$-10^3v_r/c_s$', zorder=4))
-        ymax.append((-1e3 * self.mach * data['vr'])[ri:-5].max())
-        ymin.append((-1e3 * self.mach * data['vr'])[ri:-5].min())
+        yu.append((-1e3 * self.mach * data['vr'])[ri:-5].max())
+        yl.append((-1e3 * self.mach * data['vr'])[ri:-5].min())
         handles.insert(3,
-            plt.plot(self.rc, self.rc ** -1.5, label=r'$\Omega_{\rm k}$', lw=1, c='k',
-                     ls=':', zorder=3))
+            plt.plot(self.rc, ok, label=r'$\Omega_{\rm k}$', lw=1, c='k', ls=':',
+                     zorder=3))
         plt.legend(ncol=5, **lopt)
         plt.xlim(self.r[0], self.r[-1])
-        ymax = max(ymax) * 1.05
-        ymin = min(min(ymin) - .1 * ymax, 0)
-        plt.ylim(ymin, ymax)
+        yu = max(yu) * 1.05
+        yl = min(min(yl) - .1 * yu, 0)
+        plt.ylim(yl, yu)
         plt.axhline(0, c='.5', ls=':', lw=1)
         plt.axvline(1, c='.5', ls=':', lw=1)
         plt.xlabel('$R$')
         #ax.set_xticklabels([])
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+
+        # delta omega
+        ax = plt.subplot(gs[2, 1])
+        handles = list()
+        handles.append(
+            plt.plot(self.rc, ok - omega, label=r'$\Omega_{\rm K}-\Omega$', zorder=1))
+        handles.append(
+            plt.plot(self.rc, op - omega, label=r'$\Omega(P)-\Omega$', zorder=2))
+        plt.legend(ncol=2, **lopt)
+        a = 1.05
+        yu = min(max((ok - omega)[ri:-5].max() * a, (op - omega)[ri:-5].max()) * a, .025)
+        yl = max(min((ok - omega)[ri:-5].min() * a, (op - omega)[ri:-5].min()) * a, -.025)
+        plt.ylim(yl, yu)
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
+        xl = self.rc[np.where(np.isfinite(op))[0][1]] * .99
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
+        plt.xlim(xl, 2)
+        plt.xlabel('$R$')
 
         ax = plt.subplot(gs[2,0], sharex=ax0)
         plt.plot(self.rc, - data['Mdot'] * tau * self.rc, label=r'$\dot{M}$', c='k')
@@ -2279,12 +2314,12 @@ class BLsim(object):
         plt.axhline(0, c='.5', ls=':', lw=1)
         plt.axvline(1, c='.5', ls=':', lw=1)
         plt.legend(ncol=5, **lopt)
-        ymax = np.maximum(ycs, data['Mdot'])
-        ymax = ymax[ri:ri2].max() * 1.05
-        ymin = np.minimum(ydw, data['Mdot'])
-        ymin = min(ymin[ri:ri2].min() - .1 * ymax, 0)
+        yu = np.maximum(ycs, data['Mdot'])
+        yu = yu[ri:ri2].max() * 1.05
+        yl = np.minimum(ydw, data['Mdot'])
+        yl = min(yl[ri:ri2].min() - .1 * yu, 0)
         ylim = plt.ylim()
-        ylim = plt.ylim(max(ylim[0], ymin), min(ylim[1], ymax))
+        ylim = plt.ylim(max(ylim[0], yl), min(ylim[1], yu))
         #print(ylim)
         yl = 2e-4
         #plt.ylim(-yl, yl)
@@ -2292,31 +2327,32 @@ class BLsim(object):
         #plt.setp(ax.get_xticklabels(), visible=False)
         plt.xlabel('$R$')
 
-        ax = plt.subplot(gs[2,1])
-        plt.xticks([], [])
-        plt.yticks([], [])
-        one = self.rloc(1)
-        mdot = data['Mdot'] * tau * self.rc
-        info = [['C_S', data['CS'][0,one]],
-               ['C_A', data['CA'][0,one]],
-               ['C_L', data['CL'][0,one]],
-               [r'\dot{M}', mdot[one]],
-               [r'\alpha_{\rm eff}', data['CS'][0,one] * self.mach**2 /
-                (tau * self.rc[one]**2 * data['dens'][0, one])]
-               ]
-        info = ['$' + i[0] + '(R=1)=$'+ '{0:.3g}'.format(np.real(i[1])) for i in info]
-        info.append(r'$\dot{M}(R_{\rm min})=$' + '{0:.3g}'.format(mdot[0]))
-        info.append(r'$\dot{M}(R_{\rm max})=$' + '{0:.3g}'.format(mdot[-8:-2].mean()))
-        integrand = data['drho'] * self.rc * self.dr
-        info.append(r'$2\pi\int r\delta\rho dr=$' + '{0:.3g}'.format(tau*np.sum(integrand)))
-        tmp = self.rc[self.rc<1][np.argmin(np.abs(data['drho'][self.rc<1]))]
-        tmp = r'$2\pi\int_{'+'{:.2g}'.format(tmp)+r'}^4 r\delta\rho dr=$' + '{0:.3g}'.format(tau*np.sum(integrand[self.rloc(tmp):]))
-        info.append(tmp)
-        ncol = 2
-        for i, s in enumerate(info):
-            ix = i % ncol
-            iy = i // ncol
-            plt.text(.9 / ncol * ix + .05, .88 - .12 * iy, s)
+        print_info = 0
+        if print_info:
+            plt.xticks([], [])
+            plt.yticks([], [])
+            one = self.rloc(1)
+            mdot = data['Mdot'] * tau * self.rc
+            info = [['C_S', data['CS'][0,one]],
+                   ['C_A', data['CA'][0,one]],
+                   ['C_L', data['CL'][0,one]],
+                   [r'\dot{M}', mdot[one]],
+                   [r'\alpha_{\rm eff}', data['CS'][0,one] * self.mach**2 /
+                    (tau * self.rc[one]**2 * data['dens'][0, one])]
+                   ]
+            info = ['$' + i[0] + '(R=1)=$'+ '{0:.3g}'.format(np.real(i[1])) for i in info]
+            info.append(r'$\dot{M}(R_{\rm min})=$' + '{0:.3g}'.format(mdot[0]))
+            info.append(r'$\dot{M}(R_{\rm max})=$' + '{0:.3g}'.format(mdot[-8:-2].mean()))
+            integrand = data['drho'] * self.rc * self.dr
+            info.append(r'$2\pi\int r\delta\rho dr=$' + '{0:.3g}'.format(tau*np.sum(integrand)))
+            tmp = self.rc[self.rc<1][np.argmin(np.abs(data['drho'][self.rc<1]))]
+            tmp = r'$2\pi\int_{'+'{:.2g}'.format(tmp)+r'}^4 r\delta\rho dr=$' + '{0:.3g}'.format(tau*np.sum(integrand[self.rloc(tmp):]))
+            info.append(tmp)
+            ncol = 2
+            for i, s in enumerate(info):
+                ix = i % ncol
+                iy = i // ncol
+                plt.text(.9 / ncol * ix + .05, .88 - .12 * iy, s)
 
 
         title = ''
