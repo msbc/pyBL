@@ -4216,6 +4216,7 @@ def sims_within(path, nmin=50):
     return out
 
 if __name__ == '__main__':
+    np.warnings.filterwarnings('ignore')
     parser = argparse.ArgumentParser()
     parser.add_argument('-m', '--maps',
                         default=False,
