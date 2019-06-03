@@ -3327,7 +3327,9 @@ class BLsim(object):
             plt.figure()
         plt.plot(self.rc, self.effective_m(tmin))
         plt.ylabel(r'$m_{\rm eff}$')
-        plt.xlim(r'$R$')
+        plt.xlabel(r'$R$')
+        plt.xlim(self.r[0], self.r[-1])
+        plt.axvline(1, c='.5', ls=':', lw=1)
         if save:
             plt.savefig(fn)
             plt.close()
@@ -3729,6 +3731,8 @@ class BLsim(object):
             if not quiet: print('    Diagnostic')
             self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:],
                             overwrite=overwrite)
+            if not quiet: print('    m_eff')
+            self.m_eff_plot(save=True, overwrite=overwrite)
             if not quiet: print('    My fft')
             self.my_fft_plots(diag=False, quiet=True, sdir=True, overwrite=overwrite)
             if not quiet: print('    Flux vs time')
