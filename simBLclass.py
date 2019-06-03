@@ -767,7 +767,7 @@ class BLConsPrim(BL3Dfile):
                     os.mkdir(sdir)
                 fn = os.path.join(sdir, fn)
         if parse_not_overwrite(overwrite, fn):
-            return init, None
+            return init
 
         if init is None:
             if self.t == 0:
