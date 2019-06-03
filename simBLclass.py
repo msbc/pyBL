@@ -3604,7 +3604,7 @@ class BLsim(object):
                     bf.plot2d(str(var_list[0]), ax=ax, cb=False, title=False,
                               display=True)
                     x = self.r[-1] * 0.9
-                    ax.text(-x, x, '{:02d}'.format(i), ha='left', va='top')
+                    ax.text(x, x, '{:02d}'.format(i), ha='right', va='top')
                     ax.set_yticklabels([])
                     ax.set_xticklabels([])
                     ax.tick_params(direction="in")
