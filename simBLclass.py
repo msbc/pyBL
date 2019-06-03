@@ -1465,7 +1465,7 @@ class IncrementalFFT(object):
             nphi = self.sim.inputs['meshblock']['nx2']
         nr = first.rc.size
         del first
-        with open(fn, 'r') as f:
+        with open(fn, 'rb') as f:
             offset = - 4 * (nvar * nphi * nr + 1)
             f.seek(offset, os.SEEK_END)
             t = np.fromfile(f, 'float32', 1)[0]
@@ -2210,7 +2210,7 @@ class BLsim(object):
         ylim = plt.ylim()
         plt.plot(self.rc, cs, 'k-', label='$C_S$', zorder=0)
         plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls=':', label='sum', zorder=nm+2)
-        cs_rmax = min(self.rc[cs.argmax()] * 1.01, 2)
+        cs_rmax = max(min(self.rc[cs.argmax()] * 1.01, 2), 1.2)
         plt.xlim(self.r[0], cs_rmax)
         plt.ylim(*ylim)
         #plt.legend(ncol=nm + 2, **lopt)
@@ -2901,7 +2901,8 @@ class BLsim(object):
 
     def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None, std_plot=False,
                          ret_m=None, smooth=False, sw=20, std=None, rsmooth=None, fn=None,
-                         save=None, ext='pdf', cout=None, add_max=None):
+                         save=None, ext='pdf', cout=None, add_max=None, title=True,
+                         xlbl=True):
         ir = self.rloc(r)
         rslice = ir
         r = self.rc[ir]
@@ -2957,17 +2958,19 @@ class BLsim(object):
         leg = plt.legend(handles, lbls, **opt)
         for legobj in leg.legendHandles:
             legobj.set_linewidth(2.0)
-        plt.xlabel(r'Time/$2\pi$')
+        if xlbl:
+            plt.xlabel(r'Time/$2\pi$')
         #plt.ylabel('Phase')
         ax = plt.gca()
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
-        plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
+        if title:
+            plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
         plt.xlim(np.floor(self.fft_time[0] / tau), np.ceil(self.fft_time[-1] / tau))
         if cout:
             return cd
 
     def r_speed(self, r, fig=True, save=None, fn=None, ext='pdf', tmark=None,
-                overwrite=True, **kwarg):
+                overwrite=True, ylbl=True, **kwarg):
         if fn and save is None:
             save = True
         if save and fn is None:
@@ -3010,13 +3013,14 @@ class BLsim(object):
                 plt.plot(x, y, c=c)
             plt.xlim(*xlim)
             plt.ylim(*ylim)
-        plt.ylabel('Speed')
+        if ylbl:
+            plt.ylabel('Speed')
         if save:
             plt.savefig(fn)
             plt.close()
         return None
 
-    def r_amp(self, r, fig=True, **kwarg):
+    def r_amp(self, r, fig=True, ylbl=True, **kwarg):
         if not 'smooth' in kwarg:
             kwarg['smooth'] = 'flat'
             if not 'sw' in kwarg:
@@ -3038,7 +3042,8 @@ class BLsim(object):
         plt.ylim(0, None)
         if m0 > 1.2 * m1:
             plt.ylim(None, 1.1 * m1)
-        plt.ylabel('Amplitude')
+        if ylbl:
+            plt.ylabel('Amplitude')
         return None
 
     def _t_phase_plotter(self, data, ret_m=False, sort=True, sdata=None,
@@ -3210,9 +3215,11 @@ class BLsim(object):
             helpers.mkmov(fnames="")
         return None
 
-    def diagnostic(self, rs=[-1, 1.2], save=False, fn=None, ext='png', figsize=None,
-                   sdir=None, subsample=None, sz=4, xmax=2.5, dpi=300, modes=None,
+    def diagnostic(self, rs=None, save=False, fn=None, ext='png', figsize=None,
+                   sdir=None, subsample=None, sz=3.5, xmax=2.5, dpi=300, modes=None,
                    add_modes=None, tmark=None, add_max=None, overwrite=True):
+        if rs is None:
+            rs = [-1, 1.2, 2.0]
         if save or fn:
             save = True
             if fn is None:
@@ -3230,29 +3237,36 @@ class BLsim(object):
         nx = nr + 1
         ny = 2
         if figsize is None:
-            figsize = (nx * sz, ny * sz)
+            figsize = (nx * sz + 1, ny * sz + 1)
         if dpi:
             fig = plt.figure(figsize=figsize, dpi=dpi)
         else:
             fig = plt.figure(figsize=figsize)
-        gs = mpl.gridspec.GridSpec(ny, nx, top=.9, bottom=.1, hspace=.3)
+        fsx, fsy = figsize
+        gs = mpl.gridspec.GridSpec(ny, nx,
+                                   top=1 - .75 / fsy, bottom=.5 / fsy,
+                                   left=.75 / fsx, right=1 - .75 / fsx,
+                                   hspace=.1, wspace=.15)
 
         ropt = dict(modes=modes, add_modes=add_modes, add_max=add_max, fig=False)
         for i, r in enumerate(rs):
+            ylbl = not i
             if r == -1:
                 r = .5 + .5 * self.rc[0]
             ax = plt.subplot(gs[0,i])
             plt.sca(ax)
-            self.r_amp(r, **ropt)
+            self.r_amp(r, xlbl=False, ylbl=ylbl, **ropt)
 
             ax = plt.subplot(gs[1,i])
             plt.sca(ax)
-            self.r_speed(r, tmark=tmark, **ropt)
+            self.r_speed(r, ylbl=ylbl, tmark=tmark, title=False, **ropt)
 
         ax = plt.subplot(gs[0,nr])
         f = self.loadfile(self.files('cons')[-1])
-        f.plot2d('Rpseudo', ax=ax, vmin='smart', cbl=r'$rv_r\sqrt{\rho}$', subsample=subsample,
-                 title=r'$t/2\pi={:.2f}$'.format(f.t / tau))
+        txt_opt = dict(x=.99 * xmax, y=1.01 * xmax, va='bottom', ha='right')
+        f.plot2d('Rpseudo', ax=ax, vmin='smart', cbl=r'$rv_r\sqrt{\rho}$',
+                 subsample=subsample, title=r'$t/2\pi={:.2f}$'.format(f.t / tau),
+                 txt_opt=txt_opt)
         plt.xlim(-xmax, xmax)
         plt.ylim(-xmax, xmax)
         fig.suptitle('Diagnostic for ' + helpers.sanitize_lbl(self.name))
@@ -3616,7 +3630,7 @@ class BLsim(object):
                     sdir = os.path.join(path, var)
                     if var == 'd_vortensity':
                         init = bf.plt_vortensity(vmax=True, save=True, init=init,
-                                                 overwrite=overwrite, sdir=sdir)[0]
+                                                 overwrite=overwrite, sdir=sdir)
                     else:
                         bf.plot2d(var, sdir=sdir, **opt)
         if thumbnail:
