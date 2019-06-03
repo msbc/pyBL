@@ -3310,11 +3310,19 @@ class BLsim(object):
             return fn
         return None
 
-    def effective_m(self, tmin=100):
+    def effective_m(self, tmin=100, mmin=0):
         power = (self.amp**2)[tmin:].mean(axis=0)
-        power[0, :] = 0
+        power[:mmin + 1, :] = 0
         modes = np.arange(power.shape[0])[:, np.newaxis] * np.ones_like(power)
         return np.average(modes, axis=0, weights=power)
+
+    def effective_m2(self, tmin=100, mmin=0):
+        power = (self.amp**2)[tmin:]
+        power[:, :mmin + 1, :] = 0
+        na = np.newaxis
+        modes = np.arange(power.shape[1])[na, :, na] * np.ones_like(power)
+        #return np.average(modes, axis=(1, 0), weights=power)
+        return np.mean(np.sum(modes * power, axis=1) / power.sum(axis=1), axis=0)
 
     def m_eff_plot(self, tmin=100, fig=True, save=None, fn=None, overwrite=True):
         if fn and save is None:
@@ -3325,7 +3333,11 @@ class BLsim(object):
             return None
         if fig is True:
             plt.figure()
-        plt.plot(self.rc, self.effective_m(tmin))
+        line = plt.plot(self.rc, self.effective_m(tmin))[0]
+        plt.plot(self.rc, self.effective_m(tmin, mmin=2), c=line.get_color(), ls=':')
+        line = plt.plot(self.rc, self.effective_m2(tmin))[0]
+        plt.plot(self.rc, self.effective_m2(tmin, mmin=2), c=line.get_color(), ls=':')
+        plt.legend(['$m>0$ time-first', '$m>2$ time-first', '$m>0$', '$m>2$'])
         plt.ylabel(r'$m_{\rm eff}$')
         plt.xlabel(r'$R$')
         plt.xlim(self.r[0], self.r[-1])
