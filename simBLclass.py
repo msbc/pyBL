@@ -3616,7 +3616,7 @@ class BLsim(object):
                     sdir = os.path.join(path, var)
                     if var == 'd_vortensity':
                         init = bf.plt_vortensity(vmax=True, save=True, init=init,
-                                                 overwrite=overwrite, sdir=sdir)
+                                                 overwrite=overwrite, sdir=sdir)[0]
                     else:
                         bf.plot2d(var, sdir=sdir, **opt)
         if thumbnail:
