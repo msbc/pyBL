@@ -3310,6 +3310,30 @@ class BLsim(object):
             return fn
         return None
 
+    def effective_m(self, tmin=100):
+        power = (self.amp**2)[tmin:].mean(axis=0)
+        power[0, :] = 0
+        modes = np.arange(power.shape[0])[:, np.newaxis] * np.ones_like(power)
+        return np.average(modes, axis=0, weights=power)
+
+    def m_eff_plot(self, tmin=100, fig=True, save=None, fn=None, overwrite=True):
+        if fn and save is None:
+            save = True
+        if save and fn is None:
+            fn = helpers.sanitize_lbl(self.name) + '_m_eff.pdf'
+        if parse_not_overwrite(overwrite, fn):
+            return None
+        if fig is True:
+            plt.figure()
+        plt.plot(self.rc, self.effective_m(tmin))
+        plt.ylabel(r'$m_{\rm eff}$')
+        plt.xlim(r'$R$')
+        if save:
+            plt.savefig(fn)
+            plt.close()
+            return fn
+        return None
+
     def gatherVort(self):
         out = {i: [] for i in ['vorticity', 'vortensity', 'dvorticity', 'dvortensity']}
         i = 0
