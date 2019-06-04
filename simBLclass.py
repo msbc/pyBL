@@ -4393,11 +4393,10 @@ def _old_mkplots(sims=None, path='', ext='png'):
             print('\n!!! Error\nUnable To finish Simulation {0:}.'.format(name))
 
 def mk_sim_tbl(sep=' & ', end_line=r'\\'):
-    sims = []
-    for mach in range(5, 16):
-        for res in ['LR', 'FR', 'HR']:
+    for res in ['LR', 'FR', 'HR']:
+        for mach in range(5, 16):
             qry = 'M{0:02d}.{1:}.*'.format(mach, res)
-            sims += sorted(glob(qry))
+            sims = sorted(glob(qry))
             for sim in sims:
                 print(sep.join(BLsim(sim).info_row()) + end_line)
     return None
