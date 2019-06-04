@@ -2778,11 +2778,11 @@ class BLsim(object):
             fig.savefig(fn)
             plt.close()
 
-    def main_modes(self, nm=None, skip_zero=True, rmax=1.7):
+    def main_modes(self, nm=None, skip_zero=True, rmax=2.2):
         if self._main_modes is None:
             fft = self.fft * self.rc[np.newaxis, np.newaxis, :]
             amp = self.amp.copy()
-            amp[:, :, np.where(self.rc > 1.7)[0]] = 0
+            amp[:, :, np.where(self.rc > rmax)[0]] = 0
             if self.fft_time[-1] < 200:
                 nt = self.fft_time.size
                 a = self.intr(amp[nt//2:].sum(axis=0))
