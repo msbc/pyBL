@@ -1981,7 +1981,7 @@ class BLsim(object):
         # Mdot
         plt.subplot(412, sharex=ax)
         for j in js:
-            plt.plot(t, 1e6 * data[:, 3, ilist[j]])
+            plt.plot(t, -1e6 * data[:, 3, ilist[j]])
         #plt.ylim(-.5e-4, 2e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$10^6\dot{M}$')
