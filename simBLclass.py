@@ -3980,8 +3980,8 @@ class modeData(object):
                     if t1 >= run.shape[1] - 1:
                         break
                 if t1 - t0 >= nbin:
-                    t0 = tlist[t0]
-                    t1 = tlist[t1+1]
+                    t0 = tlist[t0] / tau
+                    t1 = tlist[t1+1] / tau
                     out[z[0]].append([z[2], t0, t1, w])
         self.mode_data = [np.array(i) for i in out]
 
@@ -4399,6 +4399,7 @@ def mk_sim_tbl(sep=' & ', end_line=r'\\'):
             sims = sorted(glob(qry))
             for sim in sims:
                 print(sep.join(BLsim(sim).info_row()) + end_line)
+        print(r'\hline')
     return None
 
 def sims_within(path, nmin=50):
