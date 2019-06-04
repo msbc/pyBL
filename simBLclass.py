@@ -4393,8 +4393,8 @@ def _old_mkplots(sims=None, path='', ext='png'):
             print('\n!!! Error\nUnable To finish Simulation {0:}.'.format(name))
 
 def mk_sim_tbl(sep=' & ', end_line=r'\\'):
-    for res in ['LR', 'FR', 'HR']:
-        for mach in range(5, 16):
+    for mach in range(5, 16):
+        for res in ['LR', 'FR', 'HR']:
             qry = 'M{0:02d}.{1:}.*'.format(mach, res)
             sims = sorted(glob(qry))
             for sim in sims:
@@ -4439,23 +4439,24 @@ if __name__ == '__main__':
     args = parser.parse_args()
     if args.tbl:
         print(mk_sim_tbl())
-    path = os.path.expanduser(args.path)
-    quiet = args.quiet
-    tmp = os.path.join(path, 'M{0:}.*')
-    d = '[0-9]'
-    print(tmp.format(d))
-    sims = sorted(glob(tmp.format(d)) + glob(tmp.format(d*2)))
-    if args.i is not None:
-        sims = [sims[args.i]]
-    print(sims)
-    if not sims:
-        raise RuntimeError('No sims found.')
-    if len(sims) > 1:
-        if quiet is None:
-            quiet = True
-        mkplots(sims, maps=args.maps, overwrite=args.overwrite)
     else:
-        if quiet is None:
-            quiet = False
-        BLsim(sims[0]).main_plots(quiet=quiet, working_dir=True, maps=args.maps,
-                                  overwrite=args.overwrite)
+        path = os.path.expanduser(args.path)
+        quiet = args.quiet
+        tmp = os.path.join(path, 'M{0:}.*')
+        d = '[0-9]'
+        print(tmp.format(d))
+        sims = sorted(glob(tmp.format(d)) + glob(tmp.format(d*2)))
+        if args.i is not None:
+            sims = [sims[args.i]]
+        print(sims)
+        if not sims:
+            raise RuntimeError('No sims found.')
+        if len(sims) > 1:
+            if quiet is None:
+                quiet = True
+            mkplots(sims, maps=args.maps, overwrite=args.overwrite)
+        else:
+            if quiet is None:
+                quiet = False
+            BLsim(sims[0]).main_plots(quiet=quiet, working_dir=True, maps=args.maps,
+                                      overwrite=args.overwrite)
