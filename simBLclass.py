@@ -1126,7 +1126,14 @@ class BLFT(BLfile):
             return np.angle(self['FT'])
         if 'FT-' + key + '-Re' in self.data:
             return self._special_keys('FT-' + key)
+        if key == 'CS':
+            return self.CS()
         return None
+
+    def CS(self):
+        r2 = tau * self.rc[np.newaxis, :] ** 2
+        u = self['FT-vel2']
+        return r2 * (self['FT-CL'] - u[0][np.newaxis, :] * self['FT-Mdot'])
 
     def fluxes(self):
         u = self['FT-vel2']
@@ -3215,6 +3222,9 @@ class BLsim(object):
             helpers.mkmov(fnames="")
         return None
 
+    def mid_star(self):
+        return .5 + .5 * self.r[0]
+
     def diagnostic(self, rs=None, save=False, fn=None, ext='png', figsize=None,
                    sdir=None, subsample=None, sz=3.5, xmax=2.5, dpi=300, modes=None,
                    add_modes=None, tmark=None, add_max=None, overwrite=True):
@@ -3252,7 +3262,7 @@ class BLsim(object):
         for i, r in enumerate(rs):
             ylbl = not i
             if r == -1:
-                r = .5 + .5 * self.rc[0]
+                r = self.mid_star()
             ax = plt.subplot(gs[0,i])
             plt.sca(ax)
             self.r_amp(r, xlbl=False, ylbl=ylbl, **ropt)
@@ -3342,6 +3352,114 @@ class BLsim(object):
         plt.xlabel(r'$R$')
         plt.xlim(self.r[0], self.r[-1])
         plt.axvline(1, c='.5', ls=':', lw=1)
+        if save:
+            plt.savefig(fn)
+            plt.close()
+            return fn
+        return None
+
+    def mode_time(self, r, fig=True, save=None, fn=None, overwrite=True, figsize=None,
+                   dpi=None, log=True, vmin='3oom', vmax='99.9%', norm=None, cmap=None,
+                   t_cut=None, cb=True, cbl=True, cbopt=None, popt=None, sdir=None,
+                   interpolation='nearest', title=True, xlbl=True):
+        if r == -1:
+            r = self.mid_star()
+        ir = self.rloc(r)
+        r = self.rc[ir]
+        if fn and save is None:
+            save = True
+        if save and fn is None:
+            fn = helpers.sanitize_lbl(self.name) + '_mode_time_r_{0:.2e}.pdf'.format(r)
+            if sdir:
+                if not os.path.isdir(sdir):
+                    os.makedirs(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            return None
+
+        data = self.amp[:, :, ir].T ** 2
+        vmin, vmax = helpers.parse_smartlim(data, vmin, vmax, x_cut=t_cut)
+        if vmax:
+            if vmin[-3:] == 'oom':
+                vmin = vmax * 10**-int(vmin[:-3])
+        if log:
+            if norm is None:
+                norm = mpl.colors.LogNorm()
+
+
+        if fig is True:
+            if figsize is None:
+                figsize = 6, 4
+            if dpi is None:
+                dpi = 150
+                if save:
+                    dpi = 300
+            fig = plt.figure(figsize=figsize, dpi=dpi)
+
+        extent = [0, data.shape[1], -.5, data.shape[0] - .5]
+        _popt = dict(vmin=vmin, vmax=vmax, norm=norm, cmap=cmap, extent=extent,
+                     interpolation=interpolation)
+        if popt is not None:
+            _popt.update(popt)
+        im = plt.imshow(data, **_popt)
+        plt.gca().yaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        plt.gca().xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
+        plt.gca().xaxis.set_major_locator(mpl.ticker.MultipleLocator(100))
+        if xlbl:
+            plt.xlabel(r'$t / 2\pi$')
+        plt.ylabel('$m$')
+        if title is True:
+            title = helpers.sanitize_lbl(self.name) + ' $R=${0:.3g}'.format(r)
+        if title:
+            plt.title(title)
+        if cb:
+            if cbopt is None:
+                cbopt = dict()
+            cb = plt.colorbar(im, **cbopt)
+            if cbl is True:
+                cbl = 'Power'
+            if cbl:
+                cb.set_label(cbl)
+        if save:
+            plt.savefig(fn)
+            plt.close()
+            return fn
+        return None
+
+    def mulit_mode_time(self, rlist=None, save=None, fn=None, overwrite=True,
+                        figsize=None, dpi=None, sdir=None, sz=3.5):
+        if fn and save is None:
+            save = True
+        if save and fn is None:
+            fn = helpers.sanitize_lbl(self.name) + '_mode_time_multi.pdf'
+            if sdir:
+                if not os.path.isdir(sdir):
+                    os.makedirs(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            return None
+
+        if rlist is None:
+            rlist = [self.mid_star(), 1.2, 2.0]
+        nr = len(rlist)
+
+        if figsize is None:
+            figsize = 7.5,  nr * sz + 1
+        if dpi is None:
+            dpi = 150
+            if save:
+                dpi = 300
+        fsx, fsy = figsize
+        spacing = dict(top=1 - .5 / fsy, bottom=.5 / fsy,
+                       left=.5 / fsx, right=1,
+                       hspace=.1, wspace=.15)
+        fig, axs = plt.subplots(nr, 1, figsize=figsize, dpi=dpi, gridspec_kw=spacing)
+        for i, r in enumerate(rlist):
+            plt.sca(axs[i])
+            cbl = r'Power ($R=${0:.3g})'.format(r)
+            self.mode_time(r, title=False, xlbl=False, cbl=cbl, fig=False)
+        plt.xlabel(r'$t / 2\pi$')
+        fig.suptitle(helpers.sanitize_lbl(self.name))
         if save:
             plt.savefig(fn)
             plt.close()
@@ -3439,7 +3557,7 @@ class BLsim(object):
         pcm = plt.pcolormesh(x, y, data, **_popt)
         plt.colorbar()
 
-        plt.xlabel('$t / 2\pi$')
+        plt.xlabel(r'$t / 2\pi$')
         plt.ylabel('$r$')
 
     def tVort(self, data, t, save=False):
@@ -3608,7 +3726,7 @@ class BLsim(object):
 
     def get_speed(self, m, t0, dt=50, r=-1, dr=10, fmt='.3f'):
         if r == -1:
-            r = self.rc[0] * .5 + .5
+            r = self.mid_star()
         rl = self.rloc(r)
         loc = [slice(t0, t0 + dt), m, slice(rl, rl + dr)]
         out = np.average(self.speed[loc], weights=self.fft_data._speed_std[loc]**-2)
@@ -3734,6 +3852,8 @@ class BLsim(object):
         pwd = os.getcwd()
         try:
             os.chdir(working_dir)
+            #if not quiet: print('    FFT CS')
+            #self.load_fft_data('CS')
             if not quiet: print('    Mode detect')
             md = self.mode_detect()
             md.write()
@@ -3745,6 +3865,8 @@ class BLsim(object):
                             overwrite=overwrite)
             if not quiet: print('    m_eff')
             self.m_eff_plot(save=True, overwrite=overwrite)
+            if not quiet: print('    multi_mode_time')
+            self.mulit_mode_time(save=True, overwrite=overwrite)
             if not quiet: print('    My fft')
             self.my_fft_plots(diag=False, quiet=True, sdir=True, overwrite=overwrite)
             if not quiet: print('    Flux vs time')

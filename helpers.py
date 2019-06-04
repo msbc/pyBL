@@ -208,6 +208,37 @@ def smartlim(dat, low=10, high=90):#, axis=None):
     if ymin < .5*yl : ymin = yl
   return np.array([ymin, ymax])
 
+
+def parse_smartlim(data, vmin=None, vmax=None, x_cut=None, y_cut=None):
+    tmp = {}
+
+    try:
+        if '%' == vmin[-1]:
+            tmp['low'] = float(vmin[:-1])
+            vmin = 'smart'
+    except TypeError:
+        pass
+    try:
+        if '%' == vmax[-1]:
+            tmp['high'] = float(vmax[:-1])
+            vmax = 'smart'
+    except (TypeError, IndexError):
+        pass
+    if 'smart' in [vmin, vmax]:
+        xloc = slice(None)
+        if x_cut:
+            xloc = slice(x_cut, None)
+        yloc = slice(None)
+        if y_cut:
+            yloc = slice(y_cut, None)
+        tmp = smartlim(data[yloc, xloc], **tmp)
+        if vmin == 'smart':
+            vmin = tmp[0]
+        if vmax == 'smart':
+            vmax = tmp[1]
+    return vmin, vmax
+
+
 def derivative(var, axis=0, dx=1.):
   '''Usage : derivative(var, axis=0, dx=1.)
   Take dirivatives along axis that are regularly spaced with spacing dx.'''
