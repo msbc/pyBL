@@ -4398,8 +4398,9 @@ def mk_sim_tbl(sep=' & ', end_line=r'\\'):
         for res in ['LR', 'FR', 'HR']:
             qry = 'M{0:02d}.{1:}.*'.format(mach, res)
             sims += sorted(glob(qry))
-    out = comp_wrapper('info_row', sims)
-    return '\n'.join([sep.join(i) + end_line for i in out])
+            for sim in sims:
+                print(sep.join(BLsim(sim).info_row()) + end_line)
+    return None
 
 def sims_within(path, nmin=50):
     out = []
