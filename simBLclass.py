@@ -58,6 +58,9 @@ _ext = ['athdf', 'npy']
 #_file_fmts = ['BL.out2.%5.5d.athdf', 'disk.out1.%5.5d.athdf']
 _int_fmt = '%5.5d'
 _file_fmts = ['.'.join([a, 'out' + b, _int_fmt, c]) for a in _pre for b in _i for c in _ext]
+_seed_type = {'r': 'block-random', 'random': 'globally random',
+              'mix': 'block-phased-mixed', 'prime': 'prime modes'}
+#_res_type = dict(LR='low res')
 
 def line_plt(p1, p2, **popt):
     if p1[0] == p2[0]:
@@ -1851,7 +1854,13 @@ class BLsim(object):
         self._sfd = sfd
         # End init
 
-    def _map_asist(self, fn, func, args, kwargs):
+    def info_row(self):
+        M, res, seed, suffix = self.name.split('.')
+        seed = _seed_type.get(seed, seed)
+        return [str(i) for i in [self.name, int(self.mach), '%.3g' % self.r[0],
+                                 self.rc.size, self.phic.size, seed]]
+
+    def _map_assist(self, fn, func, args, kwargs):
         try:
             fn.fn
         except AttributeError:
@@ -1874,10 +1883,10 @@ class BLsim(object):
             pass
         if ll:
             def f(fn):
-                return self._map_asist(fn, func, args, kwargs)
+                return self._map_assist(fn, func, args, kwargs)
             out = parmap(f, files)
         else:
-            out = [self._map_asist(fn, func, args, kwargs) for fn in files]
+            out = [self._map_assist(fn, func, args, kwargs) for fn in files]
         return out
 
     def _mk_flux_data(self, ll=True):
@@ -4383,6 +4392,15 @@ def _old_mkplots(sims=None, path='', ext='png'):
             name = getattr(sim, 'name', sim)
             print('\n!!! Error\nUnable To finish Simulation {0:}.'.format(name))
 
+def mk_sim_tbl(sep=' & ', end_line=r'\\'):
+    sims = []
+    for mach in range(5, 16):
+        for res in ['LR', 'FR', 'HR']:
+            qry = 'M{0:02d}.{1:}.*'.format(mach, res)
+            sims += sorted(glob(qry))
+    out = comp_wrapper('info_row', sims)
+    return '\n'.join([sep.join(i) + end_line for i in out])
+
 def sims_within(path, nmin=50):
     out = []
     for x in os.walk(path):
@@ -4410,11 +4428,17 @@ if __name__ == '__main__':
                         default=None,
                         action='store_true',
                         help='Minimize output to stdout')
+    parser.add_argument('-t', '--tbl',
+                        default=None,
+                        action='store_true',
+                        help='Print simulation table (and nothing else)')
     parser.add_argument('-i',
                         type=int,
                         default=None,
                         help='Simulation index')
     args = parser.parse_args()
+    if args.tbl:
+        print(mk_sim_tbl())
     path = os.path.expanduser(args.path)
     quiet = args.quiet
     tmp = os.path.join(path, 'M{0:}.*')
