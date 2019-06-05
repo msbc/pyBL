@@ -1980,7 +1980,7 @@ class BLsim(object):
         # CS
         ax = plt.subplot(411)
         for j in js:
-            plt.plot(t, 1e6 * data[:, 0, ilist[j]])
+            plt.plot(t, 1e6 * data[:, 0, ilist[j]], zorder=-j)
         #plt.ylim(-.5e-4, 1e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$10^5C_S$')
@@ -1990,7 +1990,7 @@ class BLsim(object):
         # Mdot
         plt.subplot(412, sharex=ax)
         for j in js:
-            plt.plot(t, -1e6 * data[:, 3, ilist[j]])
+            plt.plot(t, -1e6 * data[:, 3, ilist[j]], zorder=-j)
         #plt.ylim(-.5e-4, 2e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$10^6\dot{M}$')
@@ -1999,7 +1999,7 @@ class BLsim(object):
         # dS
         plt.subplot(413, sharex=ax)
         for j in js:
-            plt.semilogy(t, np.sqrt(data[:, 4, ilist[j]]))
+            plt.semilogy(t, np.sqrt(data[:, 4, ilist[j]]), zorder=-j)
         #plt.ylim(-.001, .01)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$\left<\Sigma^2\right>/\left<\Sigma\right>^2-1$')
@@ -4016,7 +4016,7 @@ class modeData(object):
             f.write('\n'.join(out))
         return
 
-    def plot(self, save=False, fn=None, ext='pdf', inc_global=True):
+    def plot(self, save=False, fn=None, ext='pdf', inc_global=True, show_pl=True):
         markers = 'o','+','x','.'
         lbls = []
         for i, r in enumerate(self.r):
@@ -4034,6 +4034,13 @@ class modeData(object):
         plt.gca().xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
         plt.xlabel('mode')
         plt.ylabel(r'$\Omega_{\rm p}$')
+        if show_pl:
+            xlim = plt.xlim()
+            ylim = plt.ylim()
+            _x = np.linspace(xlim[0], xlim[1], 100)
+            plt.plot(_x, .3 * _x**(1./3.), c='.5', ls=':', lw=1, zorder=-1)
+            plt.xlim(*xlim)
+            plt.ylim(*ylim)
         if save or fn:
             if fn is None:
                 fn = self.sim.name + '_dispersion.' + ext
