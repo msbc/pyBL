@@ -4034,6 +4034,8 @@ class modeData(object):
         plt.gca().xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
         plt.xlabel('mode')
         plt.ylabel(r'$\Omega_{\rm p}$')
+        if self.sim is not None:
+            plt.title(helpers.sanitize_lbl(self.sim.name))
         if show_pl:
             xlim = plt.xlim()
             ylim = plt.ylim()
@@ -4356,8 +4358,9 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
 
     return parallel_compile(mapper, arglist=simlist, T=T)
 
-def mkplots(simlist=None, maps=False, overwrite=True):
-    opt = dict(quiet=True, working_dir=True, maps=maps, overwrite=overwrite)
+def mkplots(simlist=None, maps=False, overwrite=True, fluxes=True):
+    opt = dict(quiet=True, working_dir=True, maps=maps, overwrite=overwrite,
+               fluxes=fluxes)
     comp_wrapper('main_plots', simlist=simlist, kwargs=opt)
 
 def _old_mkplots(sims=None, path='', ext='png'):
@@ -4437,6 +4440,10 @@ if __name__ == '__main__':
                         default=None,
                         action='store_true',
                         help='Minimize output to stdout')
+    parser.add_argument('-a',
+                        default=None,
+                        action='store_true',
+                        help='Only print args')
     parser.add_argument('-t', '--tbl',
                         default=None,
                         action='store_true',
@@ -4445,13 +4452,15 @@ if __name__ == '__main__':
                         dest='flux',
                         default=True,
                         action='store_false',
-                        help='Print simulation table (and nothing else)')
+                        help='Do not plot flux series')
     parser.add_argument('-i',
                         type=int,
                         default=None,
                         help='Simulation index')
     args = parser.parse_args()
-    if args.tbl:
+    if args.a:
+        print(vars(args))
+    elif args.tbl:
         print(mk_sim_tbl())
     else:
         path = os.path.expanduser(args.path)
@@ -4468,7 +4477,7 @@ if __name__ == '__main__':
         if len(sims) > 1:
             if quiet is None:
                 quiet = True
-            mkplots(sims, maps=args.maps, overwrite=args.overwrite)
+            mkplots(sims, maps=args.maps, overwrite=args.overwrite, fluxes=args.flux)
         else:
             if quiet is None:
                 quiet = False
