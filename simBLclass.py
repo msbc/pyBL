@@ -4038,7 +4038,8 @@ class modeData(object):
             xlim = plt.xlim()
             ylim = plt.ylim()
             _x = np.linspace(xlim[0], xlim[1], 100)
-            plt.plot(_x, .3 * _x**(1./3.), c='.5', ls=':', lw=1, zorder=-1)
+            for zo, i in enumerate([1/3., .3, .27]):
+                plt.plot(_x, i * _x**(1./3.), c='.5', ls=':', lw=1, zorder=-1 - zo)
             plt.xlim(*xlim)
             plt.ylim(*ylim)
         if save or fn:
