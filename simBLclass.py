@@ -2227,7 +2227,12 @@ class BLsim(object):
         plt.plot(self.rc, cs, 'k-', label='$C_S$', zorder=0)
         plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls=':', label='sum', zorder=nm+2)
         cs_rmax = max(min(self.rc[cs.argmax()] * 1.01, 2), 1.2)
+        cs_rmax = 2
         plt.xlim(self.r[0], cs_rmax)
+        tmp = cs[10:self.rloc(2) + 1]
+        tmp = tmp.min(), tmp.max()
+        d = tmp[1] - tmp[0]
+        ylim = tmp[0] - .05 * d, tmp[1] + .05 * d
         plt.ylim(*ylim)
         #plt.legend(ncol=nm + 2, **lopt)
         plt.axhline(0, c='.5', ls=':', lw=1)
