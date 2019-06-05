@@ -691,7 +691,7 @@ class BLaux(BLfile):
         #return amp, ang
         return a, phi
 
-    def main_plots(self, save=True, ext='png', sdir=None):
+    def _main_plots(self, save=True, ext='png', sdir=None):
         try:
             self.channel_map(save=save, ext=ext, sdir=os.path.join(sdir, 'channel_maps'))
         except KeyboardInterrupt:
@@ -4441,6 +4441,11 @@ if __name__ == '__main__':
                         default=None,
                         action='store_true',
                         help='Print simulation table (and nothing else)')
+    parser.add_argument('--no_flux',
+                        dest='flux',
+                        default=True,
+                        action='store_false',
+                        help='Print simulation table (and nothing else)')
     parser.add_argument('-i',
                         type=int,
                         default=None,
@@ -4468,4 +4473,4 @@ if __name__ == '__main__':
             if quiet is None:
                 quiet = False
             BLsim(sims[0]).main_plots(quiet=quiet, working_dir=True, maps=args.maps,
-                                      overwrite=args.overwrite)
+                                      overwrite=args.overwrite, fluxes=args.flux)
