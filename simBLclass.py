@@ -1904,8 +1904,12 @@ class BLsim(object):
             except IOError:
                 out = self._mk_flux_data(ll=ll)
                 np.savez(fn, out)
-            self._flux_data = out
-            return out
+            md = out[:, 3, :]
+            ca = out[:, 1, :]
+            r3 = tau * self.rc ** 3
+            omega = ca / (md * r3[None, :])
+            self._flux_data = np.hstack([out, omega[:, None, :]])
+            return self._flux_data
 
     @property
     def flux_data(self):
@@ -1944,6 +1948,13 @@ class BLsim(object):
         i = i1 + self.smooth_flux_data[:,0,i1:i3].argmax(axis=-1)
         return self.rc[i]
 
+    def bl_in_out(self):
+        omega = np.nan_to_num(self.smooth_flux_data[:, 6, :])
+        i_out = omega[:, :self.rloc(2)].argmax(axis=1)
+        i_in = np.array([np.abs(.1 - omega[i, :i_out[i] + 1]).argmin()
+                         for i in range(omega.shape[0])])
+        return self.rc[i_in], self.rc[i_out]
+
     def my_flux_plot(self, data=None, rlist=None, lopt=None, overwrite=True, save=False,
                      fn=None, sdir='', ext='pdf', fig=None, fopt=None):
         if save or fn:
@@ -1980,38 +1991,52 @@ class BLsim(object):
         # CS
         ax = plt.subplot(411)
         for j in js:
-            plt.plot(t, 1e6 * data[:, 0, ilist[j]], zorder=-j)
+            plt.plot(t, data[:, 0, ilist[j]], zorder=-j)
         #plt.ylim(-.5e-4, 1e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
-        plt.ylabel(r'$10^5C_S$')
+        plt.ylabel(r'$C_S$')
         plt.legend(lbls, ncol=len(ilist), **lopt)
-        plt.yscale('symlog')
+        plt.yscale('symlog', linthreshy=1e-5)
 
         # Mdot
         plt.subplot(412, sharex=ax)
         for j in js:
-            plt.plot(t, -1e6 * data[:, 3, ilist[j]], zorder=-j)
+            plt.plot(t, -data[:, 3, ilist[j]], zorder=-j)
         #plt.ylim(-.5e-4, 2e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
-        plt.ylabel(r'$10^6\dot{M}$')
-        plt.yscale('symlog')
+        plt.ylabel(r'$\dot{M}$')
+        plt.yscale('symlog', linthreshy=1e-6)
 
         # dS
-        plt.subplot(413, sharex=ax)
+        axS = plt.subplot(413, sharex=ax)
         for j in js:
             plt.semilogy(t, np.sqrt(data[:, 4, ilist[j]]), zorder=-j)
         #plt.ylim(-.001, .01)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$\left<\Sigma^2\right>/\left<\Sigma\right>^2-1$')
+        ylim = plt.ylim()
+        plt.ylim(max(ylim[0], 1e-6), None)
+        axS.yaxis.set_minor_locator(mpl.ticker.LogLocator(numticks=20))
+        axS.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
+        #axS.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
 
         # R
-        plt.subplot(414, sharex=ax)
-        plt.plot(t, self.r_cavity())
-        plt.plot(t, self.r_peak())
-        #plt.ylim(1, 3)
+        axR = plt.subplot(414, sharex=ax)
+        rin, rout = self.bl_in_out()
+        handles = []
+        handles.extend(plt.plot(t, rin, 'k'))
+        handles.extend(plt.plot(t, rout, 'k'))
         plt.ylabel(r'$R$')
-        plt.legend(['Cavity', 'Peak'], **lopt)
+        #plt.legend([r'$R_{\rm in}$', r'$R_{\rm out}$'], **lopt)
         plt.xlabel(r'$t/2\pi$')
+        axR.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
+        # delta R
+        ax2 = axR.twinx()
+        handles.extend(plt.plot(t, rout - rin, 'k:', lw=1))
+        plt.ylim(0, 1.5 * (rout - rin).max())
+        ax2.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
+
+        axR.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
         plt.xlim(0, 600)
 
         if save:
@@ -2299,6 +2324,8 @@ class BLsim(object):
         plt.xlabel('$R$')
         #ax.set_xticklabels([])
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+        plt.text(self.r[-1], yl, r'$\Omega_{\rm max}=${0:.3g}'.format(omega.max),
+                 ha='right', va='bottom')
 
         # delta omega
         ax = plt.subplot(gs[2, 1])
@@ -4045,7 +4072,7 @@ class modeData(object):
             xlim = plt.xlim()
             ylim = plt.ylim()
             _x = np.linspace(xlim[0], xlim[1], 100)
-            for zo, i in enumerate([1/3., .3, .27]):
+            for zo, i in enumerate([1/3., .3, .27, .2]):
                 plt.plot(_x, i * _x**(1./3.), c='.5', ls=':', lw=1, zorder=-1 - zo)
             plt.xlim(*xlim)
             plt.ylim(*ylim)
