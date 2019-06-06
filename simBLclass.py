@@ -23,11 +23,8 @@ import os
 from glob import glob
 import sys
 import traceback
-try:
-    from astropy.convolution.convolve import convolve_fft
-except ImportError:
-    print('Warning, cannot load "convolve_fft" from astropy. Using scipy equivlent which uses zero padding.')
-    from scipy.signal import fftconvolve
+from astropy.convolution import convolve, convolve_fft, Gaussian1DKernel, Box1DKernel
+from scipy.ndimage.filters import convolve1d
 from scipy.signal import argrelextrema
 import time
 import tarfile
@@ -1923,8 +1920,10 @@ class BLsim(object):
             out = .5 * (data[::2] + data[1::2])[:-2]
         except ValueError:
             out = .5 * (data[:-1:2] + data[1::2])[:-2]
-        out = scipy.signal.savgol_filter(out, 101, 1, axis=0)
-        return scipy.signal.savgol_filter(out, 21, 1, axis=-1)
+        #out = scipy.signal.savgol_filter(out, 101, 1, axis=0)
+        #return scipy.signal.savgol_filter(out, 21, 1, axis=-1)
+        out = convolve1d(out, np.array(Box1DKernel(101)), axis=0)
+        return convolve1d(out, np.array(Box1DKernel(21)), axis=-1)
 
     @property
     def smooth_flux_data(self):
