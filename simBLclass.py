@@ -1950,7 +1950,7 @@ class BLsim(object):
     def bl_in_out(self):
         omega = np.nan_to_num(self.smooth_flux_data[:, 6, :])
         i_out = omega[:, :self.rloc(2)].argmax(axis=1)
-        i_in = np.array([np.abs(.1 - omega[i, :i_out[i] + 1]).argmin()
+        i_in = np.array([np.abs(.1 - omega[i, 5:i_out[i] + 1]).argmin() + 5
                          for i in range(omega.shape[0])])
         return self.rc[i_in], self.rc[i_out]
 
@@ -1996,15 +1996,19 @@ class BLsim(object):
         plt.ylabel(r'$C_S$')
         plt.legend(lbls, ncol=len(ilist), **lopt)
         plt.yscale('symlog', linthreshy=1e-5)
+        ax.yaxis.set_ticks_position('both')
+        ax.tick_params(axis='both', which='both', direction='in')
 
         # Mdot
-        plt.subplot(412, sharex=ax)
+        axM = plt.subplot(412, sharex=ax)
         for j in js:
             plt.plot(t, -data[:, 3, ilist[j]], zorder=-j)
         #plt.ylim(-.5e-4, 2e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$\dot{M}$')
         plt.yscale('symlog', linthreshy=1e-6)
+        axM.yaxis.set_ticks_position('both')
+        axM.tick_params(axis='both', which='both', direction='in')
 
         # dS
         axS = plt.subplot(413, sharex=ax)
@@ -2017,7 +2021,8 @@ class BLsim(object):
         plt.ylim(max(ylim[0], 1e-6), None)
         axS.yaxis.set_minor_locator(mpl.ticker.LogLocator(numticks=20))
         axS.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
-        #axS.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        axS.yaxis.set_ticks_position('both')
+        axS.tick_params(axis='both', which='both', direction='in')
 
         # R
         axR = plt.subplot(414, sharex=ax)
@@ -2029,11 +2034,13 @@ class BLsim(object):
         #plt.legend([r'$R_{\rm in}$', r'$R_{\rm out}$'], **lopt)
         plt.xlabel(r'$t/2\pi$')
         axR.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
+        axR.tick_params(axis='both', which='both', direction='in')
         # delta R
         ax2 = axR.twinx()
         handles.extend(plt.plot(t, rout - rin, 'k:', lw=1))
         plt.ylim(0, 1.5 * (rout - rin).max())
         ax2.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
+        ax2.tick_params(axis='both', which='both', direction='in')
 
         axR.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
         plt.xlim(0, 600)
