@@ -2035,13 +2035,15 @@ class BLsim(object):
         plt.xlabel(r'$t/2\pi$')
         axR.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
         axR.tick_params(axis='both', which='both', direction='in')
-        xlim = list(plt.xlim())
-        if xlim[0] < .9:
-            xlim[0] = rin[500:].min() * .99
+        ylim = list(plt.ylim())
+        if ylim[0] < .9:
+            ylim[0] = rin[500:].min() * .99
+            plt.ylim(*ylim)
         # delta R
         ax2 = axR.twinx()
-        handles.extend(plt.plot(t, rout - rin, 'k:', lw=1))
-        plt.ylim(0, 1.5 * (rout - rin).max())
+        dr = rout - rin
+        handles.extend(plt.plot(t, dr, 'k:', lw=1))
+        plt.ylim(0, 1.5 * (dr[250:]).max())
         ax2.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
         ax2.tick_params(axis='both', which='both', direction='in')
 
