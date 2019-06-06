@@ -2035,6 +2035,9 @@ class BLsim(object):
         plt.xlabel(r'$t/2\pi$')
         axR.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
         axR.tick_params(axis='both', which='both', direction='in')
+        xlim = list(plt.xlim())
+        if xlim[0] < .9:
+            xlim[0] = rin[500:].min() * .99
         # delta R
         ax2 = axR.twinx()
         handles.extend(plt.plot(t, rout - rin, 'k:', lw=1))
