@@ -44,6 +44,8 @@ tau = 2 * np.pi
 #mpl.rc('text', usetex=True)
 #mpl.rcParams['text.latex.preamble'] = [r"\usepackage{amssymb,amsmath}"]
 
+_r0 = {5: .83, 6: .83, 7: .86, 8: .88, 9: .9, 10: .93, 11: .92, 12: .92, 13: .92,
+       14: .93,  15: .93}
 _dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer', '/perseus/scratch/gpfs/sashaph/BLayer',
          '~/BLayer', '~/BLayer/fft_tests', '~/archive', '~/data/bl', '~/data/pleiades_data/bl']
 _dirs = list(map(os.path.expanduser, _dirs))
@@ -4082,9 +4084,13 @@ class modeData(object):
         if show_pl:
             xlim = plt.xlim()
             ylim = plt.ylim()
-            _x = np.linspace(xlim[0], xlim[1], 100)
-            for zo, i in enumerate([1/3., .3, .27, .2]):
-                plt.plot(_x, i * _x**(1./3.), c='.5', ls=':', lw=1, zorder=-1 - zo)
+            _x = np.linspace(0, 32, 200)
+            M = int(self.sim.mach + .1)
+            coef = .025 * M
+            pwr = .6 - .02 * M
+            plt.plot(_x, coef * _x**pwr, c='.5', ls=':', lw=1, zorder=-1)
+            y = np.sqrt(M**-2+(M / (2 * _r0[M] * _x))**2)
+            plt.plot(_x, y, c='.5', ls=':', lw=1, zorder=-1)
             plt.xlim(*xlim)
             plt.ylim(*ylim)
         if save or fn:
