@@ -50,6 +50,7 @@ _dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer', '/perse
          '~/BLayer', '~/BLayer/fft_tests', '~/archive', '~/data/bl', '~/data/pleiades_data/bl']
 _dirs = list(map(os.path.expanduser, _dirs))
 _dirs += [os.path.join(d, 'Mach8stampede') for d in _dirs]
+_dirs = [i for i in _dirs if os.path.isdir(i)]
 _data_base = '/scratch/gpfs/sashaph/BLayer'
 _pre = ['BL', 'disk', 'mock']
 _i = map(str, range(1,5))
@@ -1955,6 +1956,15 @@ class BLsim(object):
         i_in = np.array([np.abs(.1 - omega[i, 5:i_out[i] + 1]).argmin() + 5
                          for i in range(omega.shape[0])])
         return self.rc[i_in], self.rc[i_out]
+
+    def mean_bl(self, data=None):
+        if data is None:
+            data = self.bl_in_out()
+        out = [i[:1000].mean() for i in data]
+        return out + [out[1] - out[0]]
+
+    def mach_and_bl(self):
+        return [self.mach] + self.mean_bl()
 
     def my_flux_plot(self, data=None, rlist=None, lopt=None, overwrite=True, save=False,
                      fn=None, sdir='', ext='pdf', fig=None, fopt=None):
@@ -4464,6 +4474,29 @@ def mk_sim_tbl(sep=' & ', end_line=r'\\'):
         print(r'\hline')
     return None
 
+
+def grab_bl(sims=None):
+    return np.array(comp_wrapper('mach_and_bl', sims))
+
+
+def bl_size_plot(sims=None, data=None, cmap=None):
+    if data is None:
+        data = grab_bl(sims)
+    if cmap is None:
+        cmap = plt.get_cmap()
+    machs = (data[:, 0] + .1).asdtype(int)
+    colors = machs - machs.min()
+    colors = cmap(colors / colors.max())
+    shapes = ['o', 'v', '+', '^', 's']
+    shapes = [shapes[i % len(shapes)] for i in machs]
+    handles = dict()
+    for i, d in enumerate(data):
+        handles[machs[i]] = plt.scatter(d[0], d[-1], color=colors[i], marker=shapes[i])
+    lbls = [r'$\mathcal{M}=' + str(i) + '$' for i in handles]
+    hands = [handles[i] + '$' for i in handles]
+    plt.legend(hands, lbls)
+
+
 def sims_within(path, nmin=50):
     out = []
     for x in os.walk(path):
@@ -4508,6 +4541,10 @@ if __name__ == '__main__':
                         type=int,
                         default=None,
                         help='Simulation index')
+    parser.add_argument('-s', '--sim',
+                        type=str,
+                        default=None,
+                        help='Simulation Name')
     args = parser.parse_args()
     if args.a:
         print(vars(args))
@@ -4516,12 +4553,16 @@ if __name__ == '__main__':
     else:
         path = os.path.expanduser(args.path)
         quiet = args.quiet
-        tmp = os.path.join(path, 'M{0:}.*')
-        d = '[0-9]'
-        print(tmp.format(d))
-        sims = sorted(glob(tmp.format(d)) + glob(tmp.format(d*2)))
-        if args.i is not None:
-            sims = [sims[args.i]]
+        if args.sim is None:
+            tmp = os.path.join(path, 'M{0:}.*')
+            d = '[0-9]'
+            print(tmp.format(d))
+            sims = sorted(glob(tmp.format(d)) + glob(tmp.format(d*2)))
+            if args.i is not None:
+                sims = [sims[args.i]]
+        else:
+            tmp = os.path.join(path, args.sim)
+            sims = sorted(glob(tmp))
         print(sims)
         if not sims:
             raise RuntimeError('No sims found.')
