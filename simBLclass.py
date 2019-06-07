@@ -4088,7 +4088,6 @@ class modeData(object):
                 M = int(self.sim.mach + .1)
                 coef = .025 * M
                 pwr = .6 - .02 * M
-                print(M, _r0[M])
                 plt.plot(_x, coef * _x**pwr, c='.5', ls=':', lw=1, zorder=-1)
                 y = np.sqrt(M**-2+(M / (2 * _r0[M] * _x))**2)
                 plt.plot(_x, y, c='.5', ls=':', lw=1, zorder=-1)
