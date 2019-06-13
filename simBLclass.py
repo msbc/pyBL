@@ -1811,8 +1811,8 @@ class BLsim(object):
             a = self.inputs['job']['problem_id']
             c = '[0-9]*'
             varlist = list(filter(None, [self.inputs[i].get('variable') for i in outs]))
-            self._coarse_data = None
-            self._fine_data = None
+            self._coarse_data = dict()
+            self._fine_data = dict()
             if os.path.isfile(os.path.join(self.path, 'fft.tar')):
                 self._tar = tarfile.open(os.path.join(self.path,'fft.tar'), 'r|')
                 tmp = [os.path.join(self.path, i) for i in ['cksum', 'hash']]
@@ -1843,6 +1843,8 @@ class BLsim(object):
         #    setattr(self, attr, getattr(tmp, attr))
         self._rho_ref = rho_ref
         self._fft_data = None
+        if coarse_data is None:
+            coarse_data = dict()
         self._coarse_data = coarse_data
         self._fft_time = fft_time
         self._phase_angle = phase_angle
@@ -1852,6 +1854,7 @@ class BLsim(object):
         self._mode_detect = None
         self._flux_data = flux_data
         self._sfd = sfd
+        self.ensure_fft_data_exists()
         # End init
 
     def info_row(self):
@@ -2474,6 +2477,24 @@ class BLsim(object):
                     pass
         return [os.path.join(self.path, i) for i in out]
 
+    def ensure_fft_data_exists(self, vars=None, kinds=None):
+        if vars is None:
+            vars = ['FT', 'CS']
+        else:
+            vars = np.atleast_1d(vars)
+        if kinds is None:
+            kinds = ['coarse', 'fine']
+        else:
+            kinds = np.atleast_1d(kinds)
+        for var in vars:
+            make = False
+            for kind in kinds:
+                fn = os.path.join(self.path, 'FFT_' + kind + '_' + var + '.npy')
+                if not os.path.isfile(fn):
+                    make = True
+            if make:
+                self.gen_fft_file(var=var)
+
     def gen_fft_file(self, var='FT'):
         handler = IncrementalFFT(self.sortedFFT(), var=var, sim=self)
         handler.process()
@@ -2488,22 +2509,26 @@ class BLsim(object):
             self.gen_fft_file(var=var)
         data = FTdataFile(fn, sim=self)
         if _type == 'coarse':
-            self._coarse_data = data
+            self._coarse_data[var] = data
         else:
-            self._fine_data = data
+            self._fine_data[var] = data
         return data
 
     @property
     def coarse_data(self):
-        if self._coarse_data is None:
+        try:
+            return self._coarse_data['FT']
+        except KeyError:
             self.load_fft_data()
-        return self._coarse_data
+            return self._coarse_data['FT']
 
     @property
     def fine_data(self):
-        if self._fine_data is None:
+        try:
+            return self._fine_data['FT']
+        except KeyError:
             self.load_fft_data(fine=True)
-        return self._fine_data
+            return self._fine_data['FT']
 
     def __FFT_composite(self):
         ffts = [out for out in self.fileDict.keys()
@@ -2587,9 +2612,10 @@ class BLsim(object):
 
     @property
     def fft_data(self):
-        if self._fine_data is None:
+        try:
+            return self._fine_data['FT']
+        except KeyError:
             return self.coarse_data
-        return self.fine_data
 
     @property
     def fft(self):
@@ -4484,17 +4510,23 @@ def bl_size_plot(sims=None, data=None, cmap=None):
         data = grab_bl(sims)
     if cmap is None:
         cmap = plt.get_cmap()
-    machs = (data[:, 0] + .1).asdtype(int)
+    machs = (data[:, 0] + .1).astype(int)
     colors = machs - machs.min()
     colors = cmap(colors / colors.max())
-    shapes = ['o', 'v', '+', '^', 's']
+    #shapes = ['o', 'v', '+', '^', 's']
+    shapes = ['.']
     shapes = [shapes[i % len(shapes)] for i in machs]
     handles = dict()
     for i, d in enumerate(data):
         handles[machs[i]] = plt.scatter(d[0], d[-1], color=colors[i], marker=shapes[i])
     lbls = [r'$\mathcal{M}=' + str(i) + '$' for i in handles]
-    hands = [handles[i] + '$' for i in handles]
+    hands = [handles[i] for i in handles]
     plt.legend(hands, lbls)
+    ax = plt.gca()
+    ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+    ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
+    plt.ylabel('Boundary Layer Size')
+    plt.xlabel('Mode Number')
 
 
 def sims_within(path, nmin=50):
