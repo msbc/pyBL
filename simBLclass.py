@@ -2,7 +2,7 @@
 
 #from __future__ import absolute_import, division, print_function
 #from builtins import (bytes, str, open, super, range, zip, round, input, int, pow, object)
-#import h5py
+import h5py
 #from mayavi import mlab
 import argparse
 import numpy as np
@@ -1158,6 +1158,7 @@ class BLFT(BLfile):
         cl = r2 * np.real(self['FT-CL-Re'][0])
         u = np.real(self['FT-vel2-Re'])[0]
         md = np.real(self['FT-Mdot-Re'][0])
+        v = np.real(self['FT-vel1'][0])
         ca = r2 * u * md
         cs = cl - ca
         d = np.real(self['FT-dens-Re'][0])
@@ -1172,7 +1173,7 @@ class BLFT(BLfile):
         tmp[:i1] = 0
         tmp[-5:] = 0
         ip = tmp.argmax()
-        return np.array([cs, ca, cl, md, dd, d])
+        return np.array([cs, ca, cl, md, dd, d, v, u])
 
     def wave_power(self):
         data = np.real(self['FT-vel1'][0])
@@ -1401,7 +1402,6 @@ class IncrementalFFT(object):
         if os.path.isfile(self.fine_out):
             _ft = self.get_last_time(self.fine_out)
             mode = 'ab'
-        if os.path.isfile(self.coarse_out):
             _ct = self.get_last_time(self.coarse_out)
             mode = 'ab'
         if store_data is None:
@@ -1854,6 +1854,7 @@ class BLsim(object):
         self._mode_detect = None
         self._flux_data = flux_data
         self._sfd = sfd
+        self._new_fft_time = None
         self.ensure_fft_data_exists()
         # End init
 
@@ -1899,37 +1900,47 @@ class BLsim(object):
         if self._flux_data is not None:
             return self._flux_data
         else:
-            fn = os.path.join(self.path, 'flux_data.npz')
+            fn = os.path.join(self.path, 'flux_data_v1.0.0.npz')
             try:
                 if overwrite:
                     raise IOError
-                out = np.load(fn)['arr_0']
+                out = np.load(fn)
             except IOError:
-                out = self._mk_flux_data(ll=ll)
-                np.savez(fn, out)
-            md = out[:, 3, :]
-            ca = out[:, 1, :]
-            r3 = tau * self.rc ** 3
-            omega = ca / (md * r3[None, :])
-            self._flux_data = np.hstack([out, omega[:, None, :]])
+                tmp = ['CS', 'CA', 'CL', 'Mdot', 'dd', 'dens', 'vr', 'vphi']
+                out = dict(zip(tmp, np.swapaxes(self._mk_flux_data(ll=ll), 0, 1)))
+                out['t'] = self.gen_fft_times()
+                np.savez(fn, **out)
+                out = np.load(fn)
+            self._flux_data = out
             return self._flux_data
+
+    def gen_fft_times(self):
+        if self._new_fft_time is None:
+            def _get_t(fn):
+                with h5py.File(fn) as f:
+                    t = f.attrs['Time']
+                return t
+
+            self._new_fft_time = np.array(parmap(_get_t, self.sortedFFT()))
+        return self._new_fft_time
 
     @property
     def flux_data(self):
-        # cs, ca, cl, md, dd, d
         return self.load_flux_data()
 
     def _smooth_flux_data(self, data=None):
+        keys = ['CS', 'CA', 'CL', 'Mdot', 'dd', 'dens', 'vr', 'vphi']
         if data is None:
-            data = self.flux_data
+            data = np.array([self.flux_data[i] for i in keys])
         try:
             out = .5 * (data[::2] + data[1::2])[:-2]
         except ValueError:
             out = .5 * (data[:-1:2] + data[1::2])[:-2]
-        #out = scipy.signal.savgol_filter(out, 101, 1, axis=0)
-        #return scipy.signal.savgol_filter(out, 21, 1, axis=-1)
-        out = convolve1d(out, np.array(Box1DKernel(101)), axis=0)
-        return convolve1d(out, np.array(Box1DKernel(21)), axis=-1)
+        #out = scipy.signal.savgol_filter(out, 101, 1, axis=1)
+        #out = scipy.signal.savgol_filter(out, 21, 1, axis=2)
+        out = convolve1d(out, np.array(Box1DKernel(101)), axis=1)
+        out = convolve1d(out, np.array(Box1DKernel(21)), axis=2)
+        return dict(zip(keys, out))
 
     @property
     def smooth_flux_data(self):
@@ -1939,22 +1950,22 @@ class BLsim(object):
 
     def get_alpha(self):
         sd = self.smooth_flux_data
-        return self.mach**2 * sd[0] / (tau * self.rc**2 * sd[5])
+        return self.mach**2 * sd['CS'] / (tau * self.rc**2 * sd['dens'])
 
     def r_cavity(self):
         i1 = self.rloc(1)
         i3 = self.rloc(3)
-        i = i1 + np.abs(self.smooth_flux_data[:,0,i1:i3]).argmin(axis=-1)
+        i = i1 + np.abs(self.smooth_flux_data['CS'][:,i1:i3]).argmin(axis=-1)
         return self.rc[i]
 
     def r_peak(self):
         i1 = self.rloc(1)
         i3 = self.rloc(3.9)
-        i = i1 + self.smooth_flux_data[:,0,i1:i3].argmax(axis=-1)
+        i = i1 + self.smooth_flux_data['CS'][:,i1:i3].argmax(axis=-1)
         return self.rc[i]
 
     def bl_in_out(self):
-        omega = np.nan_to_num(self.smooth_flux_data[:, 6, :])
+        omega = np.nan_to_num(self.smooth_flux_data['vr'] / self.rc[np.newaxis, :])
         i_out = omega[:, :self.rloc(2)].argmax(axis=1)
         i_in = np.array([np.abs(.1 - omega[i, 5:i_out[i] + 1]).argmin() + 5
                          for i in range(omega.shape[0])])
@@ -1992,7 +2003,7 @@ class BLsim(object):
         js = range(len(ilist))
         if data is None:
             data = self.smooth_flux_data
-        t = np.arange(data.shape[0]) * self.fft_dt
+        t = self.flux_data['t']
         i1 = self.rloc(1)
 
         if fopt is None:
@@ -2005,7 +2016,7 @@ class BLsim(object):
         # CS
         ax = plt.subplot(411)
         for j in js:
-            plt.plot(t, data[:, 0, ilist[j]], zorder=-j)
+            plt.plot(t, data['CS'][:, ilist[j]], zorder=-j)
         #plt.ylim(-.5e-4, 1e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$C_S$')
@@ -2017,7 +2028,7 @@ class BLsim(object):
         # Mdot
         axM = plt.subplot(412, sharex=ax)
         for j in js:
-            plt.plot(t, -data[:, 3, ilist[j]], zorder=-j)
+            plt.plot(t, -data['Mdot'][:, ilist[j]], zorder=-j)
         #plt.ylim(-.5e-4, 2e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$\dot{M}$')
@@ -2028,7 +2039,7 @@ class BLsim(object):
         # dS
         axS = plt.subplot(413, sharex=ax)
         for j in js:
-            plt.semilogy(t, np.sqrt(data[:, 4, ilist[j]]), zorder=-j)
+            plt.semilogy(t, np.sqrt(data['dd'][:, ilist[j]]), zorder=-j)
         #plt.ylim(-.001, .01)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$\left<\Sigma^2\right>/\left<\Sigma\right>^2-1$')
@@ -2213,6 +2224,41 @@ class BLsim(object):
             out[k] /= n
         return out
 
+    def new_fluxes(self, t0, tf, tnorm=tau, nsmooth=True):
+        if not tnorm or tnorm is True:
+            tnorm = 1
+        t0 *= tnorm
+        tf *= tnorm
+        n = 0
+        fdata = self.load_flux_data()
+        times = fdata['t']
+        i0, il = np.searchsorted(times, [t0, tf])
+        if il < times.size - 1:
+            il += 1
+        if nsmooth is True:
+            nsmooth = int((il - i0) // 10)
+        if not nsmooth:
+            nsmooth = 1
+        #print("ns:", nsmooth, times[i0:i0 + nsmooth].size, times[il - nsmooth:il].size)
+        out = {j: fdata[j][i0:il].mean(axis=0)
+               for j in ['CS', 'CA', 'CL', 'Mdot', 'dd', 'dens', 'vr', 'vphi']}
+
+        out['t0'] = times[i0] / tnorm
+        out['drho'] = out['dens'] - self.rho_ref
+        out['drhodt'] = - fdata['dens'][i0:i0 + nsmooth].mean(axis=0)
+        out['dwdt'] = - fdata['vphi'][i0:i0 + nsmooth].mean(axis=0)
+        out['drhodt'] += fdata['dens'][il - nsmooth:il].mean(axis=0)
+        out['dwdt'] += fdata['vphi'][il - nsmooth:il].mean(axis=0)
+        out['tf'] = times[il]
+        tsa = times[i0]
+        tsb = times[il]
+
+        out['dwdt'] /= (tsb - tsa) * self.rc
+        out['drhodt'] /= (tsb - tsa) * self.rc
+        #print("t div", tnorm * (out['tf'] - out['t0']), tsb - tsa, tsa, tsb)
+
+        return out
+
     def plot_fluxes(self, t0=None, tf=None, nm=5, data=None, figsize=None, save=False,
                     fn=None, ext='pdf', lopt=None, ff=1, sdir='', progress=True,
                     overwrite=True):
@@ -2228,6 +2274,249 @@ class BLsim(object):
                 ffts = self.sortedFFT()
                 i = int(2 * t0 // dt)
                 i1 = int(min(2 * tf // dt, len(ffts) - 1))
+                t0 = self.loadfile(os.path.split(ffts[i])[-1]).t / tnorm
+                tf = self.loadfile(os.path.split(ffts[i1])[-1]).t / tnorm
+                fn = '_flux_{:.1f}_{:.2f}.'.format(t0, tf - t0)
+                fn = os.path.join(sdir, self.name + fn + ext)
+                if sdir:
+                    if not os.path.isdir(sdir):
+                        os.mkdir(sdir)
+        if parse_not_overwrite(overwrite, fn):
+            return data
+        if lopt is None:
+            lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
+        if data is None:
+            data = self.fluxes(t0, tf, progress=progress)
+        csm = np.real(data['CSm'])
+        csm[0] = 0
+        cs = data['CS'][0]
+        norm = self.intr(np.abs(csm))
+        modes = sorted(range(norm.shape[0]), key=lambda x: -norm[x])
+        ri = self.rloc(1)
+
+        if figsize is None:
+            figsize = np.array((11,8.5)) * .8
+        fig = plt.figure(figsize=figsize)
+        gs = mpl.gridspec.GridSpec(3, 2, top=.93, left=.08, right=.98, bottom=.08, wspace=.15, hspace=.25)
+        #fig, axs = plt.subplots(3, 2, figsize=figsize, top=.7)
+
+        # C_S, C_S,m
+        ax0 = plt.subplot(gs[0,0])
+        plt.plot(self.rc, cs, 'k-', label='$C_S$')
+        for m in modes[:nm]:
+            plt.plot(self.rc, csm[m], label=str(m))
+        plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls=':', label='sum')
+        plt.xlim(self.r[0], self.r[-1])
+        #ylim = plt.ylim()
+        plt.legend(ncol=nm + 2, **lopt)
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
+        #plt.ylim(*ylim)
+        #plt.xlabel('$R$')
+        plt.ylabel('$C_S$')
+        #plt.setp(ax0.get_xticklabels(), fontsize=6)
+
+        # C_S, C_S,m zoom_in
+        ax = plt.subplot(gs[0,1])
+        for i, m in enumerate(modes[:nm]):
+            plt.plot(self.rc, csm[m], label=str(m), zorder=i+1)
+        ylim = plt.ylim()
+        plt.plot(self.rc, cs, 'k-', label='$C_S$', zorder=0)
+        plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls=':', label='sum', zorder=nm+2)
+        cs_rmax = max(min(self.rc[cs.argmax()] * 1.01, 2), 1.2)
+        cs_rmax = 2
+        plt.xlim(self.r[0], cs_rmax)
+        tmp = cs[10:self.rloc(2) + 1]
+        tmp = tmp.min(), tmp.max()
+        d = tmp[1] - tmp[0]
+        ylim = tmp[0] - .05 * d, tmp[1] + .05 * d
+        plt.ylim(*ylim)
+        #plt.legend(ncol=nm + 2, **lopt)
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
+        #plt.ylim(*ylim)
+        #plt.xlabel('$R$')
+        plt.ylabel('$C_S$')
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.02))
+        locs, labels = plt.yticks()
+        dy = .2 * (locs[1]-locs[0])
+        ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(dy))
+        #plt.setp(ax0.get_xticklabels(), fontsize=6)
+
+        # C_L, C_A, C_S
+        ax = plt.subplot(gs[1,0], sharex=ax0)
+        keys = [i for i in data.keys() if i[0] == 'C' and len(i) == 2]
+        yu = []
+        yl = []
+        for k in keys:
+            opt = {'label': '${0:}_{1:}$'.format(*k)}
+            if k == 'CS':
+                opt['c'] = 'k'
+            plt.plot(self.rc, data[k][0], **opt)
+            yu.append(np.real(data[k][0,ri:-5]).max())
+            yl.append(np.real(data[k][0,ri:-5]).min())
+        plt.legend(ncol=3, **lopt)
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
+        plt.xlim(self.r[0], self.r[-1])
+        yl, yu = np.real(yl).min(), np.real(yu).max()
+        dy = (yu - yl) * .05
+        plt.ylim(yl - dy, yu + dy)
+        #plt.xlabel('R')
+        #plt.setp(ax.get_xticklabels(), visible=False)
+
+        # d-rho, Omega
+        ax = plt.subplot(gs[1,1], sharex=ax0)
+        handles = list()
+        omega = data['vphi'] / self.rc
+        ok = self.rc ** -1.5
+        yu = [data['drho'][ri:-5].max(), omega[ri:-5].max()]
+        yl = [data['drho'][ri:-5].min(), omega[ri:-5].min()]
+        handles.append(plt.plot(self.rc, data['drho'], label=r'$\delta\rho$', zorder=0))
+        handles.append(plt.plot(self.rc, omega, label=r'$\Omega$', zorder=1))
+        op = self.rc**-3
+        op +=  self.mach**-2 * grad(self.rc, data['dens']) / (data['dens'] * self.rc)
+        op = np.sqrt(op)
+        yu.append(op[ri:-5].max())
+        yl.append(op[ri:-5].min())
+        handles.append(plt.plot(self.rc, op, label=r'$\Omega(P)$', ls='--', zorder=2))
+        handles.append(plt.plot(self.rc, -1e3*data['vr']*self.mach, label=r'$-10^3v_r/c_s$', zorder=4))
+        yu.append((-1e3 * self.mach * data['vr'])[ri:-5].max())
+        yl.append((-1e3 * self.mach * data['vr'])[ri:-5].min())
+        handles.insert(3,
+            plt.plot(self.rc, ok, label=r'$\Omega_{\rm k}$', lw=1, c='k', ls=':',
+                     zorder=3))
+        plt.legend(ncol=5, **lopt)
+        plt.xlim(self.r[0], self.r[-1])
+        yu = max(yu) * 1.05
+        yl = min(min(yl) - .1 * yu, 0)
+        plt.ylim(yl, yu)
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
+        plt.xlabel('$R$')
+        #ax.set_xticklabels([])
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+        plt.text(self.r[-1], yl, r'$\Omega_{\rm max}=${0:.3g}'.format(omega.max),
+                 ha='right', va='bottom')
+
+        # delta omega
+        ax = plt.subplot(gs[2, 1])
+        handles = list()
+        handles.append(
+            plt.plot(self.rc, ok - omega, label=r'$\Omega_{\rm K}-\Omega$', zorder=1))
+        handles.append(
+            plt.plot(self.rc, op - omega, label=r'$\Omega(P)-\Omega$', zorder=2))
+        plt.legend(ncol=2, **lopt)
+        a = 1.05
+        yu = min(max((ok - omega)[ri:-5].max() * a, (op - omega)[ri:-5].max()) * a, .025)
+        yl = max(min((ok - omega)[ri:-5].min() * a, (op - omega)[ri:-5].min()) * a, -.025)
+        plt.ylim(yl, yu)
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
+        xl = self.rc[np.where(np.isfinite(op))[0][1]] * .99
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
+        plt.xlim(xl, 2)
+        plt.xlabel('$R$')
+
+        ax = plt.subplot(gs[2,0], sharex=ax0)
+        plt.plot(self.rc, - data['Mdot'] * tau * self.rc, label=r'$\dot{M}$', c='k')
+        ri = self.rloc(1.2)
+        ri2 = self.rloc(2)
+        norm = 1 / grad(self.rc, data['vphi'] * self.rc)
+        ycs = norm * grad(self.rc, data['CS'][0])
+        plt.plot(self.rc, ycs, label=r'$C_S$')
+        ydw = norm * self.rc**3 * data['dens'] * data['dwdt'] * tau
+        plt.plot(self.rc, ydw, label=r'$\partial_t \Omega$')
+        plt.plot(self.rc, ycs + ydw, label=r'$C_S\! +\! \partial_t \Omega$', c='.5', ls=':')
+        ydp = np.pi * self.rc**3.5 * grad(self.rc, data['drhodt']) * self.mach**-2
+        ydp /= grad(self.rc, data['vphi'] * self.rc)
+        plt.plot(self.rc, ydp, label=r'$\partial_t\partial_rP$')
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
+        plt.legend(ncol=5, **lopt)
+        yu = np.maximum(ycs, data['Mdot'])
+        yu = yu[ri:ri2].max() * 1.05
+        yl = np.minimum(ydw, data['Mdot'])
+        yl = min(yl[ri:ri2].min() - .1 * yu, 0)
+        ylim = plt.ylim()
+        ylim = plt.ylim(max(ylim[0], yl), min(ylim[1], yu))
+        #print(ylim)
+        yl = 2e-4
+        #plt.ylim(-yl, yl)
+        plt.xlim(self.r[0], self.r[-1])
+        #plt.setp(ax.get_xticklabels(), visible=False)
+        plt.xlabel('$R$')
+
+        print_info = 0
+        if print_info:
+            plt.xticks([], [])
+            plt.yticks([], [])
+            one = self.rloc(1)
+            mdot = data['Mdot'] * tau * self.rc
+            info = [['C_S', data['CS'][0,one]],
+                   ['C_A', data['CA'][0,one]],
+                   ['C_L', data['CL'][0,one]],
+                   [r'\dot{M}', mdot[one]],
+                   [r'\alpha_{\rm eff}', data['CS'][0,one] * self.mach**2 /
+                    (tau * self.rc[one]**2 * data['dens'][0, one])]
+                   ]
+            info = ['$' + i[0] + '(R=1)=$'+ '{0:.3g}'.format(np.real(i[1])) for i in info]
+            info.append(r'$\dot{M}(R_{\rm min})=$' + '{0:.3g}'.format(mdot[0]))
+            info.append(r'$\dot{M}(R_{\rm max})=$' + '{0:.3g}'.format(mdot[-8:-2].mean()))
+            integrand = data['drho'] * self.rc * self.dr
+            info.append(r'$2\pi\int r\delta\rho dr=$' + '{0:.3g}'.format(tau*np.sum(integrand)))
+            tmp = self.rc[self.rc<1][np.argmin(np.abs(data['drho'][self.rc<1]))]
+            tmp = r'$2\pi\int_{'+'{:.2g}'.format(tmp)+r'}^4 r\delta\rho dr=$' + '{0:.3g}'.format(tau*np.sum(integrand[self.rloc(tmp):]))
+            info.append(tmp)
+            ncol = 2
+            for i, s in enumerate(info):
+                ix = i % ncol
+                iy = i // ncol
+                plt.text(.9 / ncol * ix + .05, .88 - .12 * iy, s)
+
+
+        title = ''
+        try:
+            title = self.name + ' '
+        except:
+            pass
+        title += '$t/ 2 \pi={t0:.1f}-{tf:.1f}$'.format(**data)
+        fig.suptitle(title)
+        #plt.tight_layout()
+        #fig.tight_layout(rect=[0, 0.0, 1, 0.5])
+        #fig.subplots_adjust(top=0.7)
+        #plt.subplots_adjust(left=0.2, wspace=0.8, top=0.5)
+
+        if save or fn:
+            if fn is None:
+                fn = '_flux_{:.1f}_{:.2f}.'.format(data['t0'], data['tf'] - data['t0'])
+                fn = os.path.join(sdir, self.name + fn + ext)
+                if sdir:
+                    if not os.path.isdir(sdir):
+                        os.mkdir(sdir)
+            plt.savefig(fn)
+            plt.close()
+
+        return data
+
+    def new_plot_fluxes(self, t0=None, tf=None, nm=5, data=None, figsize=None, save=False,
+                    fn=None, ext='pdf', lopt=None, ff=1, sdir='', progress=True,
+                    overwrite=True):
+        if save or fn:
+            save = True
+            if fn is None:
+                tnorm = tau
+                t0 *= tnorm
+                tf *= tnorm
+                ffts = [i for i in self.fileDict.keys()
+                        if self.inputs.get(i, {}).get('variable') == "FT-Range"]
+                dt = self.inputs[ffts[0]]['dt']
+                ffts = self.sortedFFT()
+                i = int(2 * t0 // dt)
+                i1 = int(min(2 * tf // dt, len(ffts) - 1))
+
+
+
                 t0 = self.loadfile(os.path.split(ffts[i])[-1]).t / tnorm
                 tf = self.loadfile(os.path.split(ffts[i1])[-1]).t / tnorm
                 fn = '_flux_{:.1f}_{:.2f}.'.format(t0, tf - t0)
@@ -2499,7 +2788,7 @@ class BLsim(object):
         handler = IncrementalFFT(self.sortedFFT(), var=var, sim=self)
         handler.process()
 
-    def load_fft_data(self, fine=False, var='FT'):
+    def load_fft_data(self, var='FT', fine=False):
         _type = 'coarse'
         if fine:
             _type = 'fine'
