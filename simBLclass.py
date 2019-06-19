@@ -1131,12 +1131,20 @@ class BLFT(BLfile):
             return self._special_keys('FT-' + key)
         if key == 'CS':
             return self.CS()
+        if key == 'CS_RRR':
+            return self.CS()
         return None
 
     def CS(self):
         r2 = tau * self.rc[np.newaxis, :] ** 2
         u = self['FT-vel2']
         return r2 * (self['FT-CL'] - u[0][np.newaxis, :] * self['FT-Mdot'])
+
+    def CS_RRR(self):
+        r2 = tau * self.rc[np.newaxis, :] ** 2
+        u = self['FT-vel2']
+        v = self['FT-vel1']
+        return r2 * np.real(self['FT-dens'][0])[np.newaxis, :] * (np.conj(v) * u + np.conj(u) * v)
 
     def fluxes(self):
         u = self['FT-vel2']
@@ -2508,17 +2516,12 @@ class BLsim(object):
                 tnorm = tau
                 t0 *= tnorm
                 tf *= tnorm
-                ffts = [i for i in self.fileDict.keys()
-                        if self.inputs.get(i, {}).get('variable') == "FT-Range"]
-                dt = self.inputs[ffts[0]]['dt']
-                ffts = self.sortedFFT()
-                i = int(2 * t0 // dt)
-                i1 = int(min(2 * tf // dt, len(ffts) - 1))
-
-
-
-                t0 = self.loadfile(os.path.split(ffts[i])[-1]).t / tnorm
-                tf = self.loadfile(os.path.split(ffts[i1])[-1]).t / tnorm
+                fdata = self.load_flux_data()
+                i0, il = np.searchsorted(fdata['t'], [t0, tf])
+                if il < times.size - 1:
+                    il += 1
+                t0 = fdata['t'][i0] / tnorm
+                tf = fdata['t'][il] / tnorm
                 fn = '_flux_{:.1f}_{:.2f}.'.format(t0, tf - t0)
                 fn = os.path.join(sdir, self.name + fn + ext)
                 if sdir:
@@ -2526,11 +2529,17 @@ class BLsim(object):
                         os.mkdir(sdir)
         if parse_not_overwrite(overwrite, fn):
             return data
+        try:
+            times = fdata['t']
+        except NameError:
+            fdata = self.load_flux_data()
+            times = fdata['t']
         if lopt is None:
             lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
         if data is None:
             data = self.fluxes(t0, tf, progress=progress)
-        csm = np.real(data['CSm'])
+        csm = self.load_fft_data('CS_RRR').FT
+        raise NotImplementedError
         csm[0] = 0
         cs = data['CS'][0]
         norm = self.intr(np.abs(csm))
@@ -2768,7 +2777,7 @@ class BLsim(object):
 
     def ensure_fft_data_exists(self, vars=None, kinds=None):
         if vars is None:
-            vars = ['FT', 'CS']
+            vars = ['FT', 'CS', 'CS_RRR']
         else:
             vars = np.atleast_1d(vars)
         if kinds is None:
