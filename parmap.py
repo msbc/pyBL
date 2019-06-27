@@ -31,6 +31,9 @@ def parmap(f, X, nprocs=None):
     [p.join() for p in proc]
 
     out = [x for i, x in sorted(res)]
+    for p in proc:
+        p.close()
+        del(p)
     del(proc, res, sent, q_in, q_out)
     gc.collect()
     return out
