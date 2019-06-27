@@ -1904,7 +1904,7 @@ class BLsim(object):
     def _mk_flux_data(self, ll=True):
         return np.array(self.map_files('ffts', 'flux_data', ll=ll), 'float32')
 
-    def load_flux_data(self, ll=True, overwrite=False):
+    def load_flux_data(self, ll=True, overwrite=False, data=None):
         if self._flux_data is not None:
             return self._flux_data
         else:
@@ -1915,21 +1915,30 @@ class BLsim(object):
                 out = np.load(fn)
             except IOError:
                 tmp = ['CS', 'CA', 'CL', 'Mdot', 'dd', 'dens', 'vr', 'vphi']
-                out = dict(zip(tmp, np.swapaxes(self._mk_flux_data(ll=ll), 0, 1)))
-                out['t'] = self.gen_fft_times()
+                if data is None:
+                    data = self._mk_flux_data(ll=ll)
+                out = dict(zip(tmp, np.swapaxes(data, 0, 1)))
+                gc.collect()
+                try:
+                    out['t'] = self.gen_fft_times()
+                except (MemoryError, OSError):
+                    out['t'] = self.gen_fft_times(ll=False)
                 np.savez(fn, **out)
                 out = np.load(fn)
             self._flux_data = out
             return self._flux_data
 
-    def gen_fft_times(self):
+    def gen_fft_times(self, ll=True):
         if self._new_fft_time is None:
             def _get_t(fn):
                 with h5py.File(fn) as f:
                     t = f.attrs['Time']
                 return t
 
-            self._new_fft_time = np.array(parmap(_get_t, self.sortedFFT()))
+            if ll:
+                self._new_fft_time = np.array(parmap(_get_t, self.sortedFFT()))
+            else:
+                self._new_fft_time = np.array(list(map(_get_t, self.sortedFFT())))
         return self._new_fft_time
 
     @property
