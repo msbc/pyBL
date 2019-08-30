@@ -2858,7 +2858,7 @@ class BLsim(object):
         if t0 is None:
             t0 = np.round(np.arange(0, self.fft_time[-1] / tau, dt0)).astype(int)
         for t in t0:
-            tf = min(t + delta_t, int(np.round(self.fft_time[-1] / tau)))
+            tf = min(t + delta_t, self.fft_time.size)
             self.new_plot_fluxes(t, tf, save=save, sdir=sdir, **kwargs)
 
     def sortedFFT(self):
