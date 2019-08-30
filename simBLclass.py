@@ -2858,7 +2858,8 @@ class BLsim(object):
         if t0 is None:
             t0 = np.round(np.arange(0, self.fft_time[-1] / tau, dt0)).astype(int)
         for t in t0:
-            self.new_plot_fluxes(t, t + delta_t, save=save, sdir=sdir, **kwargs)
+            self.new_plot_fluxes(t, min(t + delta_t, self.fft_time[-1] / tau), save=save,
+                                 sdir=sdir, **kwargs)
 
     def sortedFFT(self):
         ffts = [out for out in self.fileDict.keys()
