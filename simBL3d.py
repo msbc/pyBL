@@ -285,6 +285,14 @@ class BLfile(blc.BLfileBase):
         da = dx1[na, loc1] * dx2[loc2, na] * self.rc[na, loc1]**2 * np.sin(self.thetac[loc2, na])
         return np.sum(p[loc2, loc1]**2 * da) / np.sum(da)
 
+    def midplane_wave_power(self):
+        data = self.midplane('Rpseudo')
+        data[self.rc <= 1.2] = 0
+        data[self.rc > 3.9] = 0
+        mean = data.mean(axis=0)
+        data -= mean[None, :, :]
+        return self.intr(mean**2), self.intr((data**2).mean(axis=0))
+
     def swp(self):
         out = self['pseudo']
         #out[self['dens'] == self['dens'].min()] = 0
