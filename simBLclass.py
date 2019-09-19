@@ -6,27 +6,24 @@ import h5py
 # from mayavi import mlab
 import argparse
 import numpy as np
-import pandas
-# import pdb
 import matplotlib as mpl
 
 if __name__ == "__main__":
     mpl.use('agg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-import scipy
 from scipy.stats import scoreatpercentile as percentile
 from scipy.stats import linregress
-# import math
 import gc
-# import psutil
 import os
 from glob import glob
 import sys
 import traceback
-from astropy.convolution import convolve, convolve_fft, Gaussian1DKernel, Box1DKernel
+try:
+    from astropy.convolution import convolve, convolve_fft, Gaussian1DKernel, Box1DKernel
+except ImportError:
+    pass
 from scipy.ndimage.filters import convolve1d
-from scipy.signal import argrelextrema
 import time
 import tarfile
 import subprocess
