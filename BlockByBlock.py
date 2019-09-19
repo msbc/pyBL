@@ -250,6 +250,7 @@ class BlockByBlock(object):
             if not os.path.isfile(fn):
                 fn = os.path.join(sim_path, fn)
         self.fn = fn
+        self._prefix = '.'.join((os.path.split(fn)[-1]).split('.')[:-1])
         hdf5 = h5py.File(fn)
         self.hdf5 = hdf5
         self.t = hdf5.attrs['Time']
