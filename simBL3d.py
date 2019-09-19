@@ -16,6 +16,7 @@ from .parmap import parmap
 from . import athena_read as ar
 from . import helpers
 from . import simBLclass as blc
+from .BlockByBlock import BlockByBlock
 
 tau = 2 * np.pi
 #hpi = .5 * np.pi
@@ -1062,7 +1063,7 @@ class BL3dSim(object):
             return self.fileDict[self.varDict[key]]
         raise ValueError('Cannot find "{0:}" files.'.format(key))
 
-    def loadfile(self, fn, index=None, data=None, num_ghost=0):
+    def loadfile(self, fn, index=None, data=None, num_ghost=0, bbb=False):
         if not index is None:
             files = self.files(fn)
             if index < 0 or files[-1].split('.')[2] == len(files):
@@ -1072,6 +1073,11 @@ class BL3dSim(object):
                 fn[2] = '%5.5d' % index
                 fn = '.'.join(fn)
         if fn in self.filenames:
+            if bbb:
+                return BlockByBlock(fn, sim_path=os.path.abspath(self.path), sim=self,
+                                    ai_data=self.inputs, coord="spherical_polar",
+                                    expr_expand={'Rpseudo': 'r*vel1*sqrt(dens)'},
+                                    time_unit=[1 / tau, 'orbits'])
             return BLfile(os.path.join(self.path, fn), sim_path=os.path.abspath(self.path), sim=self,
                           ai_data=self.inputs, data=data, num_ghost=num_ghost)
         raise ValueError('Unknown file.')
@@ -1206,3 +1212,10 @@ class BL3dSim(object):
 
 def comp_wrapper(func, simlist=None, include=True, tmin=30, T=False, args=None, kwargs=None, sim_class=BL3dSim):
     return blc.comp_wrapper(func, simlist=simlist, include=include, tmin=tmin, T=T, args=args, kwargs=kwargs, sim_class=sim_class)
+
+
+if __name__ == '__main__':
+    sim = BL3dSim('./')
+    df = sim.loadfile('out1', -1, bbb=True)
+    df.plot_slice('Rpseudo', 1e-9, 3, vmax=1e-2, zerocent=True, fn='r_theta.png', dpi=300)
+    df.plot_slice('Rpseudo', .5 * np.pi - 1e-9, 3, vmax=1e-2, zerocent=True, fn='r_phi.png', dpi=300)
