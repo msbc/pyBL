@@ -787,7 +787,7 @@ class BLfile(BLfileBase):
         plt.plot(self.rc, omega, 'k')
         ylim = plt.ylim()
         plt.plot(self.rc, self.rc**-1.5, lw=1, c='.5', ls=':')
-        plt.legend([r'$\Omega$', r'\Omega_{\rm K}$'])
+        #plt.legend([r'$\Omega$', r'$\Omega_{\rm K}$'])
         plt.ylabel(r'$\Omega$')
         ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
         ax.set_xticklabels([])
@@ -798,7 +798,7 @@ class BLfile(BLfileBase):
         plt.plot(self.rc, dens, 'k')
         if rho0 is not None:
             plt.plot(self.rc, rho0, lw=1, c='.5', ls=':')
-            plt.legend([r'$\rho$', r'$\rho_0$'])
+            #plt.legend([r'$\rho$', r'$\rho_0$'])
         plt.ylabel(r'$\rho$')
         plt.xlabel(r'$r$')
         plt.ylim(0, 3)
