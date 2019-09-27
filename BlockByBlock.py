@@ -77,6 +77,27 @@ class Cartesian(Coord):
     def cart_face(self):
         return self.faces()
 
+class Cylindrical(Coord):
+    def __init__(self, xf, xv, block_shape):
+        super(Cylindrical, self).__init__(xf, xv, block_shape)
+        self.zf, self.phif, self.rf = self.face
+        self.zc, self.phic, self.rc = self.center
+        tmp = ['z', 'phi', 'r']
+        self._keys += [i + j for i in tmp for j in 'fc']
+        self._mapper = {i: i + 'c' for i in tmp}
+
+    def cart_face(self):
+        z, phi, r = self.face
+        return [r * np.cos(phi), r * np.cos(phi), z]
+
+    def plot_cart_face(self, dim=None):
+        z, phi, r = self.face
+        if dim == 1:
+            phi = 0
+        out = [r * np.cos(phi), r * np.cos(phi), z]
+        if dim == 1:
+            out = [out[0], out[2], out[1]]
+        return out
 
 class SphericalPolar(Coord):
     def __init__(self, xf, xv, block_shape):
@@ -90,7 +111,7 @@ class SphericalPolar(Coord):
     def cart_face(self):
         phi, th, r = self.face
         st = np.sin(th)
-        return [r * st * np.cos(phi), r * st * np.cos(phi, r * np.cos(th))]
+        return [r * st * np.cos(phi), r * st * np.cos(phi), r * np.cos(th)]
 
     def plot_cart_face(self, dim=None):
         phi, th, r = self.face
@@ -107,10 +128,13 @@ class SphericalPolar(Coord):
 
 
 class Block(object):
-    def __init__(self, data, var_names, xf, xv, coord=None, expr_expand=None):
+    def __init__(self, index, data, var_names, xf, xv, logloc,
+                 coord=None, expr_expand=None):
+        self.index = index
         self.data = data
         self.block_shape = data.shape[1:]
         self.one = np.ones(self.block_shape)
+        self.logical_location = logloc
         na = np.newaxis
         try:
             coord = coord.lower()
@@ -128,10 +152,20 @@ class Block(object):
             self.coord = Cartesian(xf, xv, self.block_shape)
         else:
             raise ValueError('coord "{:}" not understood.'.format(coord))
-        self.var_names = [i.decode("utf-8") for i in var_names]
+        try:
+            self.var_names = [i.decode("utf-8") for i in var_names]
+        except AttributeError:
+            self.var_names = [str(i) for i in var_names]
         if expr_expand is None:
             expr_expand = dict()
         self.expr_expand = expr_expand
+
+    def __contains__(self, item):
+        if item in self.var_names:
+            return True
+        if item in self.expr_expand:
+            return True
+        return False
 
     def _special_keys(self, key):
         if key == 'rho':
@@ -139,9 +173,11 @@ class Block(object):
         if key == 'dens':
             return self['rho']
         if key[:3] == 'vel' and len(key) == 4:
-            return self['mom' + key[3]] / self['dens']
+            if 'mom' + key[3] in self:
+                return self['mom' + key[3]] / self['dens']
         if key[:3] == 'mom' and len(key) == 4:
-            return self['vel' + key[3]] / self['rho']
+            if 'vel' + key[3] in self:
+                return self['vel' + key[3]] * self['rho']
         if key in self.coord:
             return self.coord[key]
         if key in self.expr_expand:
@@ -182,6 +218,8 @@ class Block(object):
         raise KeyError('Unable to parse {0:}'.format(key))
 
     def expr_eval(self, expr):
+        if expr in self:
+            return self[expr]
         expr = sp.sympify(expr)
         sym = [i for i in expr.atoms() if isinstance(i, sp.symbol.Symbol)]
         data = [self[str(i)] for i in sym]
@@ -196,7 +234,7 @@ class Block(object):
             try:
                 self.coord.x3v[x3]
             except IndexError:
-                if self.coord.x3f[0] <= x3 <= self.coord.x3f[self.block_shape[0]]:
+                if self.coord.x3f[0] <= x3 <= self.coord.x3f[-1]:
                     x3 = np.abs(self.coord.x3v - x3).argmin()
                 else:
                     x3 = snone
@@ -206,7 +244,7 @@ class Block(object):
             try:
                 self.coord.x2v[x2]
             except IndexError:
-                if self.coord.x2f[0] <= x2 <= self.coord.x2f[self.block_shape[1]]:
+                if self.coord.x2f[0] <= x2 <= self.coord.x2f[-1]:
                     x2 = np.abs(self.coord.x2v - x2).argmin()
                 else:
                     x2 = snone
@@ -216,7 +254,7 @@ class Block(object):
             try:
                 self.coord.x1v[x1]
             except IndexError:
-                if self.coord.x1f[0] <= x1 <= self.coord.x1f[self.block_shape[2]]:
+                if self.coord.x1f[0] <= x1 <= self.coord.x1f[-1]:
                     x1 = np.abs(self.coord.x1v - x1).argmin()
                 else:
                     x1 = snone
@@ -241,6 +279,68 @@ class Block(object):
         x, y = coord
         return plt.pcolormesh(x, y, data, **opt)
 
+
+class _AxisMean(object):
+    def __init__(self, owner, axis, var):
+        self.owner = owner
+        self.axis = axis
+        self.var = var
+        self._xf = np.array([owner.xf[axis].min(), owner.xf[axis].max()])
+        self._xv = np.array([self._xf.mean()])
+        self.logloc = owner.logloc
+        sequence = list(self.logloc.max(axis=0))
+        sequence.pop(axis)
+        axes = [0, 1, 2]
+        axes.pop(axis)
+        self._axes = axes
+        a, b = owner.xf[axes[0]], owner.xf[axes[1]]
+        self._extent = [[a[i, 0], a[i, -1], b[i, 0], b[i, -1]] for i in range(a.shape[0])]
+        extent = []
+        for i in self._extent:
+            if i not in extent:
+                extent.append(i)
+        self.extent = extent
+        self.nb = self.logloc.shape[0]
+        self.ns = len(sequence)
+        self._index = 0
+
+    def __getitem__(self, index):
+        loc = [i for i in range(len(self._extent)) if self._extent[i] == self.extent[index]]
+        data = 0
+        n = 0
+        for i in loc:
+            data += self.owner[i].expr_eval(self.var).mean(axis=self.axis)
+            n += 1
+        if not n:
+            return None
+        data /= n
+        data = np.expand_dims(np.expand_dims(data, self.axis), 0)
+        xf = [i[loc[0]] for i in self.owner.xf]
+        xf[self.axis] = self._xf
+        xv = [i[loc[0]] for i in self.owner.xv]
+        xv[self.axis] = self._xv
+        logloc = self.logloc[loc[0]]
+        logloc[self.axis] = 0
+        out = Block(index, data, [self.var], xf, xv, logloc,
+                    coord=self.owner.coord, expr_expand=self.owner.expr_expand)
+        out.nmean = n
+        return out
+
+    def __iter__(self):
+        self._index = 0
+        return self
+
+    def __next__(self):
+        out = None
+        try:
+            while out is None:
+                out = self[self._index]
+                self._index += 1
+        except (IndexError, ValueError):
+            raise StopIteration
+        return out
+
+
 class BlockByBlock(object):
     def __init__(self, fn, sim_path=None, ai_data=None, sim=None, x2_face=None,
                  num_ghost=0, coord=None, expr_expand=None, time_unit=None):
@@ -254,6 +354,7 @@ class BlockByBlock(object):
         hdf5 = h5py.File(fn)
         self.hdf5 = hdf5
         self.t = hdf5.attrs['Time']
+        self.logloc = hdf5['LogicalLocations'][:]
         keys = list(hdf5.keys())
         key = [i for i in ['hydro', 'cons', 'prim'] if i in keys][0]
         self.data = hdf5[key]
@@ -272,8 +373,8 @@ class BlockByBlock(object):
         self.time_unit = time_unit
 
     def __getitem__(self, index):
-        args = [self.data[:, index], self.var_names, [i[index] for i in self.xf],
-                [i[index] for i in self.xv]]
+        args = [index, self.data[:, index], self.var_names, [i[index] for i in self.xf],
+                [i[index] for i in self.xv], self.logloc[index]]
         kwargs = dict(coord=self.coord, expr_expand=self.expr_expand)
         return Block(*args, **kwargs)
 
@@ -299,11 +400,16 @@ class BlockByBlock(object):
                                               self.time_unit[1])
         return helpers.sanitize_lbl(out)
 
-    def plot_slice(self, var, pos=None, axis=3, save=False, fn=None, fig=None, ax=None,
+    def mean(self, axis, var):
+        return _AxisMean(self, axis, var)
+
+    def plot_slice(self, var, pos, axis=3, save=False, fn=None, fig=None, ax=None,
                    fig_opt=None, dpi=None, figsize=None, log=False, popt=None, cb=True,
                    cbl=None, aspect=1, title=None, lbls=True, vmin=None, vmax=None,
                    ext='png', sdir=None, use_cart=True, ax_lbl_add='', cmap=None,
                    zerocent=False):
+        if pos is None:
+            pos = 'mean'
         _axes = [2, 1, 0]
         _i = _axes[axis - 1]
         _axes.remove(3 - axis)
@@ -344,7 +450,12 @@ class BlockByBlock(object):
         vlim = [np.inf, -np.inf]
         do_lim = None in [vmin, vmax]
         images = []
-        for block in self:
+        if pos == 'mean':
+            iterator = self.mean(3 - axis, var)
+            loc[3 - axis] = self.xf[3 - axis].mean()
+        else:
+            iterator = self
+        for block in iterator:
             tmp = block.imshow(var, loc, _popt, use_cart=use_cart)
             if tmp is not None:
                 im = tmp
@@ -398,4 +509,3 @@ class BlockByBlock(object):
             def_fn += '_plot.' + ext
             _save_fig(fn, def_fn, sdir=sdir)
         return ax, cb
-
