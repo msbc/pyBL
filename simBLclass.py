@@ -19,6 +19,7 @@ import os
 from glob import glob
 import sys
 import traceback
+
 try:
     from astropy.convolution import convolve, convolve_fft, Gaussian1DKernel, Box1DKernel
 except ImportError:
@@ -157,7 +158,7 @@ def and_neighbor(data, n=1, axis=0, pad=True):
 
 def crudeDiff(t, data, axis=0, front=True):
     dt = np.diff(t)[(np.newaxis,) * axis + (slice(None),) + (np.newaxis,) * max(0, (
-                len(data.shape) - axis - 1))]
+            len(data.shape) - axis - 1))]
     out = np.diff(data, axis=axis) / dt
     if front:
         loc = (slice(None),) * axis + ([0],)
@@ -378,7 +379,7 @@ class BLfileBase(dict):
     def ddphi(self, data, axis=0):
         data = self._parse_data(data)
         return (np.roll(data, -1, axis=axis) - np.roll(data, 1, axis=axis)) / (
-                    self.phic[2] - self.phic[0])
+                self.phic[2] - self.phic[0])
 
     def rloc(self, r, subsample=None):
         rc = self.rc[::subsample]
@@ -569,6 +570,249 @@ class BLfile(BLfileBase):
             return fn
 
         return pcm
+
+    def stripe(self, data=None, fn=None, save=False, subsample=False, title=None,
+               name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
+               vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None, cax=None,
+               ax=None, log=False, aspect=1, sdir=None, smooth=None, rmax=None, lbls=True,
+               phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1, dpi=300,
+               figsize=None, overwrite=True, display=False, minmax=False, txt_opt=None):
+        """Plot 2D sim data"""
+        _fopt = dict(dpi=dpi, figsize=figsize)
+        if fopt is None:
+            fopt = {}
+        _fopt.update(fopt)
+        if popt is None:
+            popt = {}
+        if cbopt is None:
+            cbopt = {}
+        if rmax is None:
+            rmax = min(1 + 9 / self.mach, 1 + 81 / self.mach ** 2)
+            rmax = min(rmax, 3)
+        rmax = min(rmax, self.r[-1])
+        r = self.r[np.newaxis, :]
+        phi = self.phi[:, np.newaxis] + phi_shift
+        if self.t and phi_dot:
+            phi -= phi_dot * self.t
+        _popt = {}
+        if data is None:
+            data = self._defvar
+        if hasattr(data, 'lower'):
+            if data in ['pseudo', 'Rpseudo'] and r_cut is None:
+                r_cut = 1.03
+                if vmax is None and vmin is None:
+                    vmin = '99.5%'
+            if data in ['vorticity', 'vortensity']:
+                if r_cut is None:
+                    r_cut = 1.03
+                if zerocent is None:
+                    zerocent = True
+                if vmax is None and vmin is None:
+                    vmax = 'smart'
+            if data in ['vi', 've']:
+                vmin = '99%'
+            if cbl is None:
+                cbl = helpers.labeler(data)
+                name = data
+
+        if name:
+            if name in [True, 1]:
+                name = ''
+            if title is None:
+                # title = self.name + ' ' + self.t_str + ' ' + name
+                title = self.name + ' ' + name
+                if self.sim:
+                    title = self.sim.name + r' $t/2\pi = {0:g}$'.format(self.t / tau)
+            if save and fn is None:
+                fn = self._prefix + '_' + name + '_stripe.' + ext
+
+        if save or fn:
+            save = True
+            if fn is None:
+                fn = self._prefix + '_stripe.' + ext
+            if not sdir is None:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            if ret_fn:
+                return fn
+            return None
+        if display:
+            print('    Map of t/orb={:d}'.format(int(self.orbit + .5)))
+
+        data = self._parse_data(data)
+        if type(data) != np.ndarray:
+            raise TypeError('Data has type "{:}", not ndarray.'.format(type(data)))
+        if not smooth is None:
+            data = self.smooth(data, smooth)
+
+        # parse/set options and defaults
+        if log:
+            _popt['norm'] = mpl.colors.LogNorm()
+        # parse smart lim options
+        tmp = {}
+
+        try:
+            if '%' == vmin[-1]:
+                tmp['low'] = float(vmin[:-1])
+                vmin = 'smart'
+        except TypeError:
+            pass
+        try:
+            if '%' == vmax[-1]:
+                tmp['high'] = float(vmax[:-1])
+                vmax = 'smart'
+        except (TypeError, IndexError):
+            pass
+        if 'smart' in [vmin, vmax]:
+            rloc = slice(None)
+            if r_cut:
+                if subsample:
+                    raise NotImplementedError('r_cut not compatible with subsample')
+                rloc = slice(self.rloc(r_cut), None)
+            tmp = helpers.smartlim(data[:, rloc], **tmp)
+            if vmin == 'smart':
+                vmin = tmp[0]
+            if vmax == 'smart':
+                vmax = tmp[1]
+        # check if zero centered data
+        if zerocent is None and not log:
+            zerocent = helpers.isZeroCent(data)
+        if zerocent:
+            if cmap is None:
+                cmap = helpers.NCcmap
+            if vmin is None and vmax is None:
+                vmax = np.abs(data).max()
+            elif vmin is None:
+                vmin = -abs(vmax)
+            else:
+                vmax = abs(vmin)
+            vmin = -vmax
+
+        _popt.update(dict(cmap=cmap, vmin=vmin, vmax=vmax))
+        _popt.update(popt)
+
+        if fig is None and ax is None:
+            fig = plt.figure(**_fopt)
+            if name is None:
+                name = True
+        if ax:
+            plt.sca(ax)
+        else:
+            ax = plt.gca()
+        if aspect:
+            ax.set_aspect(aspect)
+
+        # start plotting
+        im = plt.imshow(data, extent=[self.r[0], rmax, 0, 2], **_popt)
+        plt.xlim(self.r[0], rmax)
+        plt.ylim(0, 2)
+        if lbls:
+            plt.xlabel('$r$')
+            plt.ylabel(r'$\phi/\pi$')
+        if minmax:
+            if r_cut is None:
+                r_cut = 1.03
+            dmin = data[:, self.rloc(r_cut):-5].min()
+            dmax = data[:, self.rloc(r_cut):-5].max()
+            txt = 'max: {0:.4g}\nmin: {1:.4g}'.format(dmax, dmin)
+            x = .99 * self.r[-1]
+            _txt_opt = dict(x=-x, y=x, ha='left', va='top')
+            try:
+                _txt_opt.update(txt_opt)
+            except TypeError:
+                pass
+            plt.text(_txt_opt.pop('x'), _txt_opt.pop('y'), txt, **_txt_opt)
+        if rplot:
+            rplot = np.atleast_1d(rplot)
+            for r in rplot:
+                plt.axvline(r, lw=1, color='1', ls=':')
+        if title:
+            plt.title(helpers.sanitize_lbl(title.format(**self.__dict__)))
+        if cb:
+            divider = make_axes_locatable(ax)
+            if cax is None:
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+            cb = plt.colorbar(im, cax=cax, **cbopt)
+            cb.ax.yaxis.set_offset_position('left')
+            if cbl:
+                cb.set_label(cbl)
+
+        plt.sca(ax)
+        # save fig
+        if save:
+            plt.savefig(fn)
+            plt.close()
+        if ret_fn:
+            return fn
+
+        return im
+
+    def stripe_and_data(self, var=None, fn=None, save=False, sdir=None, overwrite=True,
+                        dpi=300, figsize=None, fopt=None, ext='png', ret_fn=False,
+                        rho0=None, **kwargs):
+        if figsize is None:
+            figsize = (5, 6)
+        _fopt = dict(dpi=dpi, figsize=figsize)
+        if fopt is None:
+            fopt = {}
+        _fopt.update(fopt)
+        if save or fn:
+            save = True
+            if fn is None:
+                fn = self._prefix + '_stripe_data.' + ext
+            if not sdir is None:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            if ret_fn:
+                return fn
+            return None
+
+        fig = plt.figure(**_fopt)
+        gs = mpl.gridspec.GridSpec(3, 2, height_ratios=[1, .2, .2], width_ratios=[1, .05],
+                                   top=.95, bottom=.09, left=.13, right=.85, wspace=.01,
+                                   hspace=.1)
+        ax0 = plt.subplot(gs[0, 0])
+        cax = plt.subplot(gs[0, 1])
+        im = self.stripe(var, ax=ax0, cax=cax, lbls=False, **kwargs)
+        xlim = im.get_extent()[:2]
+        plt.ylabel(r'$\phi/2\pi$')
+        ax0.set_xticklabels([])
+
+        ax = plt.subplot(gs[1, 0])
+        omega = self.vel(2).mean(axis=0) / self.rc
+        plt.plot(self.rc, omega, 'k')
+        ylim = plt.ylim()
+        plt.plot(self.rc, self.rc**-1.5, lw=1, c='.5', ls=':')
+        plt.legend([r'$\Omega$', r'\Omega_{\rm K}$'])
+        plt.ylabel(r'$\Omega$')
+        ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+        ax.set_xticklabels([])
+        plt.xlim(*xlim)
+
+        ax = plt.subplot(gs[2, 0])
+        dens = self['dens'].mean(axis=0)
+        plt.plot(self.rc, dens, 'k')
+        if rho0 is not None:
+            plt.plot(self.rc, rho0, lw=1, c='.5', ls=':')
+            plt.legend([r'$\rho$', r'$\rho_0$'])
+        plt.ylabel(r'$\rho$')
+        plt.xlabel(r'$r$')
+        plt.ylim(0, 3)
+        ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+        plt.xlim(*xlim)
+
+        # save fig
+        if save:
+            plt.savefig(fn)
+            plt.close()
+        if ret_fn:
+            return fn
+
+        return fig
 
     def smooth(self, data, width=64):
         return smooth(self._parse_data(data), width=width)
@@ -879,7 +1123,7 @@ class BLConsPrim(BL3Dfile):
         Mdens = dens.mean(axis=0)
         return self.rc * s ** 3 * tau * np.mean((dens - Mdens[np.newaxis, :]) ** 2,
                                                 axis=0) / (
-                           dens.mean(axis=0) * (self.Ok() - Op))
+                       dens.mean(axis=0) * (self.Ok() - Op))
 
     def CS(self):
         dens = self['dens']
@@ -1175,7 +1419,7 @@ class BLFT(BLfile):
         u = self['FT-vel2']
         v = self['FT-vel1']
         return r2 * np.real(self['FT-dens'][0])[np.newaxis, :] * (
-                    np.conj(v) * u + np.conj(u) * v)
+                np.conj(v) * u + np.conj(u) * v)
 
     def fluxes(self):
         u = self['FT-vel2']
@@ -1187,7 +1431,7 @@ class BLFT(BLfile):
         out['CS'] = out['CL'] - out['CA']
         v = self['FT-vel1']
         out['CSm'] = r2 * np.real(self['FT-dens'][0])[np.newaxis, :] * (
-                    np.conj(v) * u + np.conj(u) * v)
+                np.conj(v) * u + np.conj(u) * v)
         out['drho'] = np.real(self['FT-dens'][0]) - self.sim.rho_ref
         out['vphi'] = np.real(u[0])
         out['vr'] = np.real(v[0])
@@ -3701,6 +3945,61 @@ class BLsim(object):
             return out[0]
         return out
 
+    def plot2d(self, data, *args, **kwargs):
+        phi_dot = kwargs.pop('phi_dot', [0])
+        pop_title = False
+        if not type(data) == list:
+            data = [data]
+        sdir = False
+        out = []
+        if len(phi_dot) > 0 and kwargs.get('sdir', None) is None:
+            sdir = True
+        if len(args) == 1:
+            bf = args[1]
+        else:
+            pre = args[0]
+            tmp = []
+            for i in args[1:]:
+                try:
+                    tmp.extend(i)
+                except TypeError:
+                    tmp.append(i)
+            if len(tmp) == 1 and not tmp[0] is None:
+                bf = self.loadfile(pre, tmp[0])
+            else:
+                try:
+                    tmp[1] += 1
+                except (IndexError, TypeError):
+                    pass
+                for fn in self.files(pre)[slice(*tmp)]:
+                    bf = self.loadfile(fn)
+                    for pd in phi_dot:
+                        kwargs['phi_dot'] = pd
+                        if sdir is True:
+                            kwargs['sdir'] = '%g' % pd
+                        if not 'title' in kwargs:
+                            kwargs[
+                                'title'] = r'$\Omega_p = {0:g},\, t/2\pi = {1:07.2f}$'.format(
+                                pd, bf.t / tau)
+                            pop_title = True
+                        for d in data:
+                            out.append(bf.plot2d(d, **kwargs))
+                        if pop_title:
+                            kwargs.pop('title')
+                        plt.close()
+                return out
+        if not hasattr(bf, 'plot2d'):
+            bf = self.loadfile(bf)
+        for pd in phi_dot:
+            kwargs['phi_dot'] = pd
+            if sdir is True:
+                kwargs['sdir'] = '%g' % phi_dot
+            for d in data:
+                out.append(bf.plot2d(d, **kwargs))
+        if len(out) == 1:
+            return out[0]
+        return out
+
     def speed_shift(self, phi_dot=.1 * np.arange(10), data=None, base='cons', t0=None,
                     t1=None,
                     mkmov=False, add_phi_dot=None, dpi=300, **kwargs):
@@ -4307,6 +4606,81 @@ class BLsim(object):
             tn.savefig(tn_fn)
             plt.close(tn)
 
+    def mk_stripes(self, var_list=None, dt=25, base_dir=None, file='cons',
+                   overwrite=True, popt=None, thumbnail=True, rmax=None):
+        if popt is None:
+            popt = {}
+        if var_list is None:
+            var_list = ['Rpseudo', 've']
+        var_list = np.atleast_1d(var_list)
+        fopt = {'dpi': 300, 'figsize': (6, 6)}
+        # path = self.name + '_maps'
+        path = 'stripes'
+        if base_dir is not None:
+            path = os.path.join(base_dir, path)
+        i = 0
+        if not os.path.isdir(path):
+            os.makedirs(path)
+        with self.loadfile(file, -1) as bf:
+            tf = int(bf.t / tau + .5)
+        times = list(range(0, tf + 1, dt))
+        # print(tf, dt, times)
+        opt = dict(save=True, fopt=fopt, rmax=rmax, overwrite=overwrite, **popt)
+        tn_fn = os.path.join(path, self.name + '_stripes_thumbnails.png')
+        if not overwrite and os.path.isfile(tn_fn):
+            thumbnail = False
+        inc = []
+        ncol = 4
+        nrow = 3
+        if thumbnail:
+            tn = plt.figure(figsize=(10, 8), dpi=300)
+            gs = mpl.gridspec.GridSpec(nrow, ncol, wspace=.1, hspace=.13, top=.93,
+                                       bottom=.05,
+                                       left=.05, right=.99)
+            axs = [plt.subplot(i) for i in gs]
+            sample = len(times) // 12
+            inc = times[1::sample]
+        init = None
+        i = 0
+        for t in times:
+            t = int(t)
+            with self.loadfile(file, t) as bf:
+                if t == 0:
+                    rho0 = bf['dens'].mean(axis=0)
+                if t in inc:
+                    ax = axs.pop(0)
+                    bf.stripe(str(var_list[0]), ax=ax, cb=False, title=False,
+                              display=True, rmax=rmax, lbls=False)
+                    # x = self.r[-1] * 0.9
+                    # ax.text(x, x, '{:02d}'.format(i), ha='right', va='top')
+                    if i % ncol:
+                        ax.set_yticklabels([])
+                    else:
+                        plt.ylabel(r'$\phi/\pi$')
+                    if i / ncol < nrow - 1:
+                        ax.set_xticklabels([])
+                    else:
+                        plt.xlabel(r'$r$')
+                    plt.title(r"$t/2\pi={:g}$".format(t))
+                    ax.tick_params(direction="in")
+                    i += 1
+                for var in var_list:
+                    if var is not None:
+                        var = str(var)
+                    if not os.path.isdir(os.path.join(path, var)):
+                        os.makedirs(os.path.join(path, var))
+                    sdir = os.path.join(path, var)
+                    if var == 'd_vortensity':
+                        init = bf.plt_vortensity(vmax=True, save=True, init=init,
+                                                 overwrite=overwrite, sdir=sdir)
+                    else:
+                        bf.stripe_and_data(var, sdir=sdir, rho0=rho0, **opt)
+        if thumbnail:
+            print(tn_fn)
+            plt.suptitle(self.name)
+            tn.savefig(tn_fn)
+            plt.close(tn)
+
     def mode_detect(self, r=None, save=True, fn=None, dt=10, nbin=3, emax=1e-4, smax=2e-4,
                     dr=5,
                     data_only=False, dw=.05, overlap=10, nskip=3, out_mult=2):
@@ -4355,7 +4729,7 @@ class BLsim(object):
         return self._mode_detect
 
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
-                   sub_dir=False, overwrite=True):
+                   sub_dir=False, overwrite=True, stripes=True):
         if working_dir is True:
             working_dir = self.name + '_plots'
         if not working_dir:
@@ -4398,6 +4772,9 @@ class BLsim(object):
             if maps:
                 if not quiet: print('    Maps')
                 self.mk_maps(overwrite=overwrite)
+            if stripes:
+                if not quiet: print('    Stripes')
+                self.mk_stripes(overwrite=overwrite)
             if fluxes:
                 if not quiet: print('    Flux Series')
                 self.flux_series(sdir=True, progress=(not quiet), overwrite=overwrite)
@@ -4592,7 +4969,7 @@ class modeData(object):
                 for r in self[1:]:
                     try:
                         mlist = [i for i in r if (i[0] == mode[0]) and (
-                                    abs(i[3] - mode[3]) < self.dw * mode[3])]
+                                abs(i[3] - mode[3]) < self.dw * mode[3])]
                     except IndexError:
                         mlist = []
                     while mlist:
