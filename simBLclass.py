@@ -168,6 +168,12 @@ def crudeDiff(t, data, axis=0, front=True):
         return np.concatenate((out, out[loc]), axis=axis)
 
 
+def lindblad_loc(ps, m=1):
+    mtt = -2. / 3.
+    corot = ps ** mtt
+    return np.array([(m/(m-1))**mtt, 1, (m/(m+1))**mtt]) * corot
+
+
 def smooth(data, width=64):
     try:
         len(width)
@@ -574,9 +580,10 @@ class BLfile(BLfileBase):
     def stripe(self, data=None, fn=None, save=False, subsample=False, title=None,
                name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None, cax=None,
-               ax=None, log=False, aspect=1, sdir=None, smooth=None, rmax=None, lbls=True,
+               ax=None, log=False, aspect=None, sdir=None, smooth=None, rmax=None, lbls=True,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1, dpi=300,
-               figsize=None, overwrite=True, display=False, minmax=False, txt_opt=None):
+               figsize=None, overwrite=True, display=False, minmax=False, txt_opt=None,
+               ps=None, mode=1):
         """Plot 2D sim data"""
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
@@ -587,7 +594,8 @@ class BLfile(BLfileBase):
         if cbopt is None:
             cbopt = {}
         if rmax is None:
-            rmax = min(1 + 9 / self.mach, 1 + 81 / self.mach ** 2)
+            #rmax = min(1 + 9 / self.mach, 1 + 81 / self.mach ** 2)
+            rmax = 1 + 13.5 / self.mach
             rmax = min(rmax, 3)
         rmax = min(rmax, self.r[-1])
         r = self.r[np.newaxis, :]
@@ -705,7 +713,7 @@ class BLfile(BLfileBase):
             ax.set_aspect(aspect)
 
         # start plotting
-        im = plt.imshow(data, extent=[self.r[0], rmax, 0, 2], **_popt)
+        pcm = plt.pcolormesh(self.r, self.phi / np.pi, data, **_popt)
         plt.xlim(self.r[0], rmax)
         plt.ylim(0, 2)
         if lbls:
@@ -728,13 +736,18 @@ class BLfile(BLfileBase):
             rplot = np.atleast_1d(rplot)
             for r in rplot:
                 plt.axvline(r, lw=1, color='1', ls=':')
+        if ps is not None:
+            tmp = lindblad_loc(ps, mode)
+            plt.axvline(tmp[0], lw=1, color='1', ls='--')
+            plt.axvline(tmp[1], lw=1, color='1', ls='-')
+            plt.axvline(tmp[2], lw=1, color='1', ls='--')
         if title:
             plt.title(helpers.sanitize_lbl(title.format(**self.__dict__)))
         if cb:
             divider = make_axes_locatable(ax)
             if cax is None:
                 cax = divider.append_axes("right", size="5%", pad=0.05)
-            cb = plt.colorbar(im, cax=cax, **cbopt)
+            cb = plt.colorbar(pcm, cax=cax, **cbopt)
             cb.ax.yaxis.set_offset_position('left')
             if cbl:
                 cb.set_label(cbl)
@@ -747,7 +760,7 @@ class BLfile(BLfileBase):
         if ret_fn:
             return fn
 
-        return im
+        return pcm
 
     def stripe_and_data(self, var=None, fn=None, save=False, sdir=None, overwrite=True,
                         dpi=300, figsize=None, fopt=None, ext='png', ret_fn=False,
@@ -777,26 +790,30 @@ class BLfile(BLfileBase):
                                    hspace=.1)
         ax0 = plt.subplot(gs[0, 0])
         cax = plt.subplot(gs[0, 1])
-        im = self.stripe(var, ax=ax0, cax=cax, lbls=False, **kwargs)
-        xlim = im.get_extent()[:2]
+        pcm = self.stripe(var, ax=ax0, cax=cax, lbls=False, **kwargs)
+        xlim = ax0.get_xlim()
+        print(xlim)
         plt.ylabel(r'$\phi/2\pi$')
         ax0.set_xticklabels([])
 
         ax = plt.subplot(gs[1, 0])
         omega = self.vel(2).mean(axis=0) / self.rc
         plt.plot(self.rc, omega, 'k')
-        ylim = plt.ylim()
+        #ylim = plt.ylim()
         plt.plot(self.rc, self.rc**-1.5, lw=1, c='.5', ls=':')
         #plt.legend([r'$\Omega$', r'$\Omega_{\rm K}$'])
         plt.ylabel(r'$\Omega$')
         ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
         ax.set_xticklabels([])
         plt.xlim(*xlim)
+        plt.ylim(None, 1)
 
         ax = plt.subplot(gs[2, 0])
         dens = self['dens'].mean(axis=0)
         plt.plot(self.rc, dens, 'k')
         if rho0 is not None:
+            if rho0 is True:
+                rho0 = self.sim.loadfile('cons', 0)['dens'].mean(axis=0)
             plt.plot(self.rc, rho0, lw=1, c='.5', ls=':')
             #plt.legend([r'$\rho$', r'$\rho_0$'])
         plt.ylabel(r'$\rho$')
