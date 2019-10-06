@@ -65,6 +65,13 @@ _seed_type = {'r': 'block-random', 'random': 'globally random',
 
 # _res_type = dict(LR='low res')
 
+def r_main(mach):
+    tmp = 9 / mach
+    out = min(1 + 1.5 * tmp, 1 + 1.5 * tmp ** 2)
+    out = min(out, 3)
+    return out
+
+
 def line_plt(p1, p2, **popt):
     if p1[0] == p2[0]:
         dth = np.abs(p1[1] - p2[1])
@@ -594,9 +601,7 @@ class BLfile(BLfileBase):
         if cbopt is None:
             cbopt = {}
         if rmax is None:
-            #rmax = min(1 + 9 / self.mach, 1 + 81 / self.mach ** 2)
-            rmax = 1 + 13.5 / self.mach
-            rmax = min(rmax, 3)
+            rmax = r_main(self.mach)
         rmax = min(rmax, self.r[-1])
         r = self.r[np.newaxis, :]
         phi = self.phi[:, np.newaxis] + phi_shift
@@ -764,7 +769,7 @@ class BLfile(BLfileBase):
 
     def stripe_and_data(self, var=None, fn=None, save=False, sdir=None, overwrite=True,
                         dpi=300, figsize=None, fopt=None, ext='png', ret_fn=False,
-                        rho0=None, **kwargs):
+                        rho0=None, omega0='k', **kwargs):
         if figsize is None:
             figsize = (5, 6)
         _fopt = dict(dpi=dpi, figsize=figsize)
@@ -784,6 +789,15 @@ class BLfile(BLfileBase):
                 return fn
             return None
 
+        if np.all(omega0 == 'k'):
+            omega0 = self.rc ** -1.5
+        if omega0 is True or rho0 is True:
+            df = self.sim.loadfile('cons', 0)
+            if rho0 is True:
+                rho0 = df['dens'].mean(axis=0)
+            if omega0 is True:
+                omega0 = df['vel2'].mean(axis=0) / self.rc
+
         fig = plt.figure(**_fopt)
         gs = mpl.gridspec.GridSpec(3, 2, height_ratios=[1, .2, .2], width_ratios=[1, .05],
                                    top=.95, bottom=.09, left=.13, right=.85, wspace=.01,
@@ -792,7 +806,7 @@ class BLfile(BLfileBase):
         cax = plt.subplot(gs[0, 1])
         pcm = self.stripe(var, ax=ax0, cax=cax, lbls=False, **kwargs)
         xlim = ax0.get_xlim()
-        print(xlim)
+        #print(xlim)
         plt.ylabel(r'$\phi/2\pi$')
         ax0.set_xticklabels([])
 
@@ -800,8 +814,9 @@ class BLfile(BLfileBase):
         omega = self.vel(2).mean(axis=0) / self.rc
         plt.plot(self.rc, omega, 'k')
         #ylim = plt.ylim()
-        plt.plot(self.rc, self.rc**-1.5, lw=1, c='.5', ls=':')
-        #plt.legend([r'$\Omega$', r'$\Omega_{\rm K}$'])
+        if omega0 is not None:
+            plt.plot(self.rc, omega0, lw=1, c='.5', ls=':')
+            #plt.legend([r'$\Omega$', r'$\Omega_{\rm K}$'])
         plt.ylabel(r'$\Omega$')
         ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
         ax.set_xticklabels([])
@@ -812,8 +827,6 @@ class BLfile(BLfileBase):
         dens = self['dens'].mean(axis=0)
         plt.plot(self.rc, dens, 'k')
         if rho0 is not None:
-            if rho0 is True:
-                rho0 = self.sim.loadfile('cons', 0)['dens'].mean(axis=0)
             plt.plot(self.rc, rho0, lw=1, c='.5', ls=':')
             #plt.legend([r'$\rho$', r'$\rho_0$'])
         plt.ylabel(r'$\rho$')
@@ -1097,6 +1110,9 @@ class BLConsPrim(BL3Dfile):
             plt.close()
 
         return init
+
+    def omega(self):
+        return self['vel2'] / self.rc[np.newaxis, :]
 
     def vi(self):
         return self.rc[np.newaxis, :] ** 2 * self.vorticity(True)
@@ -2191,7 +2207,7 @@ class BLsim(object):
                 func = getattr(fn, func)
         except TypeError:
             return func(fn, *args, **kwargs)
-        return func(*args, **kwargs)
+        return func(fn, *args, **kwargs)
 
     def map_files(self, files, func, *args, imin=None, imax=None, ll=False, **kwargs):
         try:
@@ -3665,7 +3681,7 @@ class BLsim(object):
     def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None, std_plot=False,
                          ret_m=None, smooth=False, sw=20, std=None, rsmooth=None, fn=None,
                          save=None, ext='pdf', cout=None, add_max=None, title=True,
-                         xlbl=True):
+                         xlbl=True, legend=True, log=False, set_ylim=False):
         ir = self.rloc(r)
         rslice = ir
         r = self.rc[ir]
@@ -3701,6 +3717,8 @@ class BLsim(object):
                     std = std[:, modes, ir]
                 else:
                     std = std[:, modes]
+        yl, yu = None, None
+        i0 = np.where(self.fft_time > 60 * tau)[0][0]
         for i, m in enumerate(modes):
             line = rdata[:, i]
             if smooth:
@@ -3711,7 +3729,19 @@ class BLsim(object):
                     if smooth in [True, 1]:
                         smooth = 'flat'
                     line = helpers.smooth(line, window=smooth, window_len=sw)
-            handles[m] = plt.plot(self.fft_time / tau, line, lw=1)[0]
+            if log:
+                handles[m] = plt.semilogy(self.fft_time / tau, line, lw=1)[0]
+            else:
+                handles[m] = plt.plot(self.fft_time / tau, line, lw=1)[0]
+            if set_ylim:
+                if yl is None:
+                    yl = line[i0:].min()
+                else:
+                    yl = min(yl, line[i0:].min())
+                if yu is None:
+                    yu = line[np.isfinite(line)].max()
+                else:
+                    yu = max(yu, line[np.isfinite(line)].max())
             if std is not None and std_plot:
                 c = handles[m].get_color()
                 plt.fill_between(self.fft_time / tau, line - std[:, m], line + std[:, m],
@@ -3722,14 +3752,22 @@ class BLsim(object):
         cd = {m: handles[m].get_color() for m in handles.keys()}
         handles = [handles[m] for m in modes]
         lbls = ['$%d$' % m for m in modes]
-        leg = plt.legend(handles, lbls, **opt)
-        for legobj in leg.legendHandles:
-            legobj.set_linewidth(2.0)
+        if legend:
+            leg = plt.legend(handles, lbls, **opt)
+            for legobj in leg.legendHandles:
+                legobj.set_linewidth(2.0)
         if xlbl:
             plt.xlabel(r'Time/$2\pi$')
         # plt.ylabel('Phase')
         ax = plt.gca()
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
+        if set_ylim:
+            if log:
+                yu *= 1.2
+            else:
+                yu += (yu - yl) * .05
+            ylim = plt.ylim(yl, yu)
+            print(i0, yl, self.fft_time[i0] / tau, self.fft_time.shape)
         if title:
             plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
         plt.xlim(np.floor(self.fft_time[0] / tau), np.ceil(self.fft_time[-1] / tau))
@@ -3787,7 +3825,7 @@ class BLsim(object):
             plt.close()
         return None
 
-    def r_amp(self, r, fig=True, ylbl=True, **kwarg):
+    def r_amp(self, r, fig=True, ylbl=True, log=False, set_ylim=False, **kwarg):
         if not 'smooth' in kwarg:
             kwarg['smooth'] = 'flat'
             if not 'sw' in kwarg:
@@ -3802,13 +3840,18 @@ class BLsim(object):
                 kwarg['rsmooth'] = -1
         except AttributeError:
             pass
-        self._r_phase_plotter(r, data, **kwarg)
+        self._r_phase_plotter(r, data, log=log, set_ylim=set_ylim, **kwarg)
         nt = self.fft_time.size
-        m0 = data[:nt // 5, 1:, ir].max()
-        m1 = data[nt // 5:, 1:, ir].max()
-        plt.ylim(0, None)
-        if m0 > 1.2 * m1:
-            plt.ylim(None, 1.1 * m1)
+        if not set_ylim:
+            if log:
+                m1 = data[nt // 5:, 1:, ir].min()
+                plt.ylim(m1, None)
+            else:
+                plt.ylim(0, None)
+                m0 = data[:nt // 5, 1:, ir].max()
+                m1 = data[nt // 5:, 1:, ir].max()
+                if m0 > 1.2 * m1:
+                    plt.ylim(None, 1.1 * m1)
         if ylbl:
             plt.ylabel('Amplitude')
         return None
@@ -4048,7 +4091,8 @@ class BLsim(object):
 
     def diagnostic(self, rs=None, save=False, fn=None, ext='png', figsize=None,
                    sdir=None, subsample=None, sz=3.5, xmax=2.5, dpi=300, modes=None,
-                   add_modes=None, tmark=None, add_max=None, overwrite=True):
+                   add_modes=None, tmark=None, add_max=None, overwrite=True, log=True,
+                   map=False):
         if rs is None:
             rs = [-1, 1.2, 2.0]
         if save or fn:
@@ -4065,7 +4109,9 @@ class BLsim(object):
         # self.mode_mask()
         rs = np.atleast_1d(rs)
         nr = rs.size
-        nx = nr + 1
+        nx = nr
+        if map:
+            nx += 1
         ny = 2
         if figsize is None:
             figsize = (nx * sz + 1, ny * sz + 1)
@@ -4086,58 +4132,64 @@ class BLsim(object):
                 r = self.mid_star()
             ax = plt.subplot(gs[0, i])
             plt.sca(ax)
-            self.r_amp(r, xlbl=False, ylbl=ylbl, **ropt)
+            self.r_amp(r, xlbl=False, ylbl=ylbl, log=True, legend=(i == 0), set_ylim=True,
+                       **ropt)
 
             ax = plt.subplot(gs[1, i])
             plt.sca(ax)
-            self.r_speed(r, ylbl=ylbl, tmark=tmark, title=False, **ropt)
+            self.r_speed(r, ylbl=ylbl, tmark=tmark, title=False, legend=False, **ropt)
 
-        ax = plt.subplot(gs[0, nr])
-        f = self.loadfile(self.files('cons')[-1])
-        txt_opt = dict(x=.99 * xmax, y=1.01 * xmax, va='bottom', ha='right')
-        f.plot2d('Rpseudo', ax=ax, vmin='smart', cbl=r'$rv_r\sqrt{\rho}$',
-                 subsample=subsample, title=r'$t/2\pi={:.2f}$'.format(f.t / tau),
-                 txt_opt=txt_opt)
-        plt.xlim(-xmax, xmax)
-        plt.ylim(-xmax, xmax)
+        if map:
+            # map
+            ax = plt.subplot(gs[0, nr])
+            f = self.loadfile(self.files('cons')[-1])
+            txt_opt = dict(x=.99 * xmax, y=1.01 * xmax, va='bottom', ha='right')
+            f.plot2d('Rpseudo', ax=ax, vmin='smart', cbl=r'$rv_r\sqrt{\rho}$',
+                     subsample=subsample, title=r'$t/2\pi={:.2f}$'.format(f.t / tau),
+                     txt_opt=txt_opt)
+            plt.xlim(-xmax, xmax)
+            plt.ylim(-xmax, xmax)
+
+            # info panel
+            ax = plt.subplot(gs[-1, -1])
+            # Get rid of ticks and axes
+            spines = [ax.spines[j] for j in ax.spines.keys()]
+            for spine in spines:
+                spine.set_color('none')
+            ax.xaxis.set_ticks([])
+            ax.yaxis.set_ticks([])
+            # the time is now
+            now = time.asctime() + ' ' + time.tzname[time.localtime().tm_isdst]
+            ax.text(.5, 1, helpers.sanitize_lbl(self.name) + '\n' + now, ha='center',
+                    va='top')
+            info = {}
+            pars = []
+
+            def _add(key, val):
+                info[key] = val
+                pars.append(key)
+
+            # populate
+            # _add('Name', self.name)
+            _add(r'$\mathcal{M}$', self.mach)
+            _add('$N_r$', self.rc.size)
+            _add(r'$N_\phi$', self.phic.size)
+            _add('$r$', '[{:.3g}, {:.3g}]'.format(self.r[0], self.r[-1]))
+            _add('Seed', self.inputs['problem'].get('seed', 'random'))
+            _add('Amp', '{:.3g}'.format(self.inputs['problem'].get('seedAmp', .01)))
+            # print the stuff in a grid
+            j = 0
+            ncol = 3
+            for par in pars:
+                try:
+                    txt = '{0:s}: {1:g}'.format(par, float(info[par]))
+                except (TypeError, ValueError):
+                    txt = '{0:s}: {1:}'.format(par, info[par])
+                ax.text(.00 + .4 * (j % ncol), 1. - .5 * .12 * (j // ncol + 3), txt)
+                j += 1
+
         fig.suptitle('Diagnostic for ' + helpers.sanitize_lbl(self.name))
 
-        ax = plt.subplot(gs[-1, -1])
-        # Get rid of ticks and axes
-        spines = [ax.spines[j] for j in ax.spines.keys()]
-        for spine in spines:
-            spine.set_color('none')
-        ax.xaxis.set_ticks([])
-        ax.yaxis.set_ticks([])
-        # the time is now
-        now = time.asctime() + ' ' + time.tzname[time.localtime().tm_isdst]
-        ax.text(.5, 1, helpers.sanitize_lbl(self.name) + '\n' + now, ha='center',
-                va='top')
-        info = {}
-        pars = []
-
-        def _add(key, val):
-            info[key] = val
-            pars.append(key)
-
-        # populate
-        # _add('Name', self.name)
-        _add(r'$\mathcal{M}$', self.mach)
-        _add('$N_r$', self.rc.size)
-        _add(r'$N_\phi$', self.phic.size)
-        _add('$r$', '[{:.3g}, {:.3g}]'.format(self.r[0], self.r[-1]))
-        _add('Seed', self.inputs['problem'].get('seed', 'random'))
-        _add('Amp', '{:.3g}'.format(self.inputs['problem'].get('seedAmp', .01)))
-        # print the stuff in a grid
-        j = 0
-        ncol = 3
-        for par in pars:
-            try:
-                txt = '{0:s}: {1:g}'.format(par, float(info[par]))
-            except (TypeError, ValueError):
-                txt = '{0:s}: {1:}'.format(par, info[par])
-            ax.text(.00 + .4 * (j % ncol), 1. - .5 * .12 * (j // ncol + 3), txt)
-            j += 1
         if save:
             plt.savefig(fn)
             plt.close()
@@ -4664,6 +4716,7 @@ class BLsim(object):
             with self.loadfile(file, t) as bf:
                 if t == 0:
                     rho0 = bf['dens'].mean(axis=0)
+                    omega0 = bf['vel2'].mean(axis=0) / bf.rc
                 if t in inc:
                     ax = axs.pop(0)
                     bf.stripe(str(var_list[0]), ax=ax, cb=False, title=False,
@@ -4691,7 +4744,7 @@ class BLsim(object):
                         init = bf.plt_vortensity(vmax=True, save=True, init=init,
                                                  overwrite=overwrite, sdir=sdir)
                     else:
-                        bf.stripe_and_data(var, sdir=sdir, rho0=rho0, **opt)
+                        bf.stripe_and_data(var, sdir=sdir, rho0=rho0, omega0=omega0, **opt)
         if thumbnail:
             print(tn_fn)
             plt.suptitle(self.name)
@@ -4746,7 +4799,8 @@ class BLsim(object):
         return self._mode_detect
 
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
-                   sub_dir=False, overwrite=True, stripes=True):
+                   sub_dir=False, overwrite=True, stripes=True, vort_prof=True,
+                   prof=True):
         if working_dir is True:
             working_dir = self.name + '_plots'
         if not working_dir:
@@ -4784,8 +4838,12 @@ class BLsim(object):
             if gmodes:
                 if not quiet: print('    Speed plots')
                 self.speed_plots(gmodes, tmark=t[:], overwrite=overwrite)
-            if not quiet: print('    Vortensity profiles')
-            self.vortensity_profiles(save=True, overwrite=overwrite)
+            if vort_prof:
+                if not quiet: print('    Vortensity profiles')
+                self.vortensity_profiles(save=True, overwrite=overwrite)
+            if prof:
+                if not quiet: print('    Profiles')
+                self.evo_prof(save=True, overwrite=overwrite)
             if maps:
                 if not quiet: print('    Maps')
                 self.mk_maps(overwrite=overwrite)
@@ -4803,8 +4861,7 @@ class BLsim(object):
 
     def vortensity_profiles(self, times=None, files=None, cmap=None, popt=None, fn=None,
                             init=None, data=None, t0=None, save=False, fig=None,
-                            sdir=None,
-                            overwrite=False, ext='pdf'):
+                            sdir=None, overwrite=False, ext='pdf'):
         if save or fn:
             save = True
             if sdir is None:
@@ -4854,6 +4911,115 @@ class BLsim(object):
         lbl += str(t0) + r'}\right)$'
         plt.ylabel(lbl)
         plt.title(helpers.sanitize_lbl(self.name))
+        if save:
+            plt.savefig(fn)
+            plt.close()
+        return
+
+    def evo_prof(self, times=None, files=None, cmap=None, popt=None, fn=None, cb=False,
+                 init=None, data=None, t0=0, save=False, fig=None, var_list=None,
+                 sdir=None, overwrite=False, ext='pdf', rmax=None, dpi=300, figsize=None,
+                 lopt=None):
+        if save or fn:
+            save = True
+            if sdir is None:
+                sdir = ''
+            if fn is None:
+                fn = helpers.sanitize_lbl(self.name) + '_evo_prof.' + ext
+                fn = os.path.join(sdir, fn)
+            if sdir:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+        if parse_not_overwrite(overwrite, fn):
+            return None
+        if rmax is None:
+            rmax = r_main(self.mach)
+        if np.all(rmax == -1):
+            rmax = self.r[-1]
+        if var_list is None:
+            var_list = ['omega', 'dens', 'vortensity']
+        if files is None:
+            if times is None:
+                times = np.array([0, 20, 21, 22, 23, 24, 25, 50, 100, 200, 400, 600])
+                #times = np.arange(t0, 601, 50, dtype=int)
+            files = [self.files('cons')[t] for t in times]
+        if t0 is None:
+            t0 = times[0]
+        if init is None:
+            df0 = self.loadfile('cons', t0)
+            init = {i: df0[i].mean(axis=0) for i in var_list}
+        if data is None:
+            def grabber(df):
+                return [df[i].mean(axis=0) for i in var_list]
+
+            data = self.map_files(files, grabber)
+        data = np.array(data)
+        print(data.shape)
+        if cmap is None:
+            cmap = plt.get_cmap()
+        elif hasattr(cmap, 'lower'):
+            cmap = plt.get_cmap(cmap)
+        if cb:
+            norm = mpl.colors.Normalize(vmin=times[0], vmax=times[-1])
+            colors = cmap(norm(times))
+        else:
+            colors = cmap(np.linspace(0, 1, times.size))
+
+        if popt is None:
+            popt = dict()
+        _popt = dict(lw=1, ls='-')
+        _popt.update(popt)
+
+        _v = r'$R^2\left(\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_{'
+        _v += str(t0) + r'}\right)$'
+        lbls = {'dens': r'$\rho$',
+                'vortensity': _v,
+                'omega': r'$\Omega$'}
+
+        fig = plt.figure(dpi=dpi, figsize=figsize)
+        nvar = len(var_list)
+        nrow = nvar
+        hr = []
+        if cb:
+            nrow += 1
+            hr += [.1]
+        hr += [1] * nvar
+        gs = mpl.gridspec.GridSpec(nrow, 1, height_ratios=hr,
+                                   top=.92, bottom=.09, left=.13, right=.85, wspace=.01,
+                                   hspace=.1)
+        axs = [plt.subplot(i) for i in gs]
+
+        if cb:
+            cb = mpl.colorbar.ColorbarBase(axs[0], cmap=cmap, norm=norm, orientation='horizontal')
+            axs.pop(0).xaxis.set_ticks_position('top')
+            plt.title(r'$t/2\pi$')
+
+        for n, var in enumerate(var_list):
+            plt.sca(axs[n])
+            for i, d in enumerate(data[:, n]):
+                lbl = r'${:d}$'.format(times[i])
+                plt.plot(self.rc, d, c=colors[i], label=lbl, **_popt)
+            # plt.legend(loc=1)
+            il = self.rloc(1.05)
+            ir = self.rloc(rmax)
+            ylim = data[:, n, il:ir].min(), data[:, n, il:ir].max()
+            dy = (ylim[1] - ylim[0]) * .05
+            ylim = plt.ylim(ylim[0] - dy, ylim[1] + dy)
+            print(ylim)
+            plt.xlim(self.r[0], rmax)
+            plt.ylabel(lbls[var])
+            if n < nvar - 1:
+                axs[n].set_xticklabels([])
+            if var == 'omega':
+                _, ymax = plt.ylim()
+                plt.ylim(None, max(ymax, 1))
+        if not cb:
+            if lopt is None:
+                lopt = dict(handlelength=1, fontsize=8, handletextpad=.4,
+                            columnspacing=.7, ncol=3, loc=0)
+            plt.legend(**lopt)
+        plt.xlabel('$R$')
+        plt.suptitle(helpers.sanitize_lbl(self.name))
         if save:
             plt.savefig(fn)
             plt.close()
@@ -5403,6 +5569,16 @@ if __name__ == '__main__':
                         default=True,
                         action='store_false',
                         help='Do not plot flux series')
+    parser.add_argument('--no_vort',
+                        dest='vort_prof',
+                        default=True,
+                        action='store_false',
+                        help='Do not plot vorticity profiles')
+    parser.add_argument('--no_prof',
+                        dest='prof',
+                        default=True,
+                        action='store_false',
+                        help='Do not plot profiles')
     parser.add_argument('-i',
                         type=int,
                         default=None,
@@ -5440,4 +5616,5 @@ if __name__ == '__main__':
             if quiet is None:
                 quiet = False
             BLsim(sims[0]).main_plots(quiet=quiet, working_dir=True, maps=args.maps,
-                                      overwrite=args.overwrite, fluxes=args.flux)
+                                      overwrite=args.overwrite, fluxes=args.flux,
+                                      vort_prof=args.vort_prof, prof=args.prof)
