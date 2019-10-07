@@ -4951,7 +4951,7 @@ class BLsim(object):
             var_list = ['omega', 'dens', 'vortensity']
         if files is None:
             if times is None:
-                times = np.array([0, 20, 21, 22, 23, 24, 25, 50, 100, 200, 400, 600])
+                times = np.array([0, 20, 25, 30, 40, 50, 100, 200, 400, 600])
                 #times = np.arange(t0, 601, 50, dtype=int)
             files = [self.files('cons')[t] for t in times]
         if t0 is None:
