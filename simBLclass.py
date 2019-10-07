@@ -5013,10 +5013,12 @@ class BLsim(object):
             # plt.legend(loc=1)
             il = self.rloc(1.05)
             ir = self.rloc(rmax)
-            ylim = data[:, n, il:ir].min(), data[:, n, il:ir].max()
+            ylim = [data[:, n, il:ir].min(), data[:, n, il:ir].max()]
             dy = (ylim[1] - ylim[0]) * .05
-            ylim = plt.ylim(ylim[0] - dy, ylim[1] + dy)
-            print(ylim)
+            ylim = [ylim[0] - dy, ylim[1] + dy]
+            ylim[1] = max(ylim[1], 1)
+            ylim = plt.ylim(*ylim)
+            #print(ylim)
             plt.xlim(self.r[0], rmax)
             plt.ylabel(lbls[var])
             if n < nvar - 1:
