@@ -5555,6 +5555,10 @@ if __name__ == '__main__':
                         default=False,
                         action='store_true',
                         help='Create maps of pertibations in the simulations.')
+    parser.add_argument('-s', '--stripes',
+                        default=False,
+                        action='store_true',
+                        help='Create strpes of pertibations in the simulations.')
     parser.add_argument('-p', '--path',
                         type=str,
                         default='~/data/pleiades_data/bl',
