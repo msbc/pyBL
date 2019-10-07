@@ -769,7 +769,7 @@ class BLfile(BLfileBase):
 
     def stripe_and_data(self, var=None, fn=None, save=False, sdir=None, overwrite=True,
                         dpi=300, figsize=None, fopt=None, ext='png', ret_fn=False,
-                        rho0=None, omega0='k', **kwargs):
+                        rho0=None, omega0=True, **kwargs):
         if figsize is None:
             figsize = (5, 6)
         _fopt = dict(dpi=dpi, figsize=figsize)
@@ -4996,7 +4996,7 @@ class BLsim(object):
             hr += [.1]
         hr += [1] * nvar
         gs = mpl.gridspec.GridSpec(nrow, 1, height_ratios=hr,
-                                   top=.92, bottom=.09, left=.13, right=.85, wspace=.01,
+                                   top=.92, bottom=.12, left=.14, right=.95, wspace=.01,
                                    hspace=.1)
         axs = [plt.subplot(i) for i in gs]
 
