@@ -2297,11 +2297,21 @@ class BLsim(object):
             out = .5 * (data[:,::2] + data[:,1::2])[:,:-2]
         except ValueError:
             out = .5 * (data[:,-1:2] + data[:,1::2])[:,:-2]
+        try:
+            t = self.gen_fft_times()
+        except (MemoryError, OSError):
+            t = self.gen_fft_times(ll=False)
+        try:
+            t = .5 * (t[::2] + t[1::2])[:-2]
+        except ValueError:
+            t = .5 * (t[-1:2] + t[1::2])[:-2]
         # out = scipy.signal.savgol_filter(out, 101, 1, axis=1)
         # out = scipy.signal.savgol_filter(out, 21, 1, axis=2)
         out = convolve1d(out, np.array(Box1DKernel(101)), axis=1)
         out = convolve1d(out, np.array(Box1DKernel(21)), axis=2)
-        return dict(zip(keys, out))
+        out = dict(zip(keys, out))
+        out['t'] = t
+        return out
 
     @property
     def smooth_flux_data(self):
@@ -2364,7 +2374,7 @@ class BLsim(object):
         js = range(len(ilist))
         if data is None:
             data = self.smooth_flux_data
-        t = self.flux_data['t']
+        t = data['t']
         i1 = self.rloc(1)
 
         if fopt is None:
