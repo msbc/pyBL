@@ -2292,10 +2292,11 @@ class BLsim(object):
         keys = ['CS', 'CA', 'CL', 'Mdot', 'dd', 'dens', 'vr', 'vphi']
         if data is None:
             data = np.array([self.flux_data[i] for i in keys])
+        print(data.shape)
         try:
-            out = .5 * (data[::2] + data[1::2])[:-2]
+            out = .5 * (data[:,::2] + data[:,1::2])[:,:-2]
         except ValueError:
-            out = .5 * (data[:-1:2] + data[1::2])[:-2]
+            out = .5 * (data[:,-1:2] + data[:,1::2])[:,:-2]
         # out = scipy.signal.savgol_filter(out, 101, 1, axis=1)
         # out = scipy.signal.savgol_filter(out, 21, 1, axis=2)
         out = convolve1d(out, np.array(Box1DKernel(101)), axis=1)
@@ -3767,7 +3768,7 @@ class BLsim(object):
             else:
                 yu += (yu - yl) * .05
             ylim = plt.ylim(yl, yu)
-            print(i0, yl, self.fft_time[i0] / tau, self.fft_time.shape)
+            #print(i0, yl, self.fft_time[i0] / tau, self.fft_time.shape)
         if title:
             plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
         plt.xlim(np.floor(self.fft_time[0] / tau), np.ceil(self.fft_time[-1] / tau))
