@@ -2292,7 +2292,7 @@ class BLsim(object):
         keys = ['CS', 'CA', 'CL', 'Mdot', 'dd', 'dens', 'vr', 'vphi']
         if data is None:
             data = np.array([self.flux_data[i] for i in keys])
-        print(data.shape)
+        #print(data.shape)
         try:
             out = .5 * (data[:,::2] + data[:,1::2])[:,:-2]
         except ValueError:
@@ -4965,7 +4965,7 @@ class BLsim(object):
 
             data = self.map_files(files, grabber)
         data = np.array(data)
-        print(data.shape)
+        #print(data.shape)
         if cmap is None:
             cmap = plt.get_cmap()
         elif hasattr(cmap, 'lower'):
@@ -5632,4 +5632,5 @@ if __name__ == '__main__':
                 quiet = False
             BLsim(sims[0]).main_plots(quiet=quiet, working_dir=True, maps=args.maps,
                                       overwrite=args.overwrite, fluxes=args.flux,
-                                      vort_prof=args.vort_prof, prof=args.prof)
+                                      vort_prof=args.vort_prof, prof=args.prof,
+                                      stripes=args.stripes)
