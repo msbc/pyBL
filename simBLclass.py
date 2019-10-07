@@ -1839,7 +1839,7 @@ class FTdataFile(object):
         if self.sim is not None:
             tmp = [0]
             files = [i for i in glob(os.path.join(self.sim.path, '*.athdf'))]
-            tmp.extend([os.path.getmtime(i) for i in files])
+            tmp.extend([os.path.getctime(i) for i in files])
             if max(tmp) > os.path.getmtime(self.filename):
                 return True
         return False
