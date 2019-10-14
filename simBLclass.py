@@ -1833,22 +1833,28 @@ class FTdataFile(object):
 
     def updateQ(self):
         if not self.existsQ():
-            return True
+            print('FFT ' + self.filename + ' does not exist')
+            return 1
         if os.path.getsize(self.filename) == 0:
-            return True
+            print('FFT ' + self.filename + ' has size 0')
+            return 2
         if self.sim is not None:
             tmp = [0]
             files = [i for i in glob(os.path.join(self.sim.path, '*.athdf'))]
             tmp.extend([os.path.getctime(i) for i in files])
             if max(tmp) > os.path.getmtime(self.filename):
-                return True
+                loc = np.array(tmp).argmax()
+                print(loc, files[loc], tmp[i], os.path.getmtime(self.filename))
+                return False
         return False
 
     def generate(self):
         self.sim.gen_fft_file()
 
     def _read_data(self):
-        if self.updateQ():
+        tmp = self.updateQ()
+        if tmp:
+            print("UpdateQ: {:}".format(tmp))
             self.generate()
         t = []
         amp = []
@@ -5017,6 +5023,8 @@ class BLsim(object):
             dy = (ylim[1] - ylim[0]) * .05
             ylim = [ylim[0] - dy, ylim[1] + dy]
             ylim[1] = max(ylim[1], 1)
+            if n < 2:
+                ylim[0] = 0
             ylim = plt.ylim(*ylim)
             #print(ylim)
             plt.xlim(self.r[0], rmax)
