@@ -1843,8 +1843,11 @@ class FTdataFile(object):
             files = [i for i in glob(os.path.join(self.sim.path, '*.athdf'))]
             tmp.extend([os.path.getctime(i) for i in files])
             if max(tmp) > os.path.getmtime(self.filename):
-                loc = np.array(tmp).argmax()
-                print(loc, files[loc], tmp[loc], os.path.getmtime(self.filename))
+                try:
+                    loc = np.array(tmp).argmax()
+                    print(loc, files[loc], tmp[loc - 1], os.path.getmtime(self.filename))
+                except:
+                    print("IDK:", sys.exc_info()[0])
                 return False
         return False
 
