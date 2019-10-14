@@ -1844,7 +1844,7 @@ class FTdataFile(object):
             tmp.extend([os.path.getctime(i) for i in files])
             if max(tmp) > os.path.getmtime(self.filename):
                 loc = np.array(tmp).argmax()
-                print(loc, files[loc], tmp[i], os.path.getmtime(self.filename))
+                print(loc, files[loc], tmp[loc], os.path.getmtime(self.filename))
                 return False
         return False
 
