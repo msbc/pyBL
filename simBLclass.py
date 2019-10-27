@@ -807,7 +807,7 @@ class BLfile(BLfileBase):
         pcm = self.stripe(var, ax=ax0, cax=cax, lbls=False, **kwargs)
         xlim = ax0.get_xlim()
         #print(xlim)
-        plt.ylabel(r'$\phi/2\pi$')
+        plt.ylabel(r'$\phi/\pi$')
         ax0.set_xticklabels([])
 
         ax = plt.subplot(gs[1, 0])
