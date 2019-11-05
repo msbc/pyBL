@@ -4109,10 +4109,15 @@ class BLsim(object):
     def mid_star(self):
         return .5 + .5 * self.r[0]
 
-    def diagnostic(self, rs=None, save=False, fn=None, ext='png', figsize=None,
+    def diagnostic(self, rs=None, save=False, fn=None, ext=None, figsize=None,
                    sdir=None, subsample=None, sz=3.5, xmax=2.5, dpi=300, modes=None,
                    add_modes=None, tmark=None, add_max=None, overwrite=True, log=True,
                    map=False):
+        if ext is None:
+            if map:
+                ext = 'png'
+            else:
+                ext = 'pdf'
         if rs is None:
             rs = [-1, 1.2, 2.0]
         if save or fn:
@@ -4817,6 +4822,285 @@ class BLsim(object):
             return data
         self._mode_detect = modeData(data, sim=self, dw=dw, overlap=overlap, nbin=nbin)
         return self._mode_detect
+
+    def multi_stripe(self, times, left='Rpseudo', right='ve', llim=None, rlim=None,
+                     lopt=None, ropt=None, fig=None, fopt=None, dpi=300, figsize=True,
+                     gsopt=None, inc_time=True, fn=None, save=False, ext='png',
+                     sdir=False, overwrite=True, dropbox=False):
+        if dropbox and not sdir:
+            sdir = '~/Dropbox/Research/IAS/rrr/BL_shared/simulation_results/Production'
+            mach = int(np.round(self.mach))
+            if mach in [5, 6, 9, 12]:
+                sdir += '/M{:02d}'.format(mach)
+            sdir += '/' + self.name + '_plots'
+        if save and fn is None:
+            fn = self.name + '_multi_stripe.' + ext
+        if save or fn:
+            save = True
+            if sdir is True:
+                sdir = os.path.join(os.path.split(self.path)[0], 'figs')
+                sdir = os.path.join(sdir, self.name + '_plots')
+            if sdir:
+                sdir = os.path.expanduser(sdir)
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            return None
+
+        times = np.atleast_1d(times)
+        files = [t if hasattr(t, 'name') else self.loadfile('cons', t) for t in times]
+        nt = times.size
+
+        if figsize is True:
+            figsize = (6.25, 7)
+        _fopt = dict(dpi=dpi, figsize=figsize)
+        if fopt is None:
+            fopt = {}
+        _fopt.update(fopt)
+        _hr = [.1] + [1] * nt
+        _gsopt = dict(height_ratios=_hr, width_ratios=[1, 1], top=.90,
+                      bottom=.06, left=.07, right=.98, wspace=.03, hspace=.15)
+        if gsopt is None:
+            gsopt = dict()
+        _gsopt.update(gsopt)
+        _lopt = dict(cb=False, title=False, lbls=False)
+        _ropt = dict(**_lopt)
+        if llim is not None:
+            _lopt['vmin'] = llim[0]
+            _lopt['vmax'] = llim[1]
+        if rlim is not None:
+            _ropt['vmin'] = rlim[0]
+            _ropt['vmax'] = rlim[1]
+        if lopt is None:
+            lopt = dict()
+        if ropt is None:
+            ropt = dict()
+        _lopt.update(lopt)
+        _ropt.update(ropt)
+
+        fig = plt.figure(**_fopt)
+        gs = mpl.gridspec.GridSpec(nt + 1, 2, **_gsopt)
+        lcax = plt.subplot(gs[0, 0])
+        rcax = plt.subplot(gs[0, 1])
+
+        for i in range(nt):
+            df = files[i]
+            if i == nt - 1:
+                _lopt['cb'] = True
+                _lopt['cax'] = lcax
+                _lopt['cbopt'] = dict(orientation='horizontal')
+                _ropt['cb'] = True
+                _ropt['cax'] = rcax
+                _ropt['cbopt'] = dict(orientation='horizontal')
+
+            lax = plt.subplot(gs[i + 1, 0])
+            df.stripe(left, ax=lax, **_lopt)
+            lax.set_ylabel(r'$\phi/\pi$')
+            if llim is None:
+                llim = plt.gci().get_clim()
+                _lopt['vmin'] = llim[0]
+                _lopt['vmax'] = llim[1]
+
+            rax = plt.subplot(gs[i + 1, 1])
+            df.stripe(right, ax=rax, **_ropt)
+            if rlim is None:
+                rlim = plt.gci().get_clim()
+                _ropt['vmin'] = rlim[0]
+                _ropt['vmax'] = rlim[1]
+
+            if i < nt - 1:
+                lax.set_xticklabels([])
+                rax.set_xticklabels([])
+            rax.set_yticklabels([])
+
+            lax.xaxis.set_ticks_position('both')
+            lax.yaxis.set_ticks_position('both')
+            lax.tick_params(axis='both', which='both', direction='in')
+            lax.set_axisbelow(False)
+            rax.xaxis.set_ticks_position('both')
+            rax.yaxis.set_ticks_position('both')
+            rax.tick_params(axis='both', which='both', direction='in')
+            rax.set_axisbelow(False)
+            if inc_time:
+                plt.text(.7, .9, r'$t/2\pi={:.3g}$'.format(df.orbit), c='w',
+                         transform=rax.transAxes)
+        lax.set_xlabel('$r$')
+        rax.set_xlabel('$r$')
+        lcax.xaxis.set_label_position('top')
+        lcax.xaxis.set_ticks_position('top')
+        rcax.xaxis.set_label_position('top')
+        rcax.xaxis.set_ticks_position('top')
+
+        rcax.yaxis.set_offset_position('left')
+        lcax.yaxis.set_offset_position('left')
+        fig.suptitle(helpers.sanitize_lbl(self.name))
+
+        if save:
+            plt.savefig(fn)
+            plt.close()
+
+        return
+
+    def vortex_evo(self, times, left='Rpseudo', mid='ve', right='Rpseudo', llim=None,
+                   mlim=None, rlim=None, lopt=None, mopt=None, ropt=None, fig=None,
+                   fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
+                   save=False, ext='png', sdir=False, overwrite=True, dropbox=False):
+        if dropbox and not sdir:
+            sdir = '~/Dropbox/Research/IAS/rrr/BL_shared/simulation_results/Production'
+            mach = int(np.round(self.mach))
+            if mach in [5, 6, 9, 12]:
+                sdir += '/M{:02d}'.format(mach)
+            sdir += '/' + self.name + '_plots'
+        if save and fn is None:
+            fn = self.name + '_vortex_evo.' + ext
+        if save or fn:
+            save = True
+            if sdir is True:
+                sdir = os.path.join(os.path.split(self.path)[0], 'figs')
+                sdir = os.path.join(sdir, self.name + '_plots')
+            if sdir:
+                sdir = os.path.expanduser(sdir)
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            return None
+
+        times = np.atleast_1d(times)
+        files = [t if hasattr(t, 'name') else self.loadfile('cons', t) for t in times]
+        nt = times.size
+
+        if figsize is True:
+            figsize = (6.25, 7)
+        _fopt = dict(dpi=dpi, figsize=figsize)
+        if fopt is None:
+            fopt = {}
+            fopt = {}
+        _fopt.update(fopt)
+        _hr = [.1] + [1] * nt
+        _gsopt = dict(height_ratios=_hr, width_ratios=[1, .3, .45], top=.90, bottom=.06,
+                      left=.07, right=.92, wspace=.03, hspace=.15)
+        if gsopt is None:
+            gsopt = dict()
+        _gsopt.update(gsopt)
+        _lopt = dict(cb=False, title=False, lbls=False, rmax=4)
+        _mopt = dict(cb=False, title=False, lbls=False, rmax=1.6)
+        _ropt = dict(cb=False, title=False, minmax=False)
+        if llim is not None:
+            _lopt['vmin'] = llim[0]
+            _lopt['vmax'] = llim[1]
+        if mlim is not None:
+            _mopt['vmin'] = mlim[0]
+            _mopt['vmax'] = mlim[1]
+        if rlim is not None:
+            _ropt['vmin'] = rlim[0]
+            _ropt['vmax'] = rlim[1]
+        if lopt is None:
+            lopt = dict()
+        if mopt is None:
+            mopt = dict()
+        if ropt is None:
+            ropt = dict()
+        _lopt.update(lopt)
+        _mopt.update(mopt)
+        _ropt.update(ropt)
+
+        if not fig:
+            fig = plt.figure(**_fopt)
+        gs = mpl.gridspec.GridSpec(nt + 1, 3, **_gsopt)
+        lcax = plt.subplot(gs[0, 0])
+        mcax = plt.subplot(gs[0, 1])
+
+        for i in range(nt):
+            df = files[i]
+            if i == nt - 1:
+                _lopt['cb'] = True
+                _lopt['cax'] = lcax
+                _lopt['cbopt'] = dict(orientation='horizontal')
+                _mopt['cb'] = True
+                _mopt['cax'] = mcax
+                _mopt['cbopt'] = dict(orientation='horizontal')
+                if left != right or llim != rlim:
+                    _ropt['cb'] = True
+                    rcax = plt.subplot(gs[0, 2])
+                    _ropt['cax'] = rcax
+                    _ropt['cbopt'] = dict(orientation='horizontal')
+
+            lax = plt.subplot(gs[i + 1, 0])
+            df.stripe(left, ax=lax, **_lopt)
+            lax.set_ylabel(r'$\phi/\pi$')
+            if llim is None:
+                llim = plt.gci().get_clim()
+                _lopt['vmin'] = llim[0]
+                _lopt['vmax'] = llim[1]
+            if inc_time:
+                plt.text(.77, .88, r'$t/2\pi={:.3g}$'.format(df.orbit), c='k',
+                         transform=lax.transAxes)
+
+            midax = plt.subplot(gs[i + 1, 1])
+            df.stripe(mid, ax=midax, **_mopt)
+            plt.xlim(max(df.r[0], .95), None)
+            midax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+            if mlim is None:
+                mlim = plt.gci().get_clim()
+                _mopt['vmin'] = mlim[0]
+                _mopt['vmax'] = mlim[1]
+
+            if rlim is None:
+                if left == right:
+                    rlim = llim
+                    _ropt['vmin'] = rlim[0]
+                    _ropt['vmax'] = rlim[1]
+            rax = plt.subplot(gs[i + 1, 2])
+            df.plot2d(left, ax=rax, **_ropt)
+            rax.yaxis.set_label_position('right')
+            rax.yaxis.tick_right()
+            rax.set_ylabel(r'$y$')
+
+            if i < nt - 1:
+                lax.set_xticklabels([])
+                midax.set_xticklabels([])
+                rax.set_xticklabels([])
+            else:
+                xticks = lax.xaxis.get_major_ticks()
+                xticks[-1].label1.set_visible(False)
+            midax.set_yticklabels([])
+
+            lax.xaxis.set_ticks_position('both')
+            lax.yaxis.set_ticks_position('both')
+            lax.tick_params(axis='both', which='both', direction='in')
+            lax.set_axisbelow(False)
+            midax.xaxis.set_ticks_position('both')
+            midax.yaxis.set_ticks_position('both')
+            midax.tick_params(axis='both', which='both', direction='in')
+            midax.set_axisbelow(False)
+            rax.xaxis.set_ticks_position('both')
+            rax.yaxis.set_ticks_position('both')
+            rax.tick_params(axis='both', which='both', direction='in')
+            rax.set_axisbelow(False)
+        lax.set_xlabel('$r$')
+        midax.set_xlabel('$r$')
+        rax.set_xlabel('$x$')
+        try:
+            rcax.xaxis.set_label_position('top')
+            rcax.xaxis.set_ticks_position('top')
+        except NameError:
+            pass
+        lcax.xaxis.set_label_position('top')
+        lcax.xaxis.set_ticks_position('top')
+        mcax.xaxis.set_label_position('top')
+        mcax.xaxis.set_ticks_position('top')
+
+        lcax.yaxis.set_offset_position('left')
+        mcax.yaxis.set_offset_position('left')
+        fig.suptitle(helpers.sanitize_lbl(self.name))
+
+        if save:
+            plt.savefig(fn)
+            plt.close()
+
+        return
 
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
                    sub_dir=False, overwrite=True, stripes=True, vort_prof=True,
