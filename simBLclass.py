@@ -1504,7 +1504,12 @@ class BLFT(BLfile):
 
 def loadBLfile(fn, **kwargs):
     fn = _findAbsPath(fn, kwargs.get('sim_path', None))
-    data = _parse_file(fn, file_handle=kwargs.get('file_handle', None))
+    #data = _parse_file(fn, file_handle=kwargs.get('file_handle', None))
+    _fn = fn
+    if 'file_handle' in kwargs:
+        if kwargs['file_handle']:
+            _fn = kwargs['file_handle']
+    data = athdf(_fn, face_func_2=kwargs.get('x2_face'), return_levels=True)
     ai_fn = kwargs.pop('athinput_fn', None)
     ai_data = kwargs.pop('ai_data', None)
     if ai_fn is None:
@@ -4968,7 +4973,6 @@ class BLsim(object):
             return None
 
         times = np.atleast_1d(times)
-        files = [t if hasattr(t, 'name') else self.loadfile('cons', t) for t in times]
         nt = times.size
 
         if figsize is True:
@@ -5013,7 +5017,8 @@ class BLsim(object):
         mcax = plt.subplot(gs[0, 1])
 
         for i in range(nt):
-            df = files[i]
+            t = times[i]
+            df = t if hasattr(t, 'name') else self.loadfile('cons', t)
             if i == nt - 1:
                 _lopt['cb'] = True
                 _lopt['cax'] = lcax
