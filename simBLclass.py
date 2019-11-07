@@ -3613,9 +3613,9 @@ class BLsim(object):
         if parse_not_overwrite(overwrite, fn):
             return None
         modes = self.main_modes()
-        str = '"{:}": ['.format(self.name) + ', '.join(modes) + '],'
+        string = '"' + self.name + '": [' + ', '.join([str(m) for m in modes]) + '],\n'
         with open(fn, 'w') as f:
-            f.write(str)
+            f.write(string)
         return None
 
     def _old_r_phase_plotter(self, r, data, ret_m=False, tloc=None, sort=True,
