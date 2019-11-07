@@ -3583,7 +3583,7 @@ class BLsim(object):
             plt.close()
 
     def main_modes(self, nm=None, skip_zero=True, rmin=None, rmax=2.2, save=True):
-        if self._main_modes is None and save:
+        if self._main_modes is None or not save:
             if rmin is None:
                 rmin = self.r[0]
             if rmax is None:
