@@ -3582,11 +3582,16 @@ class BLsim(object):
             fig.savefig(fn)
             plt.close()
 
-    def main_modes(self, nm=None, skip_zero=True, rmax=2.2):
+    def main_modes(self, nm=None, skip_zero=True, rmin=None, rmax=2.2, save=True):
         if self._main_modes is None:
+            if rmin is None:
+                rmin = self.r[0]
+            if rmax is None:
+                rmax = self.r[-1]
             fft = self.fft * self.rc[np.newaxis, np.newaxis, :]
             amp = self.amp.copy()
             amp[:, :, np.where(self.rc > rmax)[0]] = 0
+            amp[:, :, np.where(self.rc < rmin)[0]] = 0
             if self.fft_time[-1] < 200:
                 nt = self.fft_time.size
                 a = self.intr(amp[nt // 2:].sum(axis=0))
@@ -3612,8 +3617,9 @@ class BLsim(object):
             fn = os.path.join(sdir, fn)
         if parse_not_overwrite(overwrite, fn):
             return None
-        modes = self.main_modes()
-        string = '"' + self.name + '": [' + ', '.join([str(m) for m in modes]) + '],\n'
+        star = ', '.join([str(m) for m in self.main_modes(rmax=1, save=False)])
+        disk = ', '.join([str(m) for m in self.main_modes(rmin=1, rmax=2.2, save=False)])
+        string = '"' + self.name + '": [[' + star + '], [' + disk + ']]\n'
         with open(fn, 'w') as f:
             f.write(string)
         return None
