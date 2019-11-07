@@ -3583,7 +3583,7 @@ class BLsim(object):
             plt.close()
 
     def main_modes(self, nm=None, skip_zero=True, rmin=None, rmax=2.2, save=True):
-        if self._main_modes is None:
+        if self._main_modes is None and save:
             if rmin is None:
                 rmin = self.r[0]
             if rmax is None:
@@ -3597,8 +3597,12 @@ class BLsim(object):
                 a = self.intr(amp[nt // 2:].sum(axis=0))
             else:
                 a = self.intr(amp[self.tloc(100 * tau) - 1:].sum(axis=0))
-            self._main_modes = sorted(range(a.size), key=lambda x: -a[x])
-        modes = self._main_modes[:]
+            out = sorted(range(a.size), key=lambda x: -a[x])
+            if save:
+                self._main_modes = out
+        else:
+            out = self._main_modes[:]
+        modes = out[:]
         if skip_zero:
             try:
                 modes.remove(0)
@@ -3619,7 +3623,7 @@ class BLsim(object):
             return None
         star = ', '.join([str(m) for m in self.main_modes(rmax=1, save=False)])
         disk = ', '.join([str(m) for m in self.main_modes(rmin=1, rmax=2.2, save=False)])
-        string = '"' + self.name + '": [[' + star + '], [' + disk + ']]\n'
+        string = '"' + self.name + '": [[' + star + '], [' + disk + ']],\n'
         with open(fn, 'w') as f:
             f.write(string)
         return None
