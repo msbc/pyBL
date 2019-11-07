@@ -36,6 +36,13 @@ from .helpers import rolling_weighted_triangle_conv as running_mean
 from .helpers import grad, mod_grad
 from .parmap import parmap
 
+import warnings
+warnings.filterwarnings(
+    action='ignore', module='matplotlib.figure', category=UserWarning,
+    message=('This figure includes Axes that are not compatible with tight_layout, '
+             'so results might be incorrect.')
+)
+
 _quiet = False
 tau = 2 * np.pi
 
@@ -3175,6 +3182,7 @@ class BLsim(object):
         return [os.path.join(self.path, i) for i in out]
 
     def ensure_fft_data_exists(self, vars=None, kinds=None):
+        self.write_modes()
         if vars is None:
             vars = ['FT', 'CS']
         else:
@@ -3592,6 +3600,23 @@ class BLsim(object):
             except ValueError:
                 pass
         return modes[:nm]
+
+    def write_modes(self, fn=None, sdir=True, overwrite=False):
+        if sdir is True:
+            sdir = self.path
+        if fn is None:
+            fn = self.name + '_modes.txt'
+        if sdir:
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            return None
+        modes = self.main_modes()
+        str = '"{:}": ['.format(self.name) + ', '.join(modes) + '],'
+        with open(fn, 'w') as f:
+            f.write(str)
+        return None
 
     def _old_r_phase_plotter(self, r, data, ret_m=False, tloc=None, sort=True,
                              sdata=None, order=None):
