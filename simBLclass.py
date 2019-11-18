@@ -594,10 +594,10 @@ class BLfile(BLfileBase):
     def stripe(self, data=None, fn=None, save=False, subsample=False, title=None,
                name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None, cax=None,
-               ax=None, log=False, aspect=None, sdir=None, smooth=None, rmax=None, lbls=True,
+               ax=None, log=False, aspect=None, sdir=None, smooth=None, rmin=None, rmax=None, lbls=True,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1, dpi=300,
                figsize=None, overwrite=True, display=False, minmax=False, txt_opt=None,
-               ps=None, mode=1):
+               ps=None, mode=1, phi_norm=True):
         """Plot 2D sim data"""
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
@@ -607,6 +607,8 @@ class BLfile(BLfileBase):
             popt = {}
         if cbopt is None:
             cbopt = {}
+        if rmin is None:
+            rmin = self.r[0]
         if rmax is None:
             rmax = r_main(self.mach)
         rmax = min(rmax, self.r[-1])
@@ -725,12 +727,23 @@ class BLfile(BLfileBase):
             ax.set_aspect(aspect)
 
         # start plotting
-        pcm = plt.pcolormesh(self.r, self.phi / np.pi, data, **_popt)
-        plt.xlim(self.r[0], rmax)
-        plt.ylim(0, 2)
+        if phi_norm is True:
+            phi_norm = np.pi
+        if not phi_norm:
+            phi_norm = 1
+        pcm = plt.pcolormesh(self.r, self.phi / phi_norm, data, **_popt)
+        plt.xlim(rmin, rmax)
+        plt.ylim(0, self.phi[-1] / phi_norm)
         if lbls:
             plt.xlabel('$r$')
-            plt.ylabel(r'$\phi/\pi$')
+            if phi_norm == np.pi:
+                plt.ylabel(r'$\phi/\pi$')
+            elif phi_norm == 1:
+                plt.ylabel(r'$\phi$')
+            elif phi_norm == 2 * np.pi:
+                plt.ylabel(r'$\phi/2\pi$')
+            else:
+                plt.ylabel(r'$\phi/{:.3g}$'.format(phi_norm))
         if minmax:
             if r_cut is None:
                 r_cut = 1.03
@@ -5141,6 +5154,68 @@ class BLsim(object):
             plt.close()
 
         return
+
+    def cc_op_plots(self, i0, var='Rpseudo', save=True, sdir=None, dropbox=False):
+        if dropbox and not sdir:
+            sdir = '~/Dropbox/Research/IAS/rrr/BL_shared/simulation_results/Production'
+            mach = int(np.round(self.mach))
+            if mach in [5, 6, 9, 12]:
+                sdir += '/M{:02d}'.format(mach)
+            sdir += '/' + self.name + '_plots'
+        if sdir is True:
+            sdir = os.path.join(os.path.split(self.path)[0], 'figs')
+            sdir = os.path.join(sdir, self.name + '_plots')
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+        else:
+            sdir = ''
+
+        df1 = self.loadfile('cons', i0)
+        df2 = self.loadfile('cons', i0 + 1)
+        a = self.rloc(0)
+        b = self.rloc(4)
+        d1 = df1[var][::-1]
+        d2 = df2[var][::-1]
+        ac = np.empty_like(d1)
+        cc = np.empty_like(d1)
+        for i in range(cc.shape[1]):
+            ac[:, i] = helpers.c_correlate(d1[:, i], d1[:, i])
+            cc[:, i] = helpers.c_correlate(d1[:, i], d2[:, i])
+        ac = np.roll(ac, -self.phic.size // 2, axis=0)
+        cc = np.roll(cc, -self.phic.size // 2, axis=0)
+
+        plt.figure(figsize=(3, 2), dpi=300)
+        plt.plot(self.phic / tau, ac[:, a:b].mean(axis=1), lw=1, ls=':', c='.5')
+        plt.plot(self.phic / tau, cc[:, a:b].mean(axis=1))
+        plt.axhline(0, lw=1, c='k')
+        plt.xlim(0, 1)
+        plt.ylim(-1, 1)
+        plt.xlabel(r'$\Omega_{\rm p}$')
+        plt.ylabel(var + ' Correlation')
+        i = cc[:, a:b].mean(axis=1).argmax()
+        op = self.phic[i] / tau
+        print(op)
+        try:
+            fn = self.name + '_cc_op_' + var + '.pdf'
+        except TypeError:
+            fn = self.name + '_cc_op.pdf'
+        if save:
+            plt.savefig(os.path.join(sdir, fn))
+            plt.close()
+
+        df1.stripe(cc, rmax=4, phi_norm=tau)
+        plt.ylabel(r'$\Omega_{\rm p}$')
+        plt.axhline(op, c='1', ls=':', lw=1)
+        try:
+            fn = self.name + '_cc_op_map_' + var + '.png'
+        except TypeError:
+            fn = self.name + '_cc_op_map.png'
+        if save:
+            plt.savefig(os.path.join(sdir, fn))
+            plt.close()
+        return None
 
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
                    sub_dir=False, overwrite=True, stripes=True, vort_prof=True,
