@@ -51,6 +51,8 @@ tau = 2 * np.pi
 
 _r0 = {5: .65, 6: .67, 7: .73, 8: .73, 9: .8, 10: .83, 11: .83, 12: .84, 13: .86,
        14: .86, 15: .87}
+_c0 = {15: 4.5, 14: 4, 13: 3.6, 12: 3.6, 11: 3, 10: 3, 9: 2.5, 8: 2.5, 7: 2.5, 6: 2.5,
+       5: 2.5}
 _dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer',
          '/perseus/scratch/gpfs/sashaph/BLayer',
          '~/BLayer', '~/BLayer/fft_tests', '~/archive', '~/data/bl',
@@ -5538,12 +5540,15 @@ class modeData(object):
             if show_pl:
                 xlim = plt.xlim()
                 ylim = plt.ylim()
-                _x = np.linspace(0, 32, 200)
+                _x = np.linspace(0, 32, 360)
                 M = int(self.sim.mach + .1)
                 coef = .025 * M
                 pwr = .6 - .02 * M
-                plt.plot(_x, coef * _x ** pwr, c='.5', ls=':', lw=1, zorder=-1)
-                plt.plot(2 * _x, coef * _x ** pwr, c='.5', ls=':', lw=1, zorder=-1)
+                #plt.plot(_x, coef * _x ** pwr, c='.5', ls=':', lw=1, zorder=-1)
+                #plt.plot(2 * _x, coef * _x ** pwr, c='.5', ls=':', lw=1, zorder=-1)
+                for h in range(1, 4):
+                    plt.plot(h * _x, 1 - (_c0[M] * _x) ** -.4, c='.5', ls=':', lw=1,
+                             zorder=-1)
                 y = np.sqrt(M ** -2 + (M / (2 * _r0[M] * _x)) ** 2)
                 plt.plot(_x, y, c='.5', ls=':', lw=1, zorder=-1)
                 plt.plot(2 * _x, y, c='.5', ls=':', lw=1, zorder=-1)
