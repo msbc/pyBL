@@ -49,10 +49,10 @@ tau = 2 * np.pi
 # mpl.rc('text', usetex=True)
 # mpl.rcParams['text.latex.preamble'] = [r"\usepackage{amssymb,amsmath}"]
 
-_r0 = {5: .65, 6: .67, 7: .73, 8: .73, 9: .8, 10: .83, 11: .83, 12: .84, 13: .86,
-       14: .86, 15: .87}
-_c0 = {15: 4.5, 14: 4, 13: 3.6, 12: 3.6, 11: 3, 10: 3, 9: 2.5, 8: 2.5, 7: 2.5, 6: 2.5,
-       5: 2.5}
+_rl = {5: .83, 6: .84, 7: .86, 8: .88, 9: .90, 10: .92, 11: .92, 12: .92, 13: .93,
+       14: .93, 15: .84}
+_ru = {15: 1.04, 14: 1.08, 13: 1.13, 12: 1.14, 11: 1.07, 10: 1.16, 9: 1.2, 8: 1.3,
+       7: 1.4, 6: 1.4, 5: 1.4}
 _dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer',
          '/perseus/scratch/gpfs/sashaph/BLayer',
          '~/BLayer', '~/BLayer/fft_tests', '~/archive', '~/data/bl',
@@ -1874,7 +1874,7 @@ class FTdataFile(object):
                     loc = np.array(tmp).argmax()
                     print(loc, files[loc], tmp[loc - 1], os.path.getmtime(self.filename))
                 except:
-                    print("IDK:", sys.exc_info()[0])
+                    print("IDK:", sys.exc_info()[0], flies, tmp)
                 return False
         return False
 
@@ -2226,6 +2226,27 @@ class BLsim(object):
         self._cs_rrr_data = None
         self.ensure_fft_data_exists()
         # End init
+
+    def upper_omega(self, m, n=0, r=1.1, t0=2000, tf=None):
+        vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
+        omega = vphi / self.rc
+        if r is None:
+            ir = omega.argmax()
+            r = self.rc[ir]
+            print(r)
+        else:
+            ir = self.rloc(r)
+        #kappa = np.sqrt(2 * omega * (grad(self.rc, self.rc * vphi)))
+        kappa = 2 * omega
+        kappa = kappa[ir]
+        kep = r ** -1.5
+        M = self.mach
+        s = 1. / M
+        c1 = 3 * kappa ** 2 * m ** 2 * r ** 4 + m ** 4 * r ** 2 * s ** 2
+        c2 = 27 * kep * m ** 4 * r ** 4 * s ** 2
+        ang = np.arctan(np.sqrt(c1 ** 3 - c2 ** 2) / c1)
+        tmp = 2 * np.sqrt(c1) * np.cos(ang / 3) / (3 * m ** 2 * r ** 2)
+        return kep - tmp
 
     def info_row(self):
         M, res, seed, suffix = self.name.split('.')
@@ -5157,7 +5178,8 @@ class BLsim(object):
 
         return
 
-    def cc_op_plots(self, i0, var='Rpseudo', save=True, sdir=None, dropbox=False):
+    def cc_op_plots(self, i0, var='Rpseudo', save=True, sdir=None, dropbox=False,
+                    rmin=None):
         if dropbox and not sdir:
             sdir = '~/Dropbox/Research/IAS/rrr/BL_shared/simulation_results/Production'
             mach = int(np.round(self.mach))
@@ -5176,7 +5198,9 @@ class BLsim(object):
 
         df1 = self.loadfile('cons', i0)
         df2 = self.loadfile('cons', i0 + 1)
-        a = self.rloc(0)
+        if rmin is None:
+            rmin = 0
+        a = self.rloc(rmin)
         b = self.rloc(4)
         d1 = df1[var][::-1]
         d2 = df2[var][::-1]
@@ -5217,7 +5241,7 @@ class BLsim(object):
         if save:
             plt.savefig(os.path.join(sdir, fn))
             plt.close()
-        return None
+        return op
 
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
                    sub_dir=False, overwrite=True, stripes=True, vort_prof=True,
@@ -5542,18 +5566,21 @@ class modeData(object):
                 ylim = plt.ylim()
                 _x = np.linspace(0, 32, 360)
                 M = int(self.sim.mach + .1)
-                coef = .025 * M
-                pwr = .6 - .02 * M
-                #plt.plot(_x, coef * _x ** pwr, c='.5', ls=':', lw=1, zorder=-1)
-                #plt.plot(2 * _x, coef * _x ** pwr, c='.5', ls=':', lw=1, zorder=-1)
-                for h in range(1, 4):
-                    plt.plot(h * _x, 1 - (_c0[M] * _x) ** -.4, c='.5', ls=':', lw=1,
-                             zorder=-1)
-                y = np.sqrt(M ** -2 + (M / (2 * _r0[M] * _x)) ** 2)
-                plt.plot(_x, y, c='.5', ls=':', lw=1, zorder=-1)
-                plt.plot(2 * _x, y, c='.5', ls=':', lw=1, zorder=-1)
+                yl = np.sqrt(M ** -2 + (M / (2 * _rl[M] * _x)) ** 2) / _rl[M]
+                plt.plot(_x, yl, c='.5', ls='-.', lw=1, zorder=-1)
+                plt.plot(2 * _x, yl, c='.6', ls='-.', lw=1, zorder=-1)
+                plt.plot(3 * _x, yl, c='.7', ls='-.', lw=1, zorder=-1)
+                if M in _ru:
+                    yu = self.sim.upper_omega(_x, r=_ru[M])
+                    plt.plot(_x, yu, c='.5', ls=':', lw=1, zorder=-1)
+                    plt.plot(2 * _x, yu, c='.6', ls=':', lw=1, zorder=-1)
+                    plt.plot(3 * _x, yu, c='.7', ls=':', lw=1, zorder=-1)
                 plt.xlim(*xlim)
                 plt.ylim(*ylim)
+                sim = self.sim
+                omega = np.nan_to_num(sim.flux_data['vphi'] / sim.rc)
+                omax = np.max(omega[2000:].mean(axis=0))
+                plt.axhline(omax, c='.5', lw=1, ls='--', zorder=-2)
         if save or fn:
             if fn is None:
                 fn = self.sim.name + '_dispersion.' + ext
