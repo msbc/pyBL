@@ -2108,7 +2108,8 @@ class CompositeFFTSet(object):
 class BLsim(object):
     def __init__(self, path, fmts=None, coarse_data=None, fft_time=None,
                  athinput=None, mode_mask=None, main_modes=None, sfd=None,
-                 phase_angle=None, rho_ref=None, mode_detect=None, flux_data=None):
+                 phase_angle=None, rho_ref=None, mode_detect=None, flux_data=None,
+                 skip_data_gen=False):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
@@ -2224,7 +2225,8 @@ class BLsim(object):
         self._sfd = sfd
         self._new_fft_time = None
         self._cs_rrr_data = None
-        self.ensure_fft_data_exists()
+        if not skip_data_gen:
+            self.ensure_fft_data_exists()
         # End init
 
     def upper_omega(self, m, n=0, r=1.1, t0=2000, tf=None):
@@ -4853,8 +4855,7 @@ class BLsim(object):
             plt.close(tn)
 
     def mode_detect(self, r=None, save=True, fn=None, dt=10, nbin=3, emax=1e-4, smax=2e-4,
-                    dr=5,
-                    data_only=False, dw=.05, overlap=10, nskip=3, out_mult=2):
+                    dr=5, data_only=False, dw=.05, overlap=10, nskip=3, out_mult=2):
         if (not data_only) and (self._mode_detect is not None):
             return self._mode_detect
         if r is None:
@@ -4881,6 +4882,7 @@ class BLsim(object):
                     fits[i, j, m, 0] = np.average(s[tslice[j], m],
                                                   weights=w[tslice[j], m])
                     fits[i, j, m, 1:] = linregress(t[tslice[j]], s[tslice[j], m])
+                    #   [r, t, mode, (mean, slope, rvalue, pvalue, stderr)]
         r = np.array([self.rc[i] for i in ris])
         mult = np.ones_like(r)
         mult[r > 1] = out_mult
@@ -4890,6 +4892,7 @@ class BLsim(object):
         mask = np.logical_and(mask, np.abs(fits[:, :, :, 5]) < emax * mult)
         if nskip:
             mask[:, :nskip, :] = 0
+        # number of adjacent bins where mode is stable
         run = np.maximum(boxcar(mask, nbin, axis=1),
                          boxcar(mask[:, ::-1, :], nbin, axis=1)[:, ::-1, :])
         data = dict(t=tlist, r=r, fits=fits, mask=np.logical_not(mask), run=run,
@@ -5476,11 +5479,11 @@ class BLsim(object):
 
 
 class modeData(object):
-    def __init__(self, data, sim=None, dw=.05, overlap=10, nbin=3):
+    def __init__(self, data, sim=None, dw=.1, overlap=9.9, nbin=3):
         self.sim = sim
         self.dw = dw
         self.nbin = nbin
-        self._dt = overlap * tau
+        self._dt = overlap
         mask = np.logical_not(data['mask'])
         run = data['run']
         r = data['r']
@@ -5489,6 +5492,7 @@ class modeData(object):
         self.r = r
         out = [[] for i in r]
         for z in zip(*np.where(run == nbin)):
+            # weighted mean speed
             w = fits[z[0], z[1], z[2], 0]
             t0 = z[1]
             t1 = t0
@@ -5506,6 +5510,7 @@ class modeData(object):
                     t1 = tlist[t1 + 1] / tau
                     out[z[0]].append([z[2], t0, t1, w])
         self.mode_data = [np.array(i) for i in out]
+        # [[mode, ti, tf, speed] * modes_detected(r) for r in rlist]
 
     def filter(self, data=None):
         if data is None:
@@ -5514,6 +5519,7 @@ class modeData(object):
             except AttributeError:
                 self._filter = [self.filter(i) for i in self.md]
                 return self._filter[:]
+        # kludge: sort first by mode then by duration
         tmp = sorted(data, key=lambda x: x[0] - 1e-6 * (x[2] - x[1]))
         out = []
         for mode in tmp:
@@ -5533,7 +5539,7 @@ class modeData(object):
         out = ['# m, t_start, t_end, speed', '']
         for i, r in enumerate(rs):
             out.append('# ' + r)
-            out += ['{0:d}, {1:.2f}, {2:.2}, {3:.3f}'.format(int(j[0]), *j[1:]) for j in
+            out += ['{0:d}, {1:.2f}, {2:.2f}, {3:.3f}'.format(int(j[0]), *j[1:]) for j in
                     data[i]]
             out.append('')
         with open(fn, 'w') as f:
