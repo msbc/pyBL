@@ -4718,7 +4718,7 @@ class BLsim(object):
             print(('{0:' + fmt + '}').format(out))
         return out
 
-    def mk_maps(self, var_list=None, dt=None, base_dir=None, file='cons',
+    def mk_maps(self, var_list=None, dt=25, base_dir=None, file='cons',
                 overwrite=True, popt=None, thumbnail=True):
         if popt is None:
             popt = {}
@@ -4736,7 +4736,7 @@ class BLsim(object):
         with self.loadfile(file, -1) as bf:
             tf = int(bf.t / tau + .5)
         if dt is None:
-            dt = tf // 12
+            dt = tf // 24
         times = list(range(0, tf + 1, dt))
         # print(tf, dt, times)
         opt = dict(save=True, fopt=fopt, overwrite=overwrite, **popt)
@@ -4750,7 +4750,7 @@ class BLsim(object):
                                        left=.01, right=.99)
             axs = [plt.subplot(i) for i in gs]
             sample = len(times) // 12
-            inc = times[1::sample]
+            inc = times[1::sample][:12]
         init = None
         for i in times:
             i = int(i)
@@ -4798,7 +4798,7 @@ class BLsim(object):
         with self.loadfile(file, -1) as bf:
             tf = int(bf.t / tau + .5)
         if dt is None:
-            dt = tf // 12
+            dt = tf // 24
         times = list(range(0, tf + 1, dt))
         # print(tf, dt, times)
         opt = dict(save=True, fopt=fopt, rmax=rmax, overwrite=overwrite, **popt)
@@ -4815,7 +4815,7 @@ class BLsim(object):
                                        left=.05, right=.99)
             axs = [plt.subplot(i) for i in gs]
             sample = len(times) // 12
-            inc = times[1::sample]
+            inc = times[1::sample][:12]
         init = None
         i = 0
         for t in times:
