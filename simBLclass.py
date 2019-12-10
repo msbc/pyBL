@@ -4718,7 +4718,7 @@ class BLsim(object):
             print(('{0:' + fmt + '}').format(out))
         return out
 
-    def mk_maps(self, var_list=None, dt=25, base_dir=None, file='cons',
+    def mk_maps(self, var_list=None, dt=None, base_dir=None, file='cons',
                 overwrite=True, popt=None, thumbnail=True):
         if popt is None:
             popt = {}
@@ -4735,6 +4735,8 @@ class BLsim(object):
             os.makedirs(path)
         with self.loadfile(file, -1) as bf:
             tf = int(bf.t / tau + .5)
+        if df is None:
+            df = tf // 12
         times = list(range(0, tf + 1, dt))
         # print(tf, dt, times)
         opt = dict(save=True, fopt=fopt, overwrite=overwrite, **popt)
@@ -4778,7 +4780,7 @@ class BLsim(object):
             tn.savefig(tn_fn)
             plt.close(tn)
 
-    def mk_stripes(self, var_list=None, dt=25, base_dir=None, file='cons',
+    def mk_stripes(self, var_list=None, dt=None, base_dir=None, file='cons',
                    overwrite=True, popt=None, thumbnail=True, rmax=None):
         if popt is None:
             popt = {}
@@ -4795,6 +4797,8 @@ class BLsim(object):
             os.makedirs(path)
         with self.loadfile(file, -1) as bf:
             tf = int(bf.t / tau + .5)
+        if df is None:
+            df = tf // 12
         times = list(range(0, tf + 1, dt))
         # print(tf, dt, times)
         opt = dict(save=True, fopt=fopt, rmax=rmax, overwrite=overwrite, **popt)
