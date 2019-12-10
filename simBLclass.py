@@ -4735,8 +4735,8 @@ class BLsim(object):
             os.makedirs(path)
         with self.loadfile(file, -1) as bf:
             tf = int(bf.t / tau + .5)
-        if df is None:
-            df = tf // 12
+        if dt is None:
+            dt = tf // 12
         times = list(range(0, tf + 1, dt))
         # print(tf, dt, times)
         opt = dict(save=True, fopt=fopt, overwrite=overwrite, **popt)
@@ -4797,8 +4797,8 @@ class BLsim(object):
             os.makedirs(path)
         with self.loadfile(file, -1) as bf:
             tf = int(bf.t / tau + .5)
-        if df is None:
-            df = tf // 12
+        if dt is None:
+            dt = tf // 12
         times = list(range(0, tf + 1, dt))
         # print(tf, dt, times)
         opt = dict(save=True, fopt=fopt, rmax=rmax, overwrite=overwrite, **popt)
