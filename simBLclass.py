@@ -4745,7 +4745,7 @@ class BLsim(object):
             thumbnail = False
         inc = []
         if thumbnail:
-            tn = plt.figure(figsize=(10, 8))
+            tn = plt.figure(figsize=(10, 8), dpi=300)
             gs = mpl.gridspec.GridSpec(3, 4, wspace=0, hspace=0, top=.95, bottom=.01,
                                        left=.01, right=.99)
             axs = [plt.subplot(i) for i in gs]
