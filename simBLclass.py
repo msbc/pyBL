@@ -1874,7 +1874,7 @@ class FTdataFile(object):
                     loc = np.array(tmp).argmax()
                     print(loc, files[loc], tmp[loc - 1], os.path.getmtime(self.filename))
                 except:
-                    print("IDK:", sys.exc_info()[0], flies, tmp)
+                    print("IDK:", sys.exc_info()[0], loc, len(files), len(tmp))
                 return False
         return False
 
@@ -2330,6 +2330,117 @@ class BLsim(object):
             self._flux_data = out
             return self._flux_data
 
+    def alpha_eff(self):
+        data = self.load_flux_data()
+        return self.mach**2 * data['CS'] / (tau * self.rc[None, :]**2 * data['dens'])
+
+    def acc_mach(self):
+        data = self.load_flux_data()
+        return self.mach * data['Mdot'] / (tau * self.rc[None, :] * data['dens'])
+
+    def _st_plot(self, data=None, fn=None, save=False, subsample=False, title=None,
+               name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
+               vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
+               ax=None, log=False, aspect=1, sdir=None, smooth=None, dpi=300,
+               phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1,
+               overwrite=True, display=False, minmax=True, txt_opt=None):
+        """Plot 2D sim data"""
+        if fopt is None:
+            fopt = {'dpi': dpi}
+        if popt is None:
+            popt = {}
+        if cbopt is None:
+            cbopt = {}
+        r = self.r[np.newaxis, :]
+        phi = self.phi[:, np.newaxis] + phi_shift
+        if self.t and phi_dot:
+            phi -= phi_dot * self.t
+        x = r * np.cos(phi)
+        y = r * np.sin(phi)
+        _popt = {}
+        if data is None:
+            data = self.alpha_eff()
+
+        if name:
+            if name in [True, 1]:
+                name = ''
+            if title is None:
+                title = self.name + ' ' + name
+            if save and fn is None:
+                fn = self._prefix + '_' + name + '_st_plot.' + ext
+
+        if save or fn:
+            save = True
+            if fn is None:
+                fn = self._prefix + '_st_plot.' + ext
+            if not sdir is None:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            if ret_fn:
+                return fn
+            return None
+
+        if type(data) != np.ndarray:
+            raise TypeError('Data has type "{:}", not ndarray.'.format(type(data)))
+        if not smooth is None:
+            data = self.smooth(data, smooth)
+
+        # parse/set options and defaults
+        if subsample:
+            loc = (slice(None, None, subsample),) * len(x.shape)
+            x = x[loc]
+            y = y[loc]
+            data = data[loc]
+        if log:
+            _popt['norm'] = mpl.colors.LogNorm()
+        # parse smart lim options
+        tmp = {}
+
+        try:
+            if '%' == vmin[-1]:
+                tmp['low'] = float(vmin[:-1])
+                vmin = 'smart'
+        except TypeError:
+            pass
+        try:
+            if '%' == vmax[-1]:
+                tmp['high'] = float(vmax[:-1])
+                vmax = 'smart'
+        except (TypeError, IndexError):
+            pass
+        if 'smart' in [vmin, vmax]:
+            rloc = slice(None)
+            if r_cut:
+                if subsample:
+                    raise NotImplementedError('r_cut not compatible with subsample')
+                rloc = slice(self.rloc(r_cut), None)
+            tmp = helpers.smartlim(data[:, rloc], **tmp)
+            if vmin == 'smart':
+                vmin = tmp[0]
+            if vmax == 'smart':
+                vmax = tmp[1]
+        # check if zero centered data
+        if zerocent is None and not log:
+            zerocent = helpers.isZeroCent(data)
+        if zerocent:
+            if cmap is None:
+                cmap = helpers.NCcmap
+            if vmin is None and vmax is None:
+                vmax = np.abs(data).max()
+            elif vmin is None:
+                vmin = -abs(vmax)
+            else:
+                vmax = abs(vmin)
+            vmin = -vmax
+
+        _popt.update(dict(cmap=cmap, vmin=vmin, vmax=vmax))
+        _popt.update(popt)
+        x = self.fft_time
+        y = self.r
+        pcm = plt.pcolormesh(x, y, data.T, **_popt)
+
     def gen_fft_times(self, ll=True):
         if self._new_fft_time is None:
             def _get_t(fn):
@@ -2423,7 +2534,7 @@ class BLsim(object):
             return data
 
         if rlist is None:
-            rlist = [1 - 4 / self.mach ** 2, 1, 1.5, 2, 3]
+            rlist = [1 - 4 / self.mach ** 2, 1.2, 1.5, 2, 3]
         if lopt is None:
             lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7,
                         loc=0)
@@ -5566,7 +5677,11 @@ class modeData(object):
                 plt.scatter(data[:, 0], data[:, 3], marker='*')
                 lbls.append('Global')
         plt.legend(lbls)
-        plt.gca().xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        ax = plt.gca()
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        ax.yaxis.set_ticks_position('both')
+        ax.xaxis.set_ticks_position('both')
+        ax.tick_params(axis='both', which='both', direction='in')
         plt.xlabel('mode')
         plt.ylabel(r'$\Omega_{\rm p}$')
         if self.sim is not None:
