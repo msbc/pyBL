@@ -1871,7 +1871,7 @@ class FTdataFile(object):
             tmp.extend([os.path.getctime(i) for i in files])
             if max(tmp) > os.path.getmtime(self.filename):
                 try:
-                    loc = np.array(tmp).argmax()
+                    loc = np.array(tmp[1:]).argmax()
                     print(loc, files[loc], tmp[loc - 1], os.path.getmtime(self.filename))
                 except:
                     print("IDK:", sys.exc_info()[0], loc, len(files), len(tmp))
@@ -2336,43 +2336,33 @@ class BLsim(object):
 
     def acc_mach(self):
         data = self.load_flux_data()
-        return self.mach * data['Mdot'] / (tau * self.rc[None, :] * data['dens'])
+        return - self.mach * data['Mdot'] / (tau * self.rc[None, :] * data['dens'])
 
     def _st_plot(self, data=None, fn=None, save=False, subsample=False, title=None,
-               name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
-               vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
-               ax=None, log=False, aspect=1, sdir=None, smooth=None, dpi=300,
-               phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1,
-               overwrite=True, display=False, minmax=True, txt_opt=None):
+                 name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
+                 vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
+                 ax=None, log=False, sdir=None, dpi=300, r_cut=None, ret_fn=False,
+                 rplot=1, overwrite=True, slog=None, linthresh=None, linscale=None,
+                 figsize=(7, 5)):
         """Plot 2D sim data"""
         if fopt is None:
-            fopt = {'dpi': dpi}
+            fopt = {'dpi': dpi, 'figsize': figsize}
         if popt is None:
             popt = {}
         if cbopt is None:
             cbopt = {}
-        r = self.r[np.newaxis, :]
-        phi = self.phi[:, np.newaxis] + phi_shift
-        if self.t and phi_dot:
-            phi -= phi_dot * self.t
-        x = r * np.cos(phi)
-        y = r * np.sin(phi)
         _popt = {}
-        if data is None:
-            data = self.alpha_eff()
 
         if name:
             if name in [True, 1]:
                 name = ''
-            if title is None:
-                title = self.name + ' ' + name
             if save and fn is None:
-                fn = self._prefix + '_' + name + '_st_plot.' + ext
+                fn = self.name + '_' + name + '_st_plot.' + ext
 
         if save or fn:
             save = True
             if fn is None:
-                fn = self._prefix + '_st_plot.' + ext
+                fn = self.name + '_st_plot.' + ext
             if not sdir is None:
                 if not os.path.isdir(sdir):
                     os.mkdir(sdir)
@@ -2382,19 +2372,19 @@ class BLsim(object):
                 return fn
             return None
 
+        if data is None:
+            data = self.alpha_eff()
+
         if type(data) != np.ndarray:
             raise TypeError('Data has type "{:}", not ndarray.'.format(type(data)))
-        if not smooth is None:
-            data = self.smooth(data, smooth)
 
         # parse/set options and defaults
-        if subsample:
-            loc = (slice(None, None, subsample),) * len(x.shape)
-            x = x[loc]
-            y = y[loc]
-            data = data[loc]
         if log:
-            _popt['norm'] = mpl.colors.LogNorm()
+            if zerocent and slog is None:
+                slog = True
+                log = False
+            else:
+                _popt['norm'] = mpl.colors.LogNorm()
         # parse smart lim options
         tmp = {}
 
@@ -2422,6 +2412,8 @@ class BLsim(object):
             if vmax == 'smart':
                 vmax = tmp[1]
         # check if zero centered data
+        if slog and zerocent is None:
+            zerocent = True
         if zerocent is None and not log:
             zerocent = helpers.isZeroCent(data)
         if zerocent:
@@ -2435,11 +2427,67 @@ class BLsim(object):
                 vmax = abs(vmin)
             vmin = -vmax
 
+        if slog:
+            if linthresh is None:
+                linthresh = vmax * 1e-2
+            if linscale is None:
+                linscale = 2
+            slog_opt = dict(linthresh=linthresh, linscale=linscale, vmin=vmin, vmax=vmax)
+            _popt['norm'] = mpl.colors.SymLogNorm(**slog_opt)
+
         _popt.update(dict(cmap=cmap, vmin=vmin, vmax=vmax))
         _popt.update(popt)
-        x = self.fft_time
+
+        if fig is None and ax is None:
+            fig = plt.figure(**fopt)
+            if name is None:
+                name = True
+        if ax:
+            plt.sca(ax)
+        else:
+            ax = plt.gca()
+
+        x = self.load_flux_data()['t'] / tau
         y = self.r
         pcm = plt.pcolormesh(x, y, data.T, **_popt)
+        plt.xlabel(r'$t/2\pi$')
+        plt.ylabel(r'$r$')
+        if rplot:
+            rplot = np.atleast_1d(rplot)
+            for r in rplot:
+                plt.axhline(r, lw=1, c='1', ls=':')
+        if title:
+            plt.title(helpers.sanitize_lbl(title.format(**self.__dict__)))
+        if cb:
+            #divider = make_axes_locatable(ax)
+            #cax = divider.append_axes("right", size="5%", pad=0.05)
+            #cb = plt.colorbar(pcm, cax=cax, **cbopt)
+            cb = plt.colorbar(pcm, **cbopt)
+            cb.ax.yaxis.set_offset_position('left')
+            if cbl:
+                cb.set_label(cbl)
+
+        plt.sca(ax)
+        # save fig
+        if save:
+            plt.savefig(fn)
+            plt.close()
+        if ret_fn:
+            return fn
+
+        return pcm
+
+    def alpha_st(self, **kwargs):
+        opt = dict(data=self.alpha_eff(), cbl=r'$\alpha_{\rm eff}$', slog=True,
+                   name='alpha')
+        opt.update(kwargs)
+        return self._st_plot(**opt)
+
+    def acc_st(self, **kwargs):
+        opt = dict(data=self.acc_mach(), cbl=r'$\mathcal{M}_{\rm acc}$', slog=True,
+                   name='M_acc')
+        opt.update(kwargs)
+        return self._st_plot(**opt)
 
     def gen_fft_times(self, ll=True):
         if self._new_fft_time is None:
@@ -5398,6 +5446,10 @@ class BLsim(object):
             self.my_fft_plots(diag=False, quiet=True, sdir=True, overwrite=overwrite)
             if not quiet: print('    Flux vs time')
             self.my_flux_plot(save=True, overwrite=overwrite)
+            if not quiet: print('    alpha st')
+            self.alpha_st(save=True, overwrite=overwrite)
+            if not quiet: print('    acc st')
+            self.acc_st(save=True, overwrite=overwrite)
             if gmodes:
                 if not quiet: print('    Speed plots')
                 self.speed_plots(gmodes, tmark=t[:], overwrite=overwrite)
