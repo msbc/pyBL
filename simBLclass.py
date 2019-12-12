@@ -2514,7 +2514,7 @@ class BLsim(object):
         try:
             out = .5 * (data[:,::2] + data[:,1::2])[:,:-2]
         except ValueError:
-            out = .5 * (data[:,-1:2] + data[:,1::2])[:,:-2]
+            out = .5 * (data[:,:-1:2] + data[:,1::2])[:,:-2]
         try:
             t = self.gen_fft_times()
         except (MemoryError, OSError):
@@ -2522,7 +2522,7 @@ class BLsim(object):
         try:
             t = .5 * (t[::2] + t[1::2])[:-2]
         except ValueError:
-            t = .5 * (t[-1:2] + t[1::2])[:-2]
+            t = .5 * (t[:-1:2] + t[1::2])[:-2]
         # out = scipy.signal.savgol_filter(out, 101, 1, axis=1)
         # out = scipy.signal.savgol_filter(out, 21, 1, axis=2)
         out = convolve1d(out, np.array(Box1DKernel(101)), axis=1)
