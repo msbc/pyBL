@@ -3051,7 +3051,7 @@ class BLsim(object):
             plt.xticks([], [])
             plt.yticks([], [])
             one = self.rloc(1)
-            mdot = data['Mdot'] * tau * self.rc
+            mdot = data['Mdot']
             info = [['C_S', data['CS'][0, one]],
                     ['C_A', data['CA'][0, one]],
                     ['C_L', data['CL'][0, one]],
