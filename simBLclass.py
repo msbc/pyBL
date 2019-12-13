@@ -1496,7 +1496,7 @@ class BLFT(BLfile):
         r2 = tau * self.rc ** 2
         cl = r2 * np.real(self['FT-CL-Re'][0])
         u = np.real(self['FT-vel2-Re'])[0]
-        md = np.real(self['FT-Mdot-Re'][0])
+        md = tau * self.rc * np.real(self['FT-Mdot-Re'][0])
         v = np.real(self['FT-vel1'][0])
         ca = r2 * u * md
         cs = cl - ca
@@ -2343,7 +2343,7 @@ class BLsim(object):
                  vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                  ax=None, log=False, sdir=None, dpi=300, r_cut=None, ret_fn=False,
                  rplot=1, overwrite=True, slog=None, linthresh=None, linscale=None,
-                 figsize=(7, 5)):
+                 figsize=(7, 5), dt=0, dr=0):
         """Plot 2D sim data"""
         if fopt is None:
             fopt = {'dpi': dpi, 'figsize': figsize}
@@ -2377,6 +2377,11 @@ class BLsim(object):
 
         if type(data) != np.ndarray:
             raise TypeError('Data has type "{:}", not ndarray.'.format(type(data)))
+
+        if dt:
+            data = convolve1d(data, np.array(Box1DKernel(dt)), axis=0)
+        if dr:
+            data = convolve1d(data, np.array(Box1DKernel(dr)), axis=1)
 
         # parse/set options and defaults
         if log:
@@ -2478,14 +2483,14 @@ class BLsim(object):
         return pcm
 
     def alpha_st(self, **kwargs):
-        opt = dict(data=self.alpha_eff(), cbl=r'$\alpha_{\rm eff}$', slog=True,
-                   name='alpha')
+        data = self.alpha_eff()
+        opt = dict(data=data, cbl=r'$\alpha_{\rm eff}$', slog=True, name='alpha')
         opt.update(kwargs)
         return self._st_plot(**opt)
 
     def acc_st(self, **kwargs):
-        opt = dict(data=self.acc_mach(), cbl=r'$\mathcal{M}_{\rm acc}$', slog=True,
-                   name='M_acc')
+        data = self.acc_mach()
+        opt = dict(data=data, cbl=r'$\mathcal{M}_{\rm acc}$', slog=True, name='M_acc')
         opt.update(kwargs)
         return self._st_plot(**opt)
 
@@ -2506,7 +2511,7 @@ class BLsim(object):
     def flux_data(self):
         return self.load_flux_data()
 
-    def _smooth_flux_data(self, data=None):
+    def _smooth_flux_data(self, data=None, dt=101, dr=21):
         keys = ['CS', 'CA', 'CL', 'Mdot', 'dd', 'dens', 'vr', 'vphi']
         if data is None:
             data = np.array([self.flux_data[i] for i in keys])
@@ -2525,8 +2530,8 @@ class BLsim(object):
             t = .5 * (t[:-1:2] + t[1::2])[:-2]
         # out = scipy.signal.savgol_filter(out, 101, 1, axis=1)
         # out = scipy.signal.savgol_filter(out, 21, 1, axis=2)
-        out = convolve1d(out, np.array(Box1DKernel(101)), axis=1)
-        out = convolve1d(out, np.array(Box1DKernel(21)), axis=2)
+        out = convolve1d(out, np.array(Box1DKernel(dt)), axis=1)
+        out = convolve1d(out, np.array(Box1DKernel(dr)), axis=2)
         out = dict(zip(keys, out))
         out['t'] = t
         return out
@@ -2592,7 +2597,7 @@ class BLsim(object):
         js = range(len(ilist))
         if data is None:
             data = self.smooth_flux_data
-        t = data['t']
+        t = data['t'] / tau
         i1 = self.rloc(1)
 
         if fopt is None:
@@ -2663,7 +2668,7 @@ class BLsim(object):
         ax2.tick_params(axis='both', which='both', direction='in')
 
         axR.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
-        plt.xlim(0, 600)
+        plt.xlim(0, t[-1])
 
         if save:
             plt.savefig(fn)
@@ -3012,7 +3017,7 @@ class BLsim(object):
         plt.xlabel('$R$')
 
         ax = plt.subplot(gs[2, 0], sharex=ax0)
-        plt.plot(self.rc, - data['Mdot'] * tau * self.rc, label=r'$\dot{M}$', c='k')
+        plt.plot(self.rc, - data['Mdot'], label=r'$\dot{M}$', c='k')
         ri = self.rloc(1.2)
         ri2 = self.rloc(2)
         norm = 1 / grad(self.rc, data['vphi'] * self.rc)
@@ -3270,7 +3275,7 @@ class BLsim(object):
 
         # Mdot
         ax = plt.subplot(gs[2, 0], sharex=ax0)
-        plt.plot(self.rc, - data['Mdot'] * tau * self.rc, label=r'$\dot{M}$', c='k')
+        plt.plot(self.rc, - data['Mdot'], label=r'$\dot{M}$', c='k')
         ri = self.rloc(1.2)
         ri2 = self.rloc(2)
         norm = 1 / grad(self.rc, data['vphi'] * self.rc)
@@ -3304,7 +3309,7 @@ class BLsim(object):
             plt.xticks([], [])
             plt.yticks([], [])
             one = self.rloc(1)
-            mdot = data['Mdot'] * tau * self.rc
+            mdot = data['Mdot']
             info = [['C_S', data['CS'][0, one]],
                     ['C_A', data['CA'][0, one]],
                     ['C_L', data['CL'][0, one]],
@@ -5409,6 +5414,80 @@ class BLsim(object):
             plt.close()
         return op
 
+    def Mdot_CS(self, dt0=10, coef=3, r=1, overwrite=True, save=False, fn=None, sdir='',
+                ext='pdf'):
+        if save or fn:
+            save = True
+            if fn is None:
+                fn = os.path.join(sdir, self.name + '_Mdot_CS.' + ext)
+                if sdir:
+                    if not os.path.isdir(sdir):
+                        os.mkdir(sdir)
+        if parse_not_overwrite(overwrite, fn):
+            return
+
+        fd = self.load_flux_data()
+        rl = self.rloc(r)
+        CS = fd['CS'][:, rl].cumsum()
+        md = fd['Mdot'][:, rl].cumsum()
+        dt = np.array([1, 5, 10, 50, 100])
+        ns = np.round(fd['t'][-1] / (tau * dt)).astype(int)
+        out = dict()
+        for n, nbin in enumerate(ns):
+            bins = np.round(np.linspace(0, fd['t'].size - 1, nbin + 1)).astype(int)
+            data = [(CS[bins[i + 1]] - CS[bins[i]], md[bins[i + 1]] - md[bins[i]]) for i
+                    in range(nbin)]
+            data = np.array(data).T / np.diff(bins)[None, :]
+            out[dt[n]] = data[::-1]
+        plt.figure(figsize=(8.5, 11), dpi=300)
+        gs = mpl.gridspec.GridSpec(2, 2, width_ratios=[1, .05],
+                                   top=.95, bottom=.09, left=.13, right=.85, wspace=.01,
+                                   hspace=.2)
+        ax = plt.subplot(gs[0, 0])
+        for i in out:
+            plt.plot(*out[i], marker='o', linewidth=0)
+        plt.xscale('symlog', linthreshx=1e-6)
+        plt.yscale('symlog', linthreshy=1e-6)
+        plt.legend(list(map(str, dt)))
+        x_ = 10 ** -np.linspace(1, 6, 100)
+        x = np.array(list(-x_) + list(np.linspace(-1e-6, 1e-6, 100)) + list(x_[::-1]))
+        xl = plt.xlim()
+        yl = plt.ylim()
+        plt.plot(x, coef * x, ls=':', lw=1, c='k')
+        plt.plot(x, -coef * x, ls=':', lw=1, c='k')
+        plt.xlim(*xl)
+        plt.ylim(*yl)
+        plt.xlabel(r'$\dot{M}$')
+        plt.ylabel(r'$C_{\rm S}$')
+        plt.title(self.name)
+
+        ax = plt.subplot(gs[1,0])
+        js = np.arange(out[dt0][0].size)
+        c = (js + .5) * dt0
+        norm = mpl.colors.Normalize(vmin=0, vmax=fd['t'][-1] / tau)
+        cmap = plt.get_cmap()
+        c = cmap(norm(c))
+        for j in js:
+            plt.plot(*out[dt0][:, j], marker='o', linewidth=0, mfc=c[j], mec=c[j])
+        plt.xscale('symlog', linthreshx=1e-6)
+        plt.yscale('symlog', linthreshy=1e-6)
+        plt.title('$dt={:d}$'.format(dt0))
+        xl = plt.xlim()
+        yl = plt.ylim()
+        plt.plot(x, coef * x, ls=':', lw=1, c='k')
+        plt.plot(x, -coef * x, ls=':', lw=1, c='k')
+        plt.xlim(*xl)
+        plt.ylim(*yl)
+        plt.xlabel(r'$\dot{M}$')
+        plt.ylabel(r'$C_{\rm S}$')
+        cax = plt.subplot(gs[1,1])
+        cb = mpl.colorbar.ColorbarBase(cax, cmap=cmap, orientation='vertical', norm=norm)
+        cb.set_label('$t$')
+
+        if save:
+            plt.savefig(fn)
+            plt.close()
+
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
                    sub_dir=False, overwrite=True, stripes=True, vort_prof=True,
                    prof=True):
@@ -5450,6 +5529,8 @@ class BLsim(object):
             self.alpha_st(save=True, overwrite=overwrite)
             if not quiet: print('    acc st')
             self.acc_st(save=True, overwrite=overwrite)
+            if not quiet: print('    Mdot_CS')
+            self.Mdot_CS(save=True, overwrite=overwrite)
             if gmodes:
                 if not quiet: print('    Speed plots')
                 self.speed_plots(gmodes, tmark=t[:], overwrite=overwrite)
