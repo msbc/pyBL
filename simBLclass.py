@@ -6279,7 +6279,10 @@ def bl_size_plot(sims=None, data=None, cmap=None):
     plt.xlabel('Mode Number')
 
 
-def sims_within(path, nmin=50):
+def sims_within(path=None, nmin=50):
+    if path is None:
+        path = '~/data/pleiades_data/bl'
+    path = os.path.expanduser(path)
     out = []
     for x in os.walk(path):
         if glob(os.path.join(x[0], 'athinput.*')):
