@@ -5439,7 +5439,7 @@ class BLsim(object):
         loc = np.where(np.logical_and(data[0] <= lim_coef * self.mach**lim_pow,
                                       data[1] < 0))
         out = np.array([-data[1][loc], data[0][loc] / data[1][loc]])
-        return {self.mach: out}
+        return self.mach, out
 
     def Mdot_CS(self, dt0=10, coef=.5, r=1, overwrite=True, save=False, fn=None, sdir='',
                 ext='pdf', hline=None):
@@ -6113,14 +6113,14 @@ def refreshSim(sim):
 def parallel_compile(func, arglist, T=None):
     """Usage : parallel_compile(func, arglist=None, T=None)
     Similar to comp_wrapper, but strings in arglist are not automatically turned
-    into zeussim_extended class instances."""
+    into BLsim class instances."""
     out = [i for i in parmap(func, arglist) if i is not None]
     if T: out = zip(*out)
     return out
 
 
 def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
-                 kwargs=None, sim_class=BLsim):
+                 kwargs=None, sim_class=BLsim, ll=True):
     """Usage : comp_wrapper(func, simlist=None, include=None, tmin=40, T=False, load_eos=False)
     Evaluate function 'fun' on each simulation in 'simlist' and return the
     compiled result, and use parallel processing to do so.
@@ -6173,6 +6173,8 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
         except AttributeError:
             name = sim.name
         # if we get here there's no hope
+        except KeyboardInterrupt:
+            raise
         except:
             print('Bad sim (no load): ' + name)
             print(traceback.format_exc())
@@ -6190,7 +6192,13 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
             print(traceback.format_exc())
         return None
 
-    return parallel_compile(mapper, arglist=simlist, T=T)
+    if ll:
+        out = parallel_compile(mapper, arglist=simlist, T=T)
+    else:
+        out = map(mapper, simlist)
+        if T:
+            out = zip(*out)
+    return out
 
 
 def mkplots(simlist=None, maps=False, overwrite=True, fluxes=True):
@@ -6289,6 +6297,38 @@ def sims_within(path=None, nmin=50):
             if len(glob(os.path.join(x[0], '*.athdf'))) >= nmin:
                 out.append(x[0])
     return out
+
+
+def CS_eff_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None, **kwargs):
+    if data is None:
+        if sims is None:
+            sims = sims_within(sims_path)
+        data = dict()
+        tmp = comp_wrapper('ratio_Mdot', **kwargs)
+        for i in tmp:
+            try:
+                data[i[0]] = np.hstack([data[i[0]], i[1]])
+            except KeyError:
+                data[i[0]] = i[1]
+    keys = list(data.keys())
+    vmin, vmax = int(np.min(keys) + .5), int(np.max(keys) + .5)
+    norm = mpl.colors.Normalize(vmin=vmin - .5, vmax=vmax + .5, n=int(vmax - vmin + 1.5))
+    cmap = plt.get_cmap()
+
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    for m in data:
+        c = cmap(norm(m))
+        plt.loglog(*data[m], marker='+', linewidth=0, mfc=c, mec=None)
+    plt.xlabel(r'$|\dot{M}|$')
+    plt.ylabel(r'$C_{\rm S}/\dot{M}$')
+
+    # colorbar
+    divider = make_axes_locatable(plt.gca())
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    cb = mpl.colorbar.ColorbarBase(cax, cmap=cmap, orientation='vertical', norm=norm,
+                                   ticks=np.arange(vmin, vmax + 1))
+    cb.set_label(r'$\mathcal{M}$')
+
 
 
 if __name__ == '__main__':
