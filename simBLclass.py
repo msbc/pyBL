@@ -6299,17 +6299,22 @@ def sims_within(path=None, nmin=50):
     return out
 
 
+def _mk_cs_eff_data(sims=None, sims_path=None, **kwargs):
+    if sims is None:
+        sims = sims_within(sims_path)
+    data = dict()
+    tmp = comp_wrapper('ratio_Mdot', **kwargs)
+    for i in tmp:
+        try:
+            data[i[0]] = np.hstack([data[i[0]], i[1]])
+        except KeyError:
+            data[i[0]] = i[1]
+    return data
+
+
 def CS_eff_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None, **kwargs):
     if data is None:
-        if sims is None:
-            sims = sims_within(sims_path)
-        data = dict()
-        tmp = comp_wrapper('ratio_Mdot', **kwargs)
-        for i in tmp:
-            try:
-                data[i[0]] = np.hstack([data[i[0]], i[1]])
-            except KeyError:
-                data[i[0]] = i[1]
+        data = _mk_cs_eff_data(sims=sims, sims_path=sims_path, **kwargs)
     keys = list(data.keys())
     vmin, vmax = int(np.min(keys) + .5), int(np.max(keys) + .5)
     norm = mpl.colors.Normalize(vmin=vmin - .5, vmax=vmax + .5, n=int(vmax - vmin + 1.5))
