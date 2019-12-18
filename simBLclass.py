@@ -1496,7 +1496,7 @@ class BLFT(BLfile):
         r2 = tau * self.rc ** 2
         cl = r2 * np.real(self['FT-CL-Re'][0])
         u = np.real(self['FT-vel2-Re'])[0]
-        md = tau * self.rc * np.real(self['FT-Mdot-Re'][0])
+        md = np.real(self['FT-Mdot-Re'][0])
         v = np.real(self['FT-vel1'][0])
         ca = r2 * u * md
         cs = cl - ca
@@ -2105,6 +2105,18 @@ class CompositeFFTSet(object):
         return self._phase_speed
 
 
+class npz_wrapper(object):
+    def __init__(self, npz, rc):
+        self.npz = npz
+        self.rc = rc[None, :]
+
+    def __getitem__(self, item):
+        out = self.npz[item]
+        if item == 'Mdot':
+            out *= tau * self.rc
+        return out
+
+
 class BLsim(object):
     def __init__(self, path, fmts=None, coarse_data=None, fft_time=None,
                  athinput=None, mode_mask=None, main_modes=None, sfd=None,
@@ -2314,7 +2326,7 @@ class BLsim(object):
             try:
                 if overwrite:
                     raise IOError
-                out = np.load(fn)
+                out = npz_wrapper(np.load(fn), self.rc)
             except IOError:
                 tmp = ['CS', 'CA', 'CL', 'Mdot', 'dd', 'dens', 'vr', 'vphi']
                 if data is None:
@@ -2326,7 +2338,7 @@ class BLsim(object):
                 except (MemoryError, OSError):
                     out['t'] = self.gen_fft_times(ll=False)
                 np.savez(fn, **out)
-                out = np.load(fn)
+                out = npz_wrapper(np.load(fn), self.rc)
             self._flux_data = out
             return self._flux_data
 
@@ -5414,8 +5426,23 @@ class BLsim(object):
             plt.close()
         return op
 
-    def Mdot_CS(self, dt0=10, coef=3, r=1, overwrite=True, save=False, fn=None, sdir='',
-                ext='pdf'):
+    def ratio_Mdot(self, r=1, dt=5, lim_coef=-1e-2, lim_pow=-2.6):
+        fd = self.load_flux_data()
+        rl = self.rloc(r)
+        CS = fd['CS'][:, rl].cumsum()
+        md = fd['Mdot'][:, rl].cumsum()
+        nbin = np.round(fd['t'][-1] / (tau * dt)).astype(int)
+        bins = np.round(np.linspace(0, fd['t'].size - 1, nbin + 1)).astype(int)
+        data = [(CS[bins[i + 1]] - CS[bins[i]], md[bins[i + 1]] - md[bins[i]]) for i
+                in range(nbin)]
+        data = np.array(data).T / np.diff(bins)[None, :]
+        loc = np.where(np.logical_and(data[0] <= lim_coef * self.mach**lim_pow,
+                                      data[1] < 0))
+        out = np.array([-data[1][loc], data[0][loc] / data[1][loc]])
+        return {self.mach: out}
+
+    def Mdot_CS(self, dt0=10, coef=.5, r=1, overwrite=True, save=False, fn=None, sdir='',
+                ext='pdf', hline=None):
         if save or fn:
             save = True
             if fn is None:
@@ -5460,7 +5487,13 @@ class BLsim(object):
         plt.xlabel(r'$\dot{M}$')
         plt.ylabel(r'$C_{\rm S}$')
         plt.title(self.name)
+        if hline:
+            if hline is True:
+                hline = -1e-2 * self.mach**-2.6
+            for h in np.atleast_1d(hline):
+                plt.axhline(h, c='k', lw=1, ls=':')
 
+        # 2nd panel
         ax = plt.subplot(gs[1,0])
         js = np.arange(out[dt0][0].size)
         c = (js + .5) * dt0
@@ -5480,6 +5513,11 @@ class BLsim(object):
         plt.ylim(*yl)
         plt.xlabel(r'$\dot{M}$')
         plt.ylabel(r'$C_{\rm S}$')
+        if hline:
+            for h in np.atleast_1d(hline):
+                plt.axhline(h, c='k', lw=1, ls=':')
+
+        # colorbar
         cax = plt.subplot(gs[1,1])
         cb = mpl.colorbar.ColorbarBase(cax, cmap=cmap, orientation='vertical', norm=norm)
         cb.set_label('$t$')
