@@ -5861,6 +5861,8 @@ class modeData(object):
                 xlim = plt.xlim()
                 ylim = plt.ylim()
                 _x = np.linspace(0, 32, 360)
+                if xlim[0] > 40:
+                    _x = np.linspace(0, 64, 720)
                 M = int(self.sim.mach + .1)
                 yl = np.sqrt(M ** -2 + (M / (2 * _rl[M] * _x)) ** 2) / _rl[M]
                 plt.plot(_x, yl, c='.5', ls='-.', lw=1, zorder=-1)
@@ -6312,20 +6314,108 @@ def _mk_cs_eff_data(sims=None, sims_path=None, **kwargs):
     return data
 
 
+def mk_cs_datafile(fn='cs_eff.npz', **kwargs):
+    data = _mk_cs_eff_data(**kwargs)
+    np.savez(fn, **{str(int(i + .5)): data[i] for i in data})
+
+
 def CS_eff_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None, **kwargs):
     if data is None:
         data = _mk_cs_eff_data(sims=sims, sims_path=sims_path, **kwargs)
-    keys = list(data.keys())
+    elif hasattr(data, 'lower'):
+        fn = os.path.expanduser(data)
+        if os.path.isfile(fn):
+            data = np.load(fn)
+    keys = [float(i) for i in data]
     vmin, vmax = int(np.min(keys) + .5), int(np.max(keys) + .5)
-    norm = mpl.colors.Normalize(vmin=vmin - .5, vmax=vmax + .5, n=int(vmax - vmin + 1.5))
-    cmap = plt.get_cmap()
+    norm = mpl.colors.Normalize(vmin=vmin - .5, vmax=vmax + .5)
+    cmap = plt.get_cmap(None, int(vmax - vmin + 1.5))
 
     fig = plt.figure(figsize=figsize, dpi=dpi)
     for m in data:
-        c = cmap(norm(m))
-        plt.loglog(*data[m], marker='+', linewidth=0, mfc=c, mec=None)
+        c = cmap(norm(float(m)))
+        plt.loglog(*data[m], marker='+', linewidth=0, mfc=c, mec=c)
     plt.xlabel(r'$|\dot{M}|$')
     plt.ylabel(r'$C_{\rm S}/\dot{M}$')
+
+    # colorbar
+    divider = make_axes_locatable(plt.gca())
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    cb = mpl.colorbar.ColorbarBase(cax, cmap=cmap, orientation='vertical', norm=norm,
+                                   ticks=np.arange(vmin, vmax + 1))
+    cb.set_label(r'$\mathcal{M}$')
+
+def CS_eff_bin_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None,
+                    md_min=1e-4, log_width=1./3., xp=.5, use_mean=True, **kwargs):
+    if data is None:
+        data = _mk_cs_eff_data(sims=sims, sims_path=sims_path, **kwargs)
+    elif hasattr(data, 'lower'):
+        fn = os.path.expanduser(data)
+        if os.path.isfile(fn):
+            data = np.load(fn)
+    keys = [float(i) for i in data]
+    vmin, vmax = int(np.min(keys) + .5), int(np.max(keys) + .5)
+    norm = mpl.colors.Normalize(vmin=vmin - .5, vmax=vmax + .5)
+    cmap = plt.get_cmap(None, int(vmax - vmin + 1.5))
+
+    xmax = max([i[0].max() for i in data.values()])
+    print("xmax", xmax)
+    width = 10.0**log_width
+    edges = 10**np.arange(-4, np.log10(xmax) + log_width, log_width)
+    mids = np.sqrt(edges[:-1] * edges[1:])
+    nbins = edges.size - 1
+
+    def stats(xy):
+        x, y = xy
+        count = np.zeros(nbins)
+        yval = np.zeros(nbins)
+        if use_mean:
+            err = np.zeros(nbins)
+        else:
+            err = np.zeros((2, nbins))
+        for i in range(nbins):
+            tmp = y[np.logical_and(edges[i] <= x, x < edges[i + 1])]
+            count[i] = tmp.size
+            if use_mean:
+                yval[i] = tmp.mean()
+                err[i] = tmp.std()
+            else:
+                yval[i] = np.median(tmp)
+                err[0, i] = helpers.percentile(tmp, 25)
+                err[1, i] = helpers.percentile(tmp, 75)
+                err[:, i] = np.abs(err[:, i] - yval[i])
+        return count, yval, err
+
+
+    ylist = []
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    for m in data:
+        c = cmap(norm(float(m)))
+        ylist.extend(data[m][1][data[m][0] > 1e-4])
+        n, y, std = stats(data[m])
+        x = mids * (float(m) / 9)**xp
+        plt.errorbar(x, y, yerr=std, ecolor=c, mfc=c, mec=c, fmt='.', elinewidth=1,
+                     capsize=1)
+    plt.xscale('log')
+    plt.yscale('log')
+    xl = plt.xlim(edges[0], edges[-1])
+    for e in edges[1:-1]:
+        plt.axvline(e, c='.8', lw=1, ls=':')
+    if use_mean:
+        yval = np.mean(ylist)
+        err = np.std(ylist)
+        a, b = yval - err, yval + err
+    else:
+        yval = np.median(ylist)
+        a, b = [helpers.percentile(ylist, i) for i in [25, 75]]
+    plt.axhline(np.mean(ylist), c='k', lw=1, ls=':', zorder=-1)
+    plt.fill_between(xl, a, b, zorder=-2, facecolor='.9')
+    plt.xlim(*xl)
+    plt.xlabel(r'$|\dot{M}|$')
+    plt.ylabel(r'$C_{\rm S}/\dot{M}$')
+    yl = list(plt.ylim())
+    yl[0] = min(yl[0], 1e-1)
+    plt.ylim(*yl)
 
     # colorbar
     divider = make_axes_locatable(plt.gca())
