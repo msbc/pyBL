@@ -43,6 +43,7 @@ warnings.filterwarnings(
 )
 
 
+_skip = False
 _quiet = False
 tau = 2 * np.pi
 
@@ -2121,7 +2122,7 @@ class BLsim(object):
     def __init__(self, path, fmts=None, coarse_data=None, fft_time=None,
                  athinput=None, mode_mask=None, main_modes=None, sfd=None,
                  phase_angle=None, rho_ref=None, mode_detect=None, flux_data=None,
-                 skip_data_gen=False):
+                 skip_data_gen=_skip):
         if fmts is None:
             fmts = _file_fmts
         self._fmts = fmts
@@ -6530,12 +6531,17 @@ if __name__ == '__main__':
                         type=str,
                         default=None,
                         help='Simulation Name')
+    parser.add_argument('--skip',
+                        action='store_true',
+                        default=False,
+                        help='Skip data gen (if possible)')
     args = parser.parse_args()
     if args.a:
         print(vars(args))
     elif args.tbl:
         print(mk_sim_tbl())
     else:
+        _skip = args.skip
         path = os.path.expanduser(args.path)
         quiet = args.quiet
         if args.sim is None:
