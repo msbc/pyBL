@@ -2276,6 +2276,7 @@ class BLsim(object):
         try:
             if str(func) == func:
                 func = getattr(fn, func)
+                return func(*args, **kwargs)
         except TypeError:
             return func(fn, *args, **kwargs)
         return func(fn, *args, **kwargs)
@@ -6345,8 +6346,9 @@ def CS_eff_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None, **k
                                    ticks=np.arange(vmin, vmax + 1))
     cb.set_label(r'$\mathcal{M}$')
 
-def CS_eff_bin_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None,
-                    md_min=1e-4, log_width=1./3., xp=.5, use_mean=True, **kwargs):
+def CS_eff_bin_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None, fig=True,
+                    md_min=1e-4, log_width=1./3., xp=.5, use_mean=True, cb=True, cax=True,
+                    ylbl=True, ylim=None, **kwargs):
     if data is None:
         data = _mk_cs_eff_data(sims=sims, sims_path=sims_path, **kwargs)
     elif hasattr(data, 'lower'):
@@ -6359,9 +6361,8 @@ def CS_eff_bin_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None,
     cmap = plt.get_cmap(None, int(vmax - vmin + 1.5))
 
     xmax = max([i[0].max() for i in data.values()])
-    print("xmax", xmax)
     width = 10.0**log_width
-    edges = 10**np.arange(-4, np.log10(xmax) + log_width, log_width)
+    edges = 10**np.arange(np.log10(md_min), np.log10(xmax) + log_width, log_width)
     mids = np.sqrt(edges[:-1] * edges[1:])
     nbins = edges.size - 1
 
@@ -6388,10 +6389,11 @@ def CS_eff_bin_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None,
 
 
     ylist = []
-    fig = plt.figure(figsize=figsize, dpi=dpi)
+    if fig is True:
+        fig = plt.figure(figsize=figsize, dpi=dpi)
     for m in data:
         c = cmap(norm(float(m)))
-        ylist.extend(data[m][1][data[m][0] > 1e-4])
+        ylist.extend(data[m][1][data[m][0] >= md_min])
         n, y, std = stats(data[m])
         x = mids * (float(m) / 9)**xp
         plt.errorbar(x, y, yerr=std, ecolor=c, mfc=c, mec=c, fmt='.', elinewidth=1,
@@ -6400,7 +6402,7 @@ def CS_eff_bin_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None,
     plt.yscale('log')
     xl = plt.xlim(edges[0], edges[-1])
     for e in edges[1:-1]:
-        plt.axvline(e, c='.8', lw=1, ls=':')
+        plt.axvline(e, c='.8', lw=1, ls=':', zorder=-2)
     if use_mean:
         yval = np.mean(ylist)
         err = np.std(ylist)
@@ -6408,22 +6410,63 @@ def CS_eff_bin_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None,
     else:
         yval = np.median(ylist)
         a, b = [helpers.percentile(ylist, i) for i in [25, 75]]
-    plt.axhline(np.mean(ylist), c='k', lw=1, ls=':', zorder=-1)
-    plt.fill_between(xl, a, b, zorder=-2, facecolor='.9')
+    plt.axhline(yval, c='k', lw=1, ls=':', zorder=-1)
+    plt.fill_between(xl, a, b, zorder=-3, facecolor='.9')
     plt.xlim(*xl)
     plt.xlabel(r'$|\dot{M}|$')
-    plt.ylabel(r'$C_{\rm S}/\dot{M}$')
+    if ylbl:
+        plt.ylabel(r'$C_{\rm S}/\dot{M}$')
     yl = list(plt.ylim())
     yl[0] = min(yl[0], 1e-1)
     plt.ylim(*yl)
+    if np.any(ylim):
+        yl = plt.ylim(*ylim)
 
     # colorbar
-    divider = make_axes_locatable(plt.gca())
-    cax = divider.append_axes("right", size="5%", pad=0.05)
-    cb = mpl.colorbar.ColorbarBase(cax, cmap=cmap, orientation='vertical', norm=norm,
-                                   ticks=np.arange(vmin, vmax + 1))
-    cb.set_label(r'$\mathcal{M}$')
+    if cb:
+        if cax is True:
+            divider = make_axes_locatable(plt.gca())
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+        cb = mpl.colorbar.ColorbarBase(cax, cmap=cmap, orientation='vertical', norm=norm,
+                                       ticks=np.arange(vmin, vmax + 1))
+        cb.set_label(r'$\mathcal{M}$')
 
+    return data, yl
+
+
+def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
+    kwargs['fig'] = False
+    if 'data' not in kwargs:
+        kwargs['data'] = '~/data/pleiades_data/bl/cs_eff.npz'
+    if 'ylim' not in kwargs:
+        kwargs['ylim'] = [1e-1, None]
+    if figsize is None:
+        figsize = (8, 4)
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    gs = mpl.gridspec.GridSpec(1, 3, width_ratios=[1, 1, .05], top=.99, bottom=.1,
+                               left=.075, right=.95, wspace=0)
+    #axs = [plt.subplot(gs[i]) for i in [0, 2, 3]]
+    axs = [plt.subplot(i) for i in gs]
+    plt.sca(axs[0])
+    kwargs['data'], kwargs['ylim'] = CS_eff_bin_plot(use_mean=True, cb=False, **kwargs)
+    plt.sca(axs[1])
+    CS_eff_bin_plot(use_mean=False, cax=axs[2], ylbl=False, **kwargs)
+    axs[0].yaxis.set_ticks_position('both')
+    axs[0].tick_params(axis='both', which='both', direction='in')
+    #axs[1].yaxis.set_ticks_position('both')
+    axs[1].tick_params(axis='both', which='both', direction='in')
+    axs[1].set_yticklabels([])
+    x, y = 1.5e-4, 3
+    opt = dict(bbox=dict(edgecolor='none', facecolor='white', alpha=.7))
+    axs[0].text(x, y, "A) mean $\pm$ standard-deviation", **opt)
+    axs[1].text(x, y, "B) median $\pm$ quartile", **opt)
+
+    if save:
+        fn = 'CS_Mdot_plot.pdf'
+        if dropbox:
+            fn = 'Dropbox/' + fn
+        fig.savefig(fn)
+        plt.close()
 
 
 if __name__ == '__main__':
