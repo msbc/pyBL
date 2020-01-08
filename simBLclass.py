@@ -6564,7 +6564,8 @@ if __name__ == '__main__':
         else:
             if quiet is None:
                 quiet = False
-            BLsim(sims[0]).main_plots(quiet=quiet, working_dir=True, maps=args.maps,
-                                      overwrite=args.overwrite, fluxes=args.flux,
-                                      vort_prof=args.vort_prof, prof=args.prof,
-                                      stripes=args.stripes)
+            opt = dict(quiet=quiet, working_dir=True, maps=args.maps,
+                       overwrite=args.overwrite, fluxes=args.flux,
+                       vort_prof=args.vort_prof, prof=args.prof, stripes=args.stripes)
+            BLsim(sims[0], skip_data_gen=args.skip).main_plots(**opt)
+
