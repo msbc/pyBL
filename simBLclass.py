@@ -7,7 +7,6 @@ import h5py
 import argparse
 import numpy as np
 import matplotlib as mpl
-
 if __name__ == "__main__":
     mpl.use('agg')
 import matplotlib.pyplot as plt
@@ -42,6 +41,7 @@ warnings.filterwarnings(
     message=('This figure includes Axes that are not compatible with tight_layout, '
              'so results might be incorrect.')
 )
+
 
 _quiet = False
 tau = 2 * np.pi
@@ -2269,6 +2269,7 @@ class BLsim(object):
                                  self.rc.size, self.phic.size, seed]]
 
     def _map_assist(self, fn, func, args, kwargs):
+        out = None
         try:
             fn.fn
         except AttributeError:
@@ -2276,10 +2277,13 @@ class BLsim(object):
         try:
             if str(func) == func:
                 func = getattr(fn, func)
-                return func(*args, **kwargs)
+                out = func(*args, **kwargs)
         except TypeError:
             return func(fn, *args, **kwargs)
-        return func(fn, *args, **kwargs)
+        if out is None:
+            out = func(fn, *args, **kwargs)
+        gc.collect()
+        return out
 
     def map_files(self, files, func, *args, imin=None, imax=None, ll=False, **kwargs):
         try:
@@ -6167,6 +6171,7 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
             return True
 
     def mapper(sim):
+        output = None
         # if sim is a string
         try:
             sim.rstrip()
@@ -6186,14 +6191,16 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
         try:
             if include(sim):
                 if not callable(func):
-                    return sim.parse_func(func, *args, **kwargs)
-                return func(sim)
+                    output = sim.parse_func(func, *args, **kwargs)
+                if output is None:
+                    return func(sim)
         except KeyboardInterrupt:
             raise
         except:
             print('Bad sim (func err): ' + name)
             print(traceback.format_exc())
-        return None
+        gc.collect()
+        return output
 
     if ll:
         out = parallel_compile(mapper, arglist=simlist, T=T)
