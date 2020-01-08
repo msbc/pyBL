@@ -4957,7 +4957,7 @@ class BLsim(object):
             tn.savefig(tn_fn)
             plt.close(tn)
 
-    def mk_stripes(self, var_list=None, dt=None, base_dir=None, file='cons',
+    def mk_stripes(self, var_list=None, dt=25, base_dir=None, file='cons',
                    overwrite=True, popt=None, thumbnail=True, rmax=None):
         if popt is None:
             popt = {}
