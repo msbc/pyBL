@@ -1471,7 +1471,7 @@ class BLFT(BLfile):
         return r2 * (self['FT-CL'] - u[0][np.newaxis, :] * self['FT-Mdot'])
 
     def CS_RRR(self):
-        r2 = tau * self.rc[np.newaxis, :] ** 2
+        r2 = (tau * self.rc[np.newaxis, :] ** 2).astype(np.float32)
         u = self['FT-vel2']
         v = self['FT-vel1']
         return r2 * np.real(self['FT-dens'][0])[np.newaxis, :] * (
@@ -2310,7 +2310,15 @@ class BLsim(object):
 
     def _mk_cs_rrr_data(self, ll=True):
         data = self.map_files('ffts', 'CS_RRR', ll=ll)
-        np.savez(self._cs_rrr_fn, data=data)
+        try:
+            np.savez(self._cs_rrr_fn, data=data)
+        except MemoyError:
+            print('MemoryError: saving as hdf5 file.')
+            shape = (len(data), data[0].shape[0], data[0].shape[1])
+            with h5py.File(self._cs_rrr_fn[:-3] + 'hdf5', 'w') as f:
+                dset = f.create_dataset("cs_rrr", shape, dtype=data[0].dtype)
+                for i in range(len(data)):
+                    dset[i] = data[i]
         return data
 
     def CS_RRR_data(self, ll=True):
