@@ -1494,7 +1494,7 @@ class BLFT(BLfile):
         return out
 
     def flux_data(self):
-        r2 = tau * self.rc ** 2
+        r2 = (tau * self.rc ** 2).astype(np.float32)
         cl = r2 * np.real(self['FT-CL-Re'][0])
         u = np.real(self['FT-vel2-Re'])[0]
         md = np.real(self['FT-Mdot-Re'][0])
