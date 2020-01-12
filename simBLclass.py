@@ -2364,6 +2364,10 @@ class BLsim(object):
         data = self.load_flux_data()
         return - self.mach * data['Mdot'] / (tau * self.rc[None, :] * data['dens'])
 
+    def acc_alpha(self):
+        data = self.load_flux_data()
+        return self.mach**2 * data['Mdot'] * data['vphi'] / (tau * self.rc[None, :] * data['dens'])
+
     def _st_plot(self, data=None, fn=None, save=False, subsample=False, title=None,
                  name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
                  vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
@@ -2398,11 +2402,16 @@ class BLsim(object):
                 return fn
             return None
 
+        t = self.load_flux_data()['t'] / tau
+        #t = 0.5 * (t[:-1] + t[1:])
+        t = t[::2]
+
         if data is None:
             data = self.alpha_eff()
-
         if type(data) != np.ndarray:
             raise TypeError('Data has type "{:}", not ndarray.'.format(type(data)))
+        if data.shape[0] > 1.9 * t.size:
+            data = 0.5 * (data[0::2] + data[1::2, :])
 
         if dt:
             data = convolve1d(data, np.array(Box1DKernel(dt)), axis=0)
@@ -2478,9 +2487,8 @@ class BLsim(object):
         else:
             ax = plt.gca()
 
-        x = self.load_flux_data()['t'] / tau
         y = self.r
-        pcm = plt.pcolormesh(x, y, data.T, **_popt)
+        pcm = plt.pcolormesh(t, y, data.T, **_popt)
         plt.xlabel(r'$t/2\pi$')
         plt.ylabel(r'$r$')
         if rplot:
@@ -5066,7 +5074,7 @@ class BLsim(object):
         ti += [t[t < tlist[i + 1]].argmax() for i in range(len(tlist) - 1)]
         tslice = [slice(ti[i], ti[i + 1] + 1) for i in range(len(tlist) - 1)]
         fits = np.empty((len(ris), len(ti) - 1, self.speed.shape[1], 6))
-        weights = np.minimum(np.nan_to_num(self.fft_data._speed_std), 1e99) ** -2
+        weights = np.maximum(np.minimum(np.nan_to_num(self.fft_data._speed_std), 1e99) ** -2, sys.float_info.min)
         for i, ri in enumerate(ris):
             s, w = np.average(self.speed[:, :, ri - dr:ri + dr + 1],
                               weights=weights[:, :, ri - dr:ri + dr + 1], axis=2,
@@ -6426,6 +6434,7 @@ def CS_eff_bin_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None,
     else:
         yval = np.median(ylist)
         a, b = [helpers.percentile(ylist, i) for i in [25, 75]]
+    print(a - yval, yval, b - yval)
     plt.axhline(yval, c='k', lw=1, ls=':', zorder=-1)
     plt.fill_between(xl, a, b, zorder=-3, facecolor='.9')
     plt.xlim(*xl)
