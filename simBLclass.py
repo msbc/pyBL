@@ -1997,23 +1997,26 @@ class IncrementalFFThdf5(object):
             helpers.update_progress(0)
         with h5py.File(self.fine_out, mode) as fine, \
                 h5py.File(self.coarse_out, mode) as coarse:
-            shape = (0, self.sim.nphi, self.sim.nr)
-            mshape = (None, self.sim.nphi, self.sim.nr)
-            names = 't', 'amp', 'phase', 'speed'
+            shape = (0, self.sim.inputs['meshblock']['nx2'], self.sim.rc.size)
+            mshape = (None, self.sim.inputs['meshblock']['nx2'], self.sim.rc.size)
+            names = ['t', 'amp', 'phase', 'speed']
             dt = 'float32'
-            # fine data sets
-            fine.create_dset('t', (0,), maxshape=(None,), dtype=dt)
-            fine.create_dset('amp', shape, maxshape=mshape, dtype=dt)
-            fine.create_dset('phase', shape, maxshape=mshape, dtype=dt)
-            fine.create_dset('speed', shape, maxshape=mshape, dtype=dt)
-            # coarse data sets
-            coarse.create_dset('t', (0,), maxshape=(None,), dtype=dt)
-            coarse.create_dset('amp', shape, maxshape=mshape, dtype=dt)
-            coarse.create_dset('phase', shape, maxshape=mshape, dtype=dt)
-            coarse.create_dset('speed', shape, maxshape=mshape, dtype=dt)
-            coarse.create_dset('amp_std', shape, maxshape=mshape, dtype=dt)
-            coarse.create_dset('phase_std', shape, maxshape=mshape, dtype=dt)
-            coarse.create_dset('speed_std', shape, maxshape=mshape, dtype=dt)
+            try:
+                # fine data sets
+                fine.create_dataset('t', (0,), maxshape=(None,), dtype=dt)
+                fine.create_dataset('amp', shape, maxshape=mshape, dtype=dt)
+                fine.create_dataset('phase', shape, maxshape=mshape, dtype=dt)
+                fine.create_dataset('speed', shape, maxshape=mshape, dtype=dt)
+                # coarse data sets
+                coarse.create_dataset('t', (0,), maxshape=(None,), dtype=dt)
+                coarse.create_dataset('amp', shape, maxshape=mshape, dtype=dt)
+                coarse.create_dataset('phase', shape, maxshape=mshape, dtype=dt)
+                coarse.create_dataset('speed', shape, maxshape=mshape, dtype=dt)
+                coarse.create_dataset('amp_std', shape, maxshape=mshape, dtype=dt)
+                coarse.create_dataset('phase_std', shape, maxshape=mshape, dtype=dt)
+                coarse.create_dataset('speed_std', shape, maxshape=mshape, dtype=dt)
+            except RuntimeError:
+                pass
             while test:
                 data = self.buffer.state
                 if store_data:
@@ -2023,32 +2026,35 @@ class IncrementalFFThdf5(object):
                     self._speed.append(data[3])
                 if data[0] > _ft:
                     for i, d in zip(names, data):
-                        fine[i][fine[i].shape[0]] = d
+                        fine[i].resize(fine[i].shape[0] + 1, axis=0)
+                        fine[i][fine[i].shape[0] - 1] = d
                 name = os.path.split(self.buffer.filenames[self.buffer.index])[-1].split(
                     '.')
                 if data[0] > _ct:
                     if name[1] == 'FT' and name[2][-1] == '0':
                         # print(self.buffer.index, data[0], self.buffer.filenames[self.buffer.index])
-                        np.array(data[0]).astype('float32').tofile(coarse)
+                        for i in names + [j + '_std' for j in names[1:]]:
+                            coarse[i].resize(coarse[i].shape[0] + 1, axis=0)
+                        coarse['t'][coarse['t'].shape[0] - 1] = data[0]
                         a = self.buffer._amp
                         if store_data:
                             self._cd['t'].append(data[0])
                             self._cd['amp'].append(self.buffer.mean(a))
                             self._cd['amp_std'].append(self.buffer.std(a))
-                        coarse['amp'][coarse[i].shape[0]] = self.buffer.mean(a)
-                        coarse['amp_std'][coarse[i].shape[0]] = self.buffer.std(a)
+                        coarse['amp'][coarse[i].shape[0] - 1] = self.buffer.mean(a)
+                        coarse['amp_std'][coarse[i].shape[0] - 1] = self.buffer.std(a)
                         a = self.buffer._phase
                         if store_data:
                             self._cd['phase'].append(self.buffer.mean(a))
                             self._cd['phase_std'].append(self.buffer.std(a))
-                        coarse['phase'][coarse[i].shape[0]] = self.buffer.mean(a)
-                        coarse['phase_std'][coarse[i].shape[0]] = self.buffer.std(a)
+                        coarse['phase'][coarse[i].shape[0] - 1] = self.buffer.mean(a)
+                        coarse['phase_std'][coarse[i].shape[0] - 1] = self.buffer.std(a)
                         a = self.buffer._speed
                         if store_data:
                             self._cd['speed'].append(self.buffer.mean(a))
                             self._cd['speed_std'].append(self.buffer.std(a))
-                        coarse['speed'][coarse[i].shape[0]] = self.buffer.mean(a)
-                        coarse['speed_std'][coarse[i].shape[0]] = self.buffer.std(a)
+                        coarse['speed'][coarse[i].shape[0] - 1] = self.buffer.mean(a)
+                        coarse['speed_std'][coarse[i].shape[0] - 1] = self.buffer.std(a)
                 test = self.buffer.increment()
                 if not self.quiet:
                     helpers.update_progress(float(self.buffer.index) / self.buffer.len)
@@ -2068,15 +2074,16 @@ class IncrementalFFThdf5(object):
                 nvar = 3
             else:
                 raise RuntimeError('"navr" cannot be determined.')
-        first = BLFT(self.filenames[0], sim=self.sim)
+        #first = BLFT(self.filenames[0], sim=self.sim)
         if nphi is None:
             nphi = self.sim.inputs['meshblock']['nx2']
-        nr = first.rc.size
-        del first
-        with open(fn, 'rb') as f:
-            offset = - 4 * (nvar * nphi * nr + 1)
-            f.seek(offset, os.SEEK_END)
-            t = np.fromfile(f, 'float32', 1)[0]
+        #nr = first.rc.size
+        #del first
+        try:
+            with h5py.File(fn, 'r') as f:
+                t = float(f['t'][-1])
+        except (KeyError, ValueError):
+            t = -1.0
         return t
 
 
