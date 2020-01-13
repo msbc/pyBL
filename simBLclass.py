@@ -1950,6 +1950,136 @@ class FTdataFile(object):
         return self.amp * np.exp(1j * self.phase)
 
 
+class IncrementalFFThdf5(object):
+    def __init__(self, filenames, sim=None, store_data=False, fine_out=None,
+                 coarse_out=None, var='FT', quiet=None):
+        self.filenames = filenames
+        self._ghost = 10
+        self.buffer = _FileBuffer(filenames, ghost=self._ghost, sim=sim, var=var)
+        self.sim = sim
+        self._store_data = store_data
+        if fine_out is None:
+            fine_out = os.path.join(sim.path, 'FFT_fine_' + var + '.hdf5')
+        if coarse_out is None:
+            coarse_out = os.path.join(sim.path, 'FFT_coarse_' + var + '.hdf5')
+        self.fine_out = fine_out
+        self.coarse_out = coarse_out
+        self._t = None
+        self._amp = None
+        self._phase = None
+        self._speed = None
+        if quiet is None:
+            quiet = _quiet
+        self.quiet = quiet
+        self._cd = None
+
+    def process(self, store_data=None):
+        mode = 'w'
+        _ft = -1
+        _ct = -1
+        if os.path.isfile(self.fine_out):
+            _ft = self.get_last_time(self.fine_out)
+            _ct = self.get_last_time(self.coarse_out)
+            mode = 'a'
+        if store_data is None:
+            store_data = self._store_data
+        if store_data:
+            self._t = []
+            self._amp = []
+            self._phase = []
+            self._speed = []
+            self._cd = {'t': [], 'amp': [], 'phase': [], 'speed': [], 'amp_std': [],
+                        'phase_std': [], 'speed_std': []}
+        test = True
+        if not self.quiet:
+            # print(self.coarse_out)
+            print('Compiling FFT data.')
+            helpers.update_progress(0)
+        with h5py.File(self.fine_out, mode) as fine, \
+                h5py.File(self.coarse_out, mode) as coarse:
+            shape = (0, self.sim.nphi, self.sim.nr)
+            mshape = (None, self.sim.nphi, self.sim.nr)
+            names = 't', 'amp', 'phase', 'speed'
+            dt = 'float32'
+            # fine data sets
+            fine.create_dset('t', (0,), maxshape=(None,), dtype=dt)
+            fine.create_dset('amp', shape, maxshape=mshape, dtype=dt)
+            fine.create_dset('phase', shape, maxshape=mshape, dtype=dt)
+            fine.create_dset('speed', shape, maxshape=mshape, dtype=dt)
+            # coarse data sets
+            coarse.create_dset('t', (0,), maxshape=(None,), dtype=dt)
+            coarse.create_dset('amp', shape, maxshape=mshape, dtype=dt)
+            coarse.create_dset('phase', shape, maxshape=mshape, dtype=dt)
+            coarse.create_dset('speed', shape, maxshape=mshape, dtype=dt)
+            coarse.create_dset('amp_std', shape, maxshape=mshape, dtype=dt)
+            coarse.create_dset('phase_std', shape, maxshape=mshape, dtype=dt)
+            coarse.create_dset('speed_std', shape, maxshape=mshape, dtype=dt)
+            while test:
+                data = self.buffer.state
+                if store_data:
+                    self._t.append(data[0])
+                    self._amp.append(data[1])
+                    self._phase.append(data[2])
+                    self._speed.append(data[3])
+                if data[0] > _ft:
+                    for i, d in zip(names, data):
+                        fine[i][fine[i].shape[0]] = d
+                name = os.path.split(self.buffer.filenames[self.buffer.index])[-1].split(
+                    '.')
+                if data[0] > _ct:
+                    if name[1] == 'FT' and name[2][-1] == '0':
+                        # print(self.buffer.index, data[0], self.buffer.filenames[self.buffer.index])
+                        np.array(data[0]).astype('float32').tofile(coarse)
+                        a = self.buffer._amp
+                        if store_data:
+                            self._cd['t'].append(data[0])
+                            self._cd['amp'].append(self.buffer.mean(a))
+                            self._cd['amp_std'].append(self.buffer.std(a))
+                        coarse['amp'][coarse[i].shape[0]] = self.buffer.mean(a)
+                        coarse['amp_std'][coarse[i].shape[0]] = self.buffer.std(a)
+                        a = self.buffer._phase
+                        if store_data:
+                            self._cd['phase'].append(self.buffer.mean(a))
+                            self._cd['phase_std'].append(self.buffer.std(a))
+                        coarse['phase'][coarse[i].shape[0]] = self.buffer.mean(a)
+                        coarse['phase_std'][coarse[i].shape[0]] = self.buffer.std(a)
+                        a = self.buffer._speed
+                        if store_data:
+                            self._cd['speed'].append(self.buffer.mean(a))
+                            self._cd['speed_std'].append(self.buffer.std(a))
+                        coarse['speed'][coarse[i].shape[0]] = self.buffer.mean(a)
+                        coarse['speed_std'][coarse[i].shape[0]] = self.buffer.std(a)
+                test = self.buffer.increment()
+                if not self.quiet:
+                    helpers.update_progress(float(self.buffer.index) / self.buffer.len)
+        if not self.quiet:
+            helpers.update_progress(1)
+        if store_data:
+            for i in self._cd:
+                self._cd[i] = np.array(i)
+
+    def get_last_time(self, fn=None, nvar=None, nphi=None):
+        if fn is None:
+            fn = self.coarse_out
+        if nvar is None:
+            if fn == self.coarse_out:
+                nvar = 6
+            elif fn == self.fine_out:
+                nvar = 3
+            else:
+                raise RuntimeError('"navr" cannot be determined.')
+        first = BLFT(self.filenames[0], sim=self.sim)
+        if nphi is None:
+            nphi = self.sim.inputs['meshblock']['nx2']
+        nr = first.rc.size
+        del first
+        with open(fn, 'rb') as f:
+            offset = - 4 * (nvar * nphi * nr + 1)
+            f.seek(offset, os.SEEK_END)
+            t = np.fromfile(f, 'float32', 1)[0]
+        return t
+
+
 class FFTset(object):
     def __init__(self, filenames, sim=None, athinput=None, fft_data=None,
                  fft_time=None):
