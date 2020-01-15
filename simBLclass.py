@@ -1944,6 +1944,12 @@ class FTdataFile(object):
         if self._speed is None:
             self._read_data()
         return self._speed
+    
+    @property
+    def speed_std(self):
+        if self._speed_std is None:
+            self._read_data()
+        return self._speed_std
 
     @property
     def FT(self):
@@ -2164,6 +2170,12 @@ class FTdataHDF5File(object):
         if self._file is None:
             self._read_data()
         return self._file['speed'] / self.modes
+    
+    @property
+    def speed_std(self):
+        if self._file is None:
+            self._read_data()
+        return self._file['speed_std'] / self.modes
 
     @property
     def FT(self):
@@ -4313,7 +4325,7 @@ class BLsim(object):
         ir = self.rloc(r)
         data = self.speed
         try:
-            kwarg['std'] = self.fft_data._speed_std
+            kwarg['std'] = self.fft_data.speed_std
             if 'rsmooth' not in kwarg:
                 kwarg['rsmooth'] = -1
         except AttributeError:
@@ -4357,7 +4369,7 @@ class BLsim(object):
         ir = self.rloc(r)
         data = self.amp
         try:
-            kwarg['std'] = self.fft_data._speed_std
+            kwarg['std'] = self.fft_data.speed_std
             if 'rsmooth' not in kwarg:
                 kwarg['rsmooth'] = -1
         except AttributeError:
@@ -5081,7 +5093,7 @@ class BLsim(object):
             opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax,
                        save=save, fn=_fn, cbl=cbl, speed=True, popt=kwargs,
                        overwrite=overwrite)
-            self._mr_plot(t, self.speed, self.fft_data._speed_std, **opt)
+            self._mr_plot(t, self.speed, self.fft_data.speed_std, **opt)
 
     def mr_amp(self, ts, log=True, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None,
                save=False, fn=None,
@@ -5137,7 +5149,7 @@ class BLsim(object):
             r = self.mid_star()
         rl = self.rloc(r)
         loc = [slice(t0, t0 + dt), m, slice(rl, rl + dr)]
-        out = np.average(self.speed[loc], weights=self.fft_data._speed_std[loc] ** -2)
+        out = np.average(self.speed[loc], weights=self.fft_data.speed_std[loc] ** -2)
         if fmt:
             print(('{0:' + fmt + '}').format(out))
         return out
@@ -5300,7 +5312,7 @@ class BLsim(object):
         ti += [t[t < tlist[i + 1]].argmax() for i in range(len(tlist) - 1)]
         tslice = [slice(ti[i], ti[i + 1] + 1) for i in range(len(tlist) - 1)]
         fits = np.empty((len(ris), len(ti) - 1, self.speed.shape[1], 6))
-        weights = np.maximum(np.minimum(np.nan_to_num(self.fft_data._speed_std), 1e99) ** -2, sys.float_info.min)
+        weights = np.maximum(np.minimum(np.nan_to_num(self.fft_data.speed_std), 1e99) ** -2, sys.float_info.min)
         for i, ri in enumerate(ris):
             s, w = np.average(self.speed[:, :, ri - dr:ri + dr + 1],
                               weights=weights[:, :, ri - dr:ri + dr + 1], axis=2,
