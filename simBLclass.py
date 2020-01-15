@@ -3669,11 +3669,15 @@ class BLsim(object):
         _type = 'coarse'
         if fine:
             _type = 'fine'
-        fn = os.path.join(self.path, 'FFT_' + _type + '_' + var + '.npy')
-        if not os.path.isfile(fn):
-            # TODO: store data
-            self.gen_fft_file(var=var)
-        data = FTdataFile(fn, sim=self)
+        fn = os.path.join(self.path, 'FFT_' + _type + '_' + var + '.hdf5')
+        if os.path.isfile(fn):
+            data = FTdataHDF5File(fn, sim=self)
+        else:
+            fn = os.path.join(self.path, 'FFT_' + _type + '_' + var + '.npy')
+            if not os.path.isfile(fn):
+                # TODO: store data
+                self.gen_fft_file(var=var)
+            data = FTdataFile(fn, sim=self)
         if _type == 'coarse':
             self._coarse_data[var] = data
         else:
