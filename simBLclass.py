@@ -1439,7 +1439,7 @@ class BLFT(BLfile):
                 try:
                     i = self._ai_data['meshblock']['nx2'] - 1
                 except TypeError:
-                    i = 31
+                    i = self.sim.inputs['meshblock']['nx2'] - 1
             data = data[slice(0, i + 1)].copy()
         return data
 
