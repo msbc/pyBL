@@ -2151,31 +2151,31 @@ class FTdataHDF5File(object):
     def t(self):
         if self._file is None:
             self._read_data()
-        return self._file['t']
+        return self._file['t'][:]
 
     @property
     def amp(self):
         if self._file is None:
             self._read_data()
-        return self._file['amp']
+        return self._file['amp'][:]
 
     @property
     def phase(self):
         if self._file is None:
             self._read_data()
-        return self._file['phase']
+        return self._file['phase'][:]
 
     @property
     def speed(self):
         if self._file is None:
             self._read_data()
-        return self._file['speed'] / self.modes
+        return self._file['speed'][:] / self.modes
     
     @property
     def speed_std(self):
         if self._file is None:
             self._read_data()
-        return self._file['speed_std'] / self.modes
+        return self._file['speed_std'][:] / self.modes
 
     @property
     def FT(self):
@@ -2605,7 +2605,7 @@ class BLsim(object):
                  vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                  ax=None, log=False, sdir=None, dpi=300, r_cut=None, ret_fn=False,
                  rplot=1, overwrite=True, slog=None, linthresh=None, linscale=None,
-                 figsize=(7, 5), dt=0, dr=0):
+                 figsize=(7, 5), dt=0, dr=0, cax=None, ylbl=True):
         """Plot 2D sim data"""
         if fopt is None:
             fopt = {'dpi': dpi, 'figsize': figsize}
@@ -2722,7 +2722,8 @@ class BLsim(object):
         y = self.r
         pcm = plt.pcolormesh(t, y, data.T, **_popt)
         plt.xlabel(r'$t/2\pi$')
-        plt.ylabel(r'$r$')
+        if ylbl:
+            plt.ylabel(r'$r$')
         if rplot:
             rplot = np.atleast_1d(rplot)
             for r in rplot:
@@ -2732,8 +2733,10 @@ class BLsim(object):
         if cb:
             #divider = make_axes_locatable(ax)
             #cax = divider.append_axes("right", size="5%", pad=0.05)
-            #cb = plt.colorbar(pcm, cax=cax, **cbopt)
-            cb = plt.colorbar(pcm, **cbopt)
+            if cax:
+                cb = plt.colorbar(pcm, cax=cax, **cbopt)
+            else:
+                cb = plt.colorbar(pcm, **cbopt)
             cb.ax.yaxis.set_offset_position('left')
             if cbl:
                 cb.set_label(cbl)
