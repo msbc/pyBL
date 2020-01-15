@@ -2087,6 +2087,89 @@ class IncrementalFFThdf5(object):
         return t
 
 
+    class FTdataHDF5File(object):
+        def __init__(self, filename, nr=None, nphi=None, sim=None, coarse=True, var=None):
+            if nr is None:
+                nr = sim.rc.size
+            if nphi is None:
+                nphi = sim.inputs['meshblock']['nx2']
+            self.filename = filename
+            # print(filename)
+            if var is None:
+                var = os.path.split(filename)[-1].split('.')[0].split('_')[-1]
+            self.var = var
+            self.nr = nr
+            self.nphi = nphi
+            self.modes = np.arange(nphi)[np.newaxis, :, np.newaxis]
+            self.sim = sim
+            self.coarse = coarse
+            self._file = None
+
+        def existsQ(self):
+            return os.path.isfile(self.filename)
+
+        def updateQ(self):
+            if not self.existsQ():
+                print('FFT ' + self.filename + ' does not exist')
+                return 1
+            if os.path.getsize(self.filename) == 0:
+                print('FFT ' + self.filename + ' has size 0')
+                return 2
+            if self.sim is not None:
+                tmp = [0]
+                files = [i for i in glob(os.path.join(self.sim.path, '*.athdf'))]
+                tmp.extend([os.path.getctime(i) for i in files])
+                if max(tmp) > os.path.getmtime(self.filename):
+                    try:
+                        loc = np.array(tmp[1:]).argmax()
+                        print(
+                        loc, files[loc], tmp[loc - 1], os.path.getmtime(self.filename))
+                    except:
+                        print("IDK:", sys.exc_info()[0], loc, len(files), len(tmp))
+                    return False
+            return False
+
+        def generate(self, quiet=False):
+            f = IncrementalFFThdf5(self.sim.sortedFFT(), var=self.var, sim=self.sim,
+                                   quiet=quiet)
+            f.process()
+
+        def _read_data(self):
+            tmp = self.updateQ()
+            if tmp:
+                print("UpdateQ: {:}".format(tmp))
+                self.generate()
+            self._file = h5py.File(self.filename, 'r')
+
+        @property
+        def t(self):
+            if self._file is None:
+                self._read_data()
+            return self._file['t']
+
+        @property
+        def amp(self):
+            if self._file is None:
+                self._read_data()
+            return self._file['amp']
+
+        @property
+        def phase(self):
+            if self._file is None:
+                self._read_data()
+            return self._file['phase']
+
+        @property
+        def speed(self):
+            if self._file is None:
+                self._read_data()
+            return self._file['speed'] / self.modes
+
+        @property
+        def FT(self):
+            return self.amp * np.exp(1j * self.phase)
+
+
 class FFTset(object):
     def __init__(self, filenames, sim=None, athinput=None, fft_data=None,
                  fft_time=None):
@@ -3565,11 +3648,13 @@ class BLsim(object):
         else:
             kinds = np.atleast_1d(kinds)
         for var in vars:
-            make = False
+            make = True
             for kind in kinds:
-                fn = os.path.join(self.path, 'FFT_' + kind + '_' + var + '.npy')
-                if not os.path.isfile(fn):
-                    make = True
+                exts = ['.npy', '.hdf5']
+                for ext in exts:
+                    fn = os.path.join(self.path, 'FFT_' + kind + '_' + var + '.npy')
+                    if os.path.isfile(fn):
+                        make = False
             if make:
                 self.gen_fft_file(var=var)
         # CS_RRR data
@@ -3577,7 +3662,7 @@ class BLsim(object):
             self.CS_RRR_data(ll=True)
 
     def gen_fft_file(self, var='FT'):
-        handler = IncrementalFFT(self.sortedFFT(), var=var, sim=self)
+        handler = IncrementalFFThdf5(self.sortedFFT(), var=var, sim=self)
         handler.process()
 
     def load_fft_data(self, var='FT', fine=False):
