@@ -4309,7 +4309,10 @@ class BLsim(object):
             plt.xlabel(r'Time/$2\pi$')
         # plt.ylabel('Phase')
         ax = plt.gca()
-        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
+        if self.fft_time[-1] / tau < 1001:
+            ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
+        else:
+            ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(100))
         if set_ylim:
             if log:
                 yu *= 1.2
@@ -6136,7 +6139,7 @@ class modeData(object):
                 xlim = plt.xlim()
                 ylim = plt.ylim()
                 _x = np.linspace(0, 32, 360)
-                if xlim[0] > 40:
+                if xlim[1] > 40:
                     _x = np.linspace(0, 64, 720)
                 M = int(self.sim.mach + .1)
                 yl = np.sqrt(M ** -2 + (M / (2 * _rl[M] * _x)) ** 2) / _rl[M]
