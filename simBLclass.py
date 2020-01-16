@@ -1934,6 +1934,12 @@ class FTdataFile(object):
         return self._amp
 
     @property
+    def amp_std(self):
+        if self._amp_std is None:
+            self._read_data()
+        return self._amp_std
+
+    @property
     def phase(self):
         if self._phase is None:
             self._read_data()
@@ -2158,6 +2164,12 @@ class FTdataHDF5File(object):
         if self._file is None:
             self._read_data()
         return self._file['amp'][:]
+
+    @property
+    def amp_std(self):
+        if self._file is None:
+            self._read_data()
+        return self._file['amp_std'][:]
 
     @property
     def phase(self):
@@ -5120,7 +5132,7 @@ class BLsim(object):
             opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax,
                        save=save, fn=_fn, cbl=cbl, amp=True,
                        overwrite=overwrite, popt=kwargs)
-            self._mr_plot(t, self.amp, self.fft_data._amp_std, **opt)
+            self._mr_plot(t, self.amp, self.fft_data.amp_std, **opt)
 
     def my_fft_plots(self, save=True, quiet=False, diag=True, sdir=None, overwrite=True):
         if diag:
