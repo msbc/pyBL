@@ -5108,6 +5108,8 @@ class BLsim(object):
                     _fn = os.path.join(sdir, _fn)
             else:
                 _fn = fn
+            if parse_not_overwrite(overwrite, _fn):
+                return None
             if cbl is None:
                 cbl = r'$\Omega_{\rm p}$'
             opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax,
@@ -5132,6 +5134,8 @@ class BLsim(object):
                     _fn = os.path.join(sdir, _fn)
             else:
                 _fn = fn
+            if parse_not_overwrite(overwrite, _fn):
+                return None
             if cbl is None:
                 cbl = r'$|A_m|$'
             opt = dict(log=log, norm=norm, dt=dt, dr=dr, ext=ext, fig=fig, ax=ax,
