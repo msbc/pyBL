@@ -1950,7 +1950,7 @@ class FTdataFile(object):
         if self._speed is None:
             self._read_data()
         return self._speed
-    
+
     @property
     def speed_std(self):
         if self._speed_std is None:
@@ -2182,7 +2182,7 @@ class FTdataHDF5File(object):
         if self._file is None:
             self._read_data()
         return self._file['speed'][:] / self.modes
-    
+
     @property
     def speed_std(self):
         if self._file is None:
@@ -5806,6 +5806,23 @@ class BLsim(object):
             plt.savefig(fn)
             plt.close()
 
+    def read_mode_csv(self, fn=None):
+        if fn is None:
+            fn = self.name + '_modes.csv'
+        with open(fn, 'r') as f:
+            lines = list(filter(None, [l.strip() for l in f]))
+        out = dict()
+        lines.pop(0)
+        while lines:
+            key = lines.pop(0)[2:]
+            out[key] = []
+            while lines:
+                if lines[0][0] == '#':
+                    break
+                tmp = lines.pop(0).split(', ')
+                out[key].append([int(tmp[0])] + [float(i) for i in tmp[1:]])
+        return out
+
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
                    sub_dir=False, overwrite=True, stripes=True, vort_prof=True,
                    prof=True):
@@ -5826,12 +5843,21 @@ class BLsim(object):
             os.chdir(working_dir)
             # if not quiet: print('    FFT CS')
             # self.load_fft_data('CS')
-            if not quiet: print('    Mode detect')
-            md = self.mode_detect()
-            md.write()
-            md.plot(save=True)
-            gmodes = list({int(m[0]) for m in md.g_modes()})
-            t = [(.5 * (m[1] + m[2]) / tau, m[0]) for m in md.g_modes()]
+            comp_md = True
+            if not overwrite:
+                if np.all([os.path.isfile(self.name + i) for i in
+                           ['_modes.csv', '_dispersion.pdf']]):
+                    comp_md = False
+            if comp_md:
+                if not quiet: print('    Mode detect')
+                md = self.mode_detect()
+                md.write()
+                md.plot(save=True)
+                gmode_data = md.g_modes()
+            else:
+                gmode_data = self.read_mode_csv()['Global Modes']
+            gmodes = list({int(m[0]) for m in gmode_data})
+            t = [(.5 * (m[1] + m[2]) / tau, m[0]) for m in gmode_data]
             gc.collect()
             if not quiet: print('    Diagnostic')
             self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:],
