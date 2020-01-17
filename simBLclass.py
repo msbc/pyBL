@@ -2617,7 +2617,7 @@ class BLsim(object):
                  vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                  ax=None, log=False, sdir=None, dpi=300, r_cut=None, ret_fn=False,
                  rplot=1, overwrite=True, slog=None, linthresh=None, linscale=None,
-                 figsize=(7, 5), dt=0, dr=0, cax=None, ylbl=True):
+                 figsize=(7, 5), dt=True, dr=0, cax=None, ylbl=True):
         """Plot 2D sim data"""
         if fopt is None:
             fopt = {'dpi': dpi, 'figsize': figsize}
@@ -2658,6 +2658,8 @@ class BLsim(object):
             data = 0.5 * (data[0::2] + data[1::2, :])
 
         if dt:
+            if dt is True:
+                dt = 5 * 10
             data = convolve1d(data, np.array(Box1DKernel(dt)), axis=0)
         if dr:
             data = convolve1d(data, np.array(Box1DKernel(dr)), axis=1)
@@ -2763,15 +2765,15 @@ class BLsim(object):
 
         return pcm
 
-    def alpha_st(self, **kwargs):
+    def stress_st(self, **kwargs):
         data = self.alpha_eff()
-        opt = dict(data=data, cbl=r'$\alpha_{\rm eff}$', slog=True, name='alpha')
+        opt = dict(data=data, cbl=r'$\alpha_{\rm stress}$', slog=True, name='alpha_stress')
         opt.update(kwargs)
         return self._st_plot(**opt)
 
     def acc_st(self, **kwargs):
-        data = self.acc_mach()
-        opt = dict(data=data, cbl=r'$\mathcal{M}_{\rm acc}$', slog=True, name='M_acc')
+        data = self.acc_alpha()
+        opt = dict(data=data, cbl=r'$\alpha_{\rm acc}$', slog=True, name='alpha_acc')
         opt.update(kwargs)
         return self._st_plot(**opt)
 
@@ -5830,41 +5832,56 @@ class BLsim(object):
             md.plot(save=True)
             gmodes = list({int(m[0]) for m in md.g_modes()})
             t = [(.5 * (m[1] + m[2]) / tau, m[0]) for m in md.g_modes()]
+            gc.collect()
             if not quiet: print('    Diagnostic')
             self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:],
                             overwrite=overwrite)
+            gc.collect()
             if not quiet: print('    m_eff')
             self.m_eff_plot(save=True, overwrite=overwrite)
+            gc.collect()
             if not quiet: print('    multi_mode_time')
             self.mulit_mode_time(save=True, overwrite=overwrite)
+            gc.collect()
             if not quiet: print('    My fft')
             self.my_fft_plots(diag=False, quiet=True, sdir=True, overwrite=overwrite)
+            gc.collect()
             if not quiet: print('    Flux vs time')
             self.my_flux_plot(save=True, overwrite=overwrite)
-            if not quiet: print('    alpha st')
+            gc.collect()
+            if not quiet: print('    alpha stress')
             self.alpha_st(save=True, overwrite=overwrite)
-            if not quiet: print('    acc st')
+            gc.collect()
+            if not quiet: print('    alpha acc')
             self.acc_st(save=True, overwrite=overwrite)
+            gc.collect()
             if not quiet: print('    Mdot_CS')
             self.Mdot_CS(save=True, overwrite=overwrite)
+            gc.collect()
             if gmodes:
                 if not quiet: print('    Speed plots')
                 self.speed_plots(gmodes, tmark=t[:], overwrite=overwrite)
+                gc.collect()
             if vort_prof:
                 if not quiet: print('    Vortensity profiles')
                 self.vortensity_profiles(save=True, overwrite=overwrite)
+                gc.collect()
             if prof:
                 if not quiet: print('    Profiles')
                 self.evo_prof(save=True, overwrite=overwrite)
+                gc.collect()
             if maps:
                 if not quiet: print('    Maps')
                 self.mk_maps(overwrite=overwrite)
+                gc.collect()
             if stripes:
                 if not quiet: print('    Stripes')
                 self.mk_stripes(overwrite=overwrite)
+                gc.collect()
             if fluxes:
                 if not quiet: print('    Flux Series')
                 self.flux_series(sdir=True, progress=(not quiet), overwrite=overwrite)
+                gc.collect()
         finally:
             os.chdir(pwd)
 
