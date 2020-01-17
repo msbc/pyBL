@@ -5876,7 +5876,7 @@ class BLsim(object):
             self.my_flux_plot(save=True, overwrite=overwrite)
             gc.collect()
             if not quiet: print('    alpha stress')
-            self.alpha_st(save=True, overwrite=overwrite)
+            self.stress_st(save=True, overwrite=overwrite)
             gc.collect()
             if not quiet: print('    alpha acc')
             self.acc_st(save=True, overwrite=overwrite)
