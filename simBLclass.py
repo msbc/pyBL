@@ -2610,7 +2610,33 @@ class BLsim(object):
 
     def acc_alpha(self):
         data = self.load_flux_data()
-        return self.mach**2 * data['Mdot'] * data['vphi'] / (tau * self.rc[None, :] * data['dens'])
+        return - self.mach**2 * data['Mdot'] * data['vphi'] / (tau * self.rc[None, :] * data['dens'])
+
+    def peak_alpha(self, dt=True, dr=5):
+        a_stress = self.alpha_eff()
+        a_acc = self.acc_alpha()
+        if dt:
+            if dt is True:
+                dt = 5 * 10
+            opt = dict(allow_huge=True, axis=0)
+            a_stress = convolve1d(a_stress, np.array(Box1DKernel(dt)), **opt)
+            a_acc = convolve1d(a_acc, np.array(Box1DKernel(dt)), **opt)
+        loc = np.unravel_index(np.abs(a_stress).argmax(), a_stress.shape)
+        a_stress = a_stress[loc[0], loc[1] - dr: loc[1] + dr + 1].mean()
+        loc = np.unravel_index(np.abs(a_acc).argmax(), a_acc.shape)
+        a_acc = a_acc[loc[0], loc[1] - dr: loc[1] + dr + 1].mean()
+        return a_stress, a_acc
+
+    def write_peak_alpha(self, fn=None, overwrite=True):
+        if fn is None:
+            fn = os.path.join(self.path, self.name) + '_peak_alphas.cvs'
+        if parse_not_overwrite(overwrite, fn):
+            return None
+        a = self.peak_alpha()
+        with open(fn, 'w') as f:
+            f.write('# sim name, a_stress, a_acc\n')
+            f.write(', '.join([self.name] + ['{:.6g}'.format(i) for i in a]) + '\n')
+        return None
 
     def _st_plot(self, data=None, fn=None, save=False, subsample=False, title=None,
                  name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
@@ -5895,6 +5921,9 @@ class BLsim(object):
             gc.collect()
             if not quiet: print('    alpha acc')
             self.acc_st(save=True, overwrite=overwrite)
+            gc.collect()
+            if not quiet: print('    peak alpha')
+            self.write_peak_alpha(overwrite=overwrite)
             gc.collect()
             if not quiet: print('    Mdot_CS')
             self.Mdot_CS(save=True, overwrite=overwrite)
