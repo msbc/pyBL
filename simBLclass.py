@@ -2924,7 +2924,7 @@ class BLsim(object):
         def get(key):
             out = data[key]
             if dt:
-                out = smooth(out, dt)
+                out = convolve1d(out, np.array(Box1DKernel(dt)), axis=0)
             return out
 
         # CS
