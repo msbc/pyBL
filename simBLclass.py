@@ -2858,7 +2858,7 @@ class BLsim(object):
         return [self.mach] + self.mean_bl()
 
     def my_flux_plot(self, data=None, rlist=None, lopt=None, overwrite=True, save=False,
-                     fn=None, sdir='', ext='pdf', fig=None, fopt=None):
+                     fn=None, sdir='', ext='pdf', fig=None, fopt=None, dt=1):
         if save or fn:
             save = True
             if fn is None:
@@ -2890,10 +2890,21 @@ class BLsim(object):
             _fopt.update(fopt)
             fig = plt.figure(**_fopt)
 
+        if dt:
+            dt *= tau
+            dt = (dt * tau + .5) // np.diff(self.fft_time[2:]).mean()
+            print(dt)
+
+        def get(key):
+            out = data[key]
+            if dt:
+                out = smooth(out, dt)
+            return out
+
         # CS
         ax = plt.subplot(411)
         for j in js:
-            plt.plot(t, data['CS'][:, ilist[j]], zorder=-j)
+            plt.plot(t, get('CS')[:, ilist[j]], zorder=-j)
         # plt.ylim(-.5e-4, 1e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$C_S$')
@@ -2905,7 +2916,7 @@ class BLsim(object):
         # Mdot
         axM = plt.subplot(412, sharex=ax)
         for j in js:
-            plt.plot(t, -data['Mdot'][:, ilist[j]], zorder=-j)
+            plt.plot(t, -get('Mdot')[:, ilist[j]], zorder=-j)
         # plt.ylim(-.5e-4, 2e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$\dot{M}$')
@@ -2916,7 +2927,7 @@ class BLsim(object):
         # dS
         axS = plt.subplot(413, sharex=ax)
         for j in js:
-            plt.semilogy(t, np.sqrt(data['dd'][:, ilist[j]]), zorder=-j)
+            plt.semilogy(t, np.sqrt(get('dd')[:, ilist[j]]), zorder=-j)
         # plt.ylim(-.001, .01)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$\left<\Sigma^2\right>/\left<\Sigma\right>^2-1$')
