@@ -2892,7 +2892,7 @@ class BLsim(object):
 
         if dt:
             dt *= tau
-            dt = (dt * tau + .5) // np.diff(self.fft_time[2:]).mean()
+            dt = int(dt / np.diff(t).mean() + .5)
             print(dt)
 
         def get(key):
