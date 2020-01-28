@@ -199,7 +199,7 @@ def smooth(data, width=64):
     kern = np.ones(width)
     kern /= kern.sum()
     try:
-        return convolve_fft(data, kern, boundary='wrap')
+        return convolve_fft(data, kern, boundary='wrap', allow_huge=True)
     except NameError:
         return fftconvolve(data, kern, mode='same')
 
