@@ -2618,7 +2618,7 @@ class BLsim(object):
         if dt:
             if dt is True:
                 dt = 5 * 10
-            opt = dict(allow_huge=True, axis=0)
+            opt = dict(axis=0)
             a_stress = convolve1d(a_stress, np.array(Box1DKernel(dt)), **opt)
             a_acc = convolve1d(a_acc, np.array(Box1DKernel(dt)), **opt)
         loc = np.unravel_index(np.abs(a_stress).argmax(), a_stress.shape)
@@ -2884,7 +2884,7 @@ class BLsim(object):
         return [self.mach] + self.mean_bl()
 
     def my_flux_plot(self, data=None, rlist=None, lopt=None, overwrite=True, save=False,
-                     fn=None, sdir='', ext='pdf', fig=None, fopt=None, dt=1):
+                     fn=None, sdir='', ext='pdf', fig=None, fopt=None, dt=5):
         if save or fn:
             save = True
             if fn is None:
