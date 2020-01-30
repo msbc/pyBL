@@ -2627,9 +2627,13 @@ class BLsim(object):
         a_acc = a_acc[loc[0], loc[1] - dr: loc[1] + dr + 1].mean()
         return a_stress, a_acc
 
-    def write_peak_alpha(self, fn=None, overwrite=True):
+    def write_peak_alpha(self, fn=None, sdir=True, overwrite=True):
+        if sdir is True:
+            sdir = self.path
+        if not sdir:
+            sdir = ''
         if fn is None:
-            fn = os.path.join(self.path, self.name) + '_peak_alphas.cvs'
+            fn = os.path.join(sdir, self.name + '_peak_alphas.csv')
         if parse_not_overwrite(overwrite, fn):
             return None
         a = self.peak_alpha()
@@ -5923,7 +5927,7 @@ class BLsim(object):
             self.acc_st(save=True, overwrite=overwrite)
             gc.collect()
             if not quiet: print('    peak alpha')
-            self.write_peak_alpha(overwrite=overwrite)
+            self.write_peak_alpha(overwrite=overwrite, sdir=None)
             gc.collect()
             if not quiet: print('    Mdot_CS')
             self.Mdot_CS(save=True, overwrite=overwrite)
