@@ -2916,7 +2916,7 @@ class BLsim(object):
         if fopt is None:
             fopt = dict()
         if fig is None:
-            _fopt = dict(figsize=(5, 7), dpi=300)
+            _fopt = dict(figsize=(5, 6), dpi=300)
             _fopt.update(fopt)
             fig = plt.figure(**_fopt)
 
@@ -2932,7 +2932,7 @@ class BLsim(object):
             return out
 
         # CS
-        ax = plt.subplot(411)
+        ax = plt.subplot(311)
         for j in js:
             plt.plot(t, get('CS')[:, ilist[j]], zorder=-j)
         # plt.ylim(-.5e-4, 1e-5)
@@ -2944,7 +2944,7 @@ class BLsim(object):
         ax.tick_params(axis='both', which='both', direction='in')
 
         # Mdot
-        axM = plt.subplot(412, sharex=ax)
+        axM = plt.subplot(312, sharex=ax)
         for j in js:
             plt.plot(t, -get('Mdot')[:, ilist[j]], zorder=-j)
         # plt.ylim(-.5e-4, 2e-5)
@@ -2955,7 +2955,7 @@ class BLsim(object):
         axM.tick_params(axis='both', which='both', direction='in')
 
         # dS
-        axS = plt.subplot(413, sharex=ax)
+        axS = plt.subplot(313, sharex=ax)
         for j in js:
             plt.semilogy(t, np.sqrt(get('dd')[:, ilist[j]]), zorder=-j)
         # plt.ylim(-.001, .01)
@@ -2968,31 +2968,33 @@ class BLsim(object):
         axS.yaxis.set_ticks_position('both')
         axS.tick_params(axis='both', which='both', direction='in')
 
-        # R
-        axR = plt.subplot(414, sharex=ax)
-        rin, rout = self.bl_in_out()
-        handles = []
-        handles.extend(plt.plot(t, rin, 'k'))
-        handles.extend(plt.plot(t, rout, 'k'))
-        plt.ylabel(r'$R$')
-        # plt.legend([r'$R_{\rm in}$', r'$R_{\rm out}$'], **lopt)
+        if 0:
+            # R
+            axR = plt.subplot(414, sharex=ax)
+            rin, rout = self.bl_in_out()
+            handles = []
+            handles.extend(plt.plot(t, rin, 'k'))
+            handles.extend(plt.plot(t, rout, 'k'))
+            plt.ylabel(r'$R$')
+            # plt.legend([r'$R_{\rm in}$', r'$R_{\rm out}$'], **lopt)
+            axR.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
+            axR.tick_params(axis='both', which='both', direction='in')
+            ylim = list(plt.ylim())
+            if ylim[0] < .9:
+                ylim[0] = rin[500:].min() * .99
+                plt.ylim(*ylim)
+            # delta R
+            ax2 = axR.twinx()
+            dr = rout - rin
+            handles.extend(plt.plot(t, dr, 'k:', lw=1))
+            plt.ylim(0, 1.5 * (dr[250:]).max())
+            ax2.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
+        ax = plt.gca()
+        ax.tick_params(axis='both', which='both', direction='in')
         plt.xlabel(r'$t/2\pi$')
-        axR.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
-        axR.tick_params(axis='both', which='both', direction='in')
-        ylim = list(plt.ylim())
-        if ylim[0] < .9:
-            ylim[0] = rin[500:].min() * .99
-            plt.ylim(*ylim)
-        # delta R
-        ax2 = axR.twinx()
-        dr = rout - rin
-        handles.extend(plt.plot(t, dr, 'k:', lw=1))
-        plt.ylim(0, 1.5 * (dr[250:]).max())
-        ax2.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
-        ax2.tick_params(axis='both', which='both', direction='in')
-
-        axR.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
         plt.xlim(0, t[-1])
+        fig.suptitle(sim.name)
 
         if save:
             plt.savefig(fn)
