@@ -2710,6 +2710,8 @@ class BLsim(object):
             opt = dict(axis=0)
             a_stress = convolve1d(a_stress, np.array(Box1DKernel(dt)), **opt)
             a_acc = convolve1d(a_acc, np.array(Box1DKernel(dt)), **opt)
+        a_stress[:20 * 10] = 0
+        a_acc[:20 * 10] = 0
         loc = np.unravel_index(np.abs(a_stress).argmax(), a_stress.shape)
         a_stress = a_stress[loc[0], loc[1] - dr: loc[1] + dr + 1].mean()
         loc = np.unravel_index(np.abs(a_acc).argmax(), a_acc.shape)
@@ -5998,6 +6000,9 @@ class BLsim(object):
             gmodes = list({int(m[0]) for m in gmode_data})
             t = [(.5 * (m[1] + m[2]) / tau, m[0]) for m in gmode_data]
             gc.collect()
+            if not quiet: print('    peak alpha')
+            self.write_peak_alpha(overwrite=overwrite, sdir=None)
+            gc.collect()
             if not quiet: print('    Diagnostic')
             self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:],
                             overwrite=overwrite)
@@ -6019,9 +6024,6 @@ class BLsim(object):
             gc.collect()
             if not quiet: print('    alpha acc')
             self.acc_st(save=True, overwrite=overwrite)
-            gc.collect()
-            if not quiet: print('    peak alpha')
-            self.write_peak_alpha(overwrite=overwrite, sdir=None)
             gc.collect()
             if not quiet: print('    Mdot_CS')
             self.Mdot_CS(save=True, overwrite=overwrite)
