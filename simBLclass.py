@@ -3085,7 +3085,7 @@ class BLsim(object):
         plt.xlabel(r'$t/2\pi$')
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
         plt.xlim(0, t[-1])
-        fig.suptitle(sim.name)
+        fig.suptitle(self.name)
 
         if save:
             plt.savefig(fn)
