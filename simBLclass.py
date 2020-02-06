@@ -64,7 +64,7 @@ _dirs = [i for i in _dirs if os.path.isdir(i)]
 _data_base = '/scratch/gpfs/sashaph/BLayer'
 _pre = ['BL', 'disk', 'mock']
 _i = map(str, range(1, 5))
-_ext = ['athdf', 'npy']
+_ext = ['athdf', 'npy', 'hdf5']
 # _file_fmts = ['BL.out2.%5.5d.athdf', 'disk.out1.%5.5d.athdf']
 _int_fmt = '%5.5d'
 _file_fmts = ['.'.join([a, 'out' + b, _int_fmt, c]) for a in _pre for b in _i for c in
@@ -1380,6 +1380,17 @@ class BLConsPrim(BL3Dfile):
         dv = (self.vortensity() - init[np.newaxis, :]) * self.rc[np.newaxis, :] ** 2
         return dv.mean(axis=0)
 
+    def flux_est(self, i=0, p=1, phase=0):
+        flux = self['dens']**p
+        flux *= np.diff(self.phi)[:, None] * self.rc[None, :] * np.diff(self.r)[None, :]
+        x = np.cos(self.phic - phase)[:, None] * self.rc[None, :]
+        y = np.sin(self.phic - phase)[:, None] * self.rc[None, :]
+        rloc = np.where(self.rc <= 1)[0].max()
+        flux[:, :rloc+1] = 0
+        rho = np.sqrt(1 - np.minimum(y**2, 1)) * np.tan(i)
+        flux[np.logical_and(x > 0, x < rho)] = 0
+        return flux.sum()
+
 
 class BLcons(BLConsPrim):
     def _special_keys(self, key):
@@ -1745,6 +1756,7 @@ class IncrementalFFT(object):
             quiet = _quiet
         self.quiet = quiet
         self._cd = None
+        self.var = var
 
     def process(self, store_data=None):
         mode = 'wb'
@@ -1767,7 +1779,7 @@ class IncrementalFFT(object):
         test = True
         if not self.quiet:
             # print(self.coarse_out)
-            print('Compiling FFT data.')
+            print('Compiling FFT ({:}) data.'.format(self.var))
             helpers.update_progress(0)
         with open(self.fine_out, mode) as fine, open(self.coarse_out, mode) as coarse:
             while test:
@@ -1984,6 +1996,7 @@ class IncrementalFFThdf5(object):
             quiet = _quiet
         self.quiet = quiet
         self._cd = None
+        self.var = var
 
     def process(self, store_data=None):
         mode = 'w'
@@ -2005,7 +2018,7 @@ class IncrementalFFThdf5(object):
         test = True
         if not self.quiet:
             # print(self.coarse_out)
-            print('Compiling FFT data.')
+            print('Compiling H5FFT ({:}) data.'.format(self.var))
             helpers.update_progress(0)
         with h5py.File(self.fine_out, mode) as fine, \
                 h5py.File(self.coarse_out, mode) as coarse:
@@ -2362,6 +2375,74 @@ class npz_wrapper(object):
         return out
 
 
+class FluxDataset(object):
+    def __init__(self, filenames, sim=None, path=None):
+        self.filenames = filenames
+        self.sim = sim
+        if path is None:
+            if sim is None:
+                path = ''
+            else:
+                path = sim.path
+        self.path = path
+
+    def _extract(self):
+        for fn in self.filenames:
+            with h5py.File(os.path.join(self.path, fn)) as f:
+                print('Checking file "{:}".'.format(fn))
+                if 'time' in f:
+                    print('"time" in "{:}".'.format(fn), f['time'].size, f['flux'].size)
+                    if f['time'].size:
+                        print('Loading data from "{:}".'.format(fn))
+                        try:
+                            flux = np.concatenate([flux, f['flux'][:]], axis=0)
+                            time = np.concatenate([time, f['time'][:]], axis=0)
+                        except NameError:
+                            flux = f['flux'][:]
+                            time = f['time'][:]
+                            self._views = f.attrs['views'][:]
+                            self._powers = f.attrs['powers'][:]
+        self._flux = flux
+        self._time = time
+
+    @property
+    def views(self):
+        try:
+            return self._views
+        except AttributeError:
+            self._extract()
+            return self._views
+
+    @property
+    def powers(self):
+        try:
+            return self._powers
+        except AttributeError:
+            self._extract()
+            return self._powers
+
+    @property
+    def flux(self):
+        try:
+            return self._flux
+        except AttributeError:
+            self._extract()
+            return self._flux
+
+    @property
+    def time(self):
+        try:
+            return self._time
+        except AttributeError:
+            self._extract()
+            return self._time
+
+    def export(self, fn=None):
+        if fn is None:
+            fn = os.path.join(self.sim.path, 'lightcurve.npz')
+        np.savez(fn, flux=self.flux, time=self.time, views=self.views, powers=self.powers)
+
+
 class BLsim(object):
     def __init__(self, path, fmts=None, coarse_data=None, fft_time=None,
                  athinput=None, mode_mask=None, main_modes=None, sfd=None,
@@ -2485,6 +2566,14 @@ class BLsim(object):
         if not skip_data_gen:
             self.ensure_fft_data_exists()
         # End init
+
+    @property
+    def lightcurve(self):
+        try:
+            return self._lightcurve
+        except AttributeError:
+            self._lightcurve = FluxDataset(self.files('flux'), sim=self)
+        return self._lightcurve
 
     def upper_omega(self, m, n=0, r=1.1, t0=2000, tf=None):
         vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
@@ -3724,7 +3813,7 @@ class BLsim(object):
             for kind in kinds:
                 exts = ['.npy', '.hdf5']
                 for ext in exts:
-                    fn = os.path.join(self.path, 'FFT_' + kind + '_' + var + '.npy')
+                    fn = os.path.join(self.path, 'FFT_' + kind + '_' + var + ext)
                     if os.path.isfile(fn):
                         make = False
             if make:
@@ -4363,7 +4452,10 @@ class BLsim(object):
                 yu *= 1.2
             else:
                 yu += (yu - yl) * .05
-            ylim = plt.ylim(yl, yu)
+            try:
+                ylim = plt.ylim(yl, yu)
+            except ValueError:
+                print("ylim error with:", yl, yu)
             #print(i0, yl, self.fft_time[i0] / tau, self.fft_time.shape)
         if title:
             plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
