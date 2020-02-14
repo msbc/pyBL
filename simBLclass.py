@@ -6,6 +6,7 @@ import h5py
 # from mayavi import mlab
 import argparse
 import numpy as np
+import sympy as sp
 import matplotlib as mpl
 if __name__ == "__main__":
     mpl.use('agg')
@@ -410,6 +411,21 @@ class BLfileBase(dict):
 
 
 class BLfile(BLfileBase):
+    def __getitem__(self, item):
+        try:
+            return super(BLfile, self).__getitem__(item)
+        except KeyError:
+            return self.expr_eval(item)
+
+    def expr_eval(self, expr):
+        if expr in self:
+            return self[expr]
+        expr = sp.sympify(expr)
+        sym = [i for i in expr.atoms() if isinstance(i, sp.symbol.Symbol)]
+        data = [super(BLfile, self).__getitem__(str(i)) for i in sym]
+        #subs = {i: self[str(i)] for i in expr.atoms() if type(i) == sp.symbol.Symbol}
+        return sp.lambdify(sym, expr, "numpy")(*data)
+
     def fft(self, data, axis=-2, mag=False):
         try:
             data.shape
@@ -423,7 +439,7 @@ class BLfile(BLfileBase):
     def plot2d(self, data=None, fn=None, save=False, subsample=False, title=None,
                name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
-               ax=None, log=False, aspect=1, sdir=None, smooth=None,
+               ax=None, log=False, aspect=1, sdir=None, smooth=None, cax=None,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1,
                overwrite=True, display=False, minmax=True, txt_opt=None):
         """Plot 2D sim data"""
@@ -578,7 +594,8 @@ class BLfile(BLfileBase):
             plt.title(helpers.sanitize_lbl(title.format(**self.__dict__)))
         if cb:
             divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="5%", pad=0.05)
+            if cax is None:
+                cax = divider.append_axes("right", size="5%", pad=0.05)
             cb = plt.colorbar(pcm, cax=cax, **cbopt)
             cb.ax.yaxis.set_offset_position('left')
             if cbl:
@@ -1380,16 +1397,18 @@ class BLConsPrim(BL3Dfile):
         dv = (self.vortensity() - init[np.newaxis, :]) * self.rc[np.newaxis, :] ** 2
         return dv.mean(axis=0)
 
-    def flux_est(self, i=0, p=1, phase=0):
+    def flux_est(self, i=0, p=1, phase=0, total=True):
         flux = self['dens']**p
         flux *= np.diff(self.phi)[:, None] * self.rc[None, :] * np.diff(self.r)[None, :]
         x = np.cos(self.phic - phase)[:, None] * self.rc[None, :]
         y = np.sin(self.phic - phase)[:, None] * self.rc[None, :]
         rloc = np.where(self.rc <= 1)[0].max()
         flux[:, :rloc+1] = 0
-        rho = np.sqrt(1 - np.minimum(y**2, 1)) * np.tan(i)
+        rho = np.sqrt(1 - np.minimum(y**2, 1)) / np.cos(i)
         flux[np.logical_and(x > 0, x < rho)] = 0
-        return flux.sum()
+        if total:
+            return flux.sum()
+        return flux
 
 
 class BLcons(BLConsPrim):
@@ -2376,8 +2395,7 @@ class npz_wrapper(object):
 
 
 class FluxDataset(object):
-    def __init__(self, filenames, sim=None, path=None):
-        self.filenames = filenames
+    def __init__(self, filenames, sim=None, path=None, detect_npz=True, auto_export=True):
         self.sim = sim
         if path is None:
             if sim is None:
@@ -2385,25 +2403,47 @@ class FluxDataset(object):
             else:
                 path = sim.path
         self.path = path
+        if sim and detect_npz:
+            fn = 'lightcurve.npz'
+            if os.path.isfile(os.path.join(path, fn)):
+                self._source_files = np.atleast_1d(filenames)
+                filenames = fn
+        self.filenames = np.atleast_1d(filenames)
+        self._auto_export = auto_export
 
     def _extract(self):
-        for fn in self.filenames:
-            with h5py.File(os.path.join(self.path, fn)) as f:
-                print('Checking file "{:}".'.format(fn))
-                if 'time' in f:
-                    print('"time" in "{:}".'.format(fn), f['time'].size, f['flux'].size)
-                    if f['time'].size:
-                        print('Loading data from "{:}".'.format(fn))
-                        try:
-                            flux = np.concatenate([flux, f['flux'][:]], axis=0)
-                            time = np.concatenate([time, f['time'][:]], axis=0)
-                        except NameError:
-                            flux = f['flux'][:]
-                            time = f['time'][:]
-                            self._views = f.attrs['views'][:]
-                            self._powers = f.attrs['powers'][:]
+        export = self._auto_export
+        if self.filenames.size > 1 or self.filenames[0].split('.')[-1] == 'hdf5':
+            for fn in self.filenames:
+                with h5py.File(os.path.join(self.path, fn)) as f:
+                    if 'time' in f:
+                        if f['time'].size:
+                            try:
+                                flux = np.concatenate([flux, f['flux'][:]], axis=0)
+                                time = np.concatenate([time, f['time'][:]], axis=0)
+                            except NameError:
+                                flux = f['flux'][:]
+                                time = f['time'][:]
+                                self._views = f.attrs['views'][:]
+                                self._powers = f.attrs['powers'][:]
+        else:
+            try:
+                with np.load(os.path.join(self.path, self.filenames[0])) as f:
+                    flux = f['flux']
+                    time = f['time']
+                    self._views = f['views']
+                    self._powers = f['powers']
+                    export = False
+            except OSError as e:
+                print('Issue with npz file, reverting to source files.')
+                print(e)
+                self.filenames = self._source_files
+                self._extract()
+                return
         self._flux = flux
         self._time = time
+        if export:
+            self.export()
 
     @property
     def views(self):
@@ -2441,6 +2481,49 @@ class FluxDataset(object):
         if fn is None:
             fn = os.path.join(self.sim.path, 'lightcurve.npz')
         np.savez(fn, flux=self.flux, time=self.time, views=self.views, powers=self.powers)
+
+    def _interpolate(self):
+        dtimes = np.diff(self.time)
+        dt = dtimes.min()
+        newtime = np.arange(0, self.time[-1] + dt, dt)
+        if newtime[-1] > self.time[-1]:
+            newtime = newtime[:-1]
+        i = 0
+        remap = np.empty((newtime.size, self.views.size, self.powers.size))
+        for ti, t in enumerate(newtime):
+            while t > self.time[i]:
+                i += 1
+            if i == dtimes.size:
+                res = (t - self.time[i]) / dtimes[i - 1]
+                i -= 1
+            else:
+                res = (t - self.time[i]) / dtimes[i]
+            remap[ti] = self.flux[i] * (1 - res) + self.flux[i + 1] * res
+        self._newtime = newtime
+        self._remap = remap
+
+    @property
+    def newtime(self):
+        try:
+            return self._newtime
+        except AttributeError:
+            self._interpolate()
+            return self._newtime
+
+    @property
+    def remap(self):
+        try:
+            return self._remap
+        except AttributeError:
+            self._interpolate()
+            return self._remap
+
+    def ft(self, n=None):
+        if n is None:
+            n = self.newtime.size
+        fourier = np.fft.fft(self.remap, axis=0, n=n) / (.5 * n)
+        freq = np.fft.fftfreq(n, d=self.newtime[1] / tau)
+        return freq, fourier
 
 
 class BLsim(object):
@@ -2776,7 +2859,10 @@ class BLsim(object):
         if type(data) != np.ndarray:
             raise TypeError('Data has type "{:}", not ndarray.'.format(type(data)))
         if data.shape[0] > 1.9 * t.size:
-            data = 0.5 * (data[0::2] + data[1::2, :])
+            try:
+                data = 0.5 * (data[0::2] + data[1::2, :])
+            except ValueError:
+                data = 0.5 * (data[0:-1:2] + data[1::2, :])
 
         if dt:
             if dt is True:
@@ -5774,6 +5860,157 @@ class BLsim(object):
 
         lcax.yaxis.set_offset_position('left')
         mcax.yaxis.set_offset_position('left')
+        fig.suptitle(helpers.sanitize_lbl(self.name))
+
+        if save:
+            plt.savefig(fn)
+            plt.close()
+
+        return
+
+    def map_stripe(self, times=None, left='Rpseudo', right='Rpseudo', llim=None,
+                   rlim=None, lopt=None, ropt=None, fig=None, rmax=4, norm=None,
+                   fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
+                   save=False, ext='png', sdir=False, overwrite=True, dropbox=False):
+        if dropbox and not sdir:
+            sdir = '~/Dropbox/Research/IAS/rrr/bl_shared/simulation_results/Production'
+            mach = int(np.round(self.mach))
+            if mach in [5, 6, 9, 12]:
+                sdir += '/M{:02d}'.format(mach)
+            sdir += '/' + self.name + '_plots'
+        if save and fn is None:
+            fn = self.name + '_maps_stripes.' + ext
+        if save or fn:
+            save = True
+            if sdir is True:
+                sdir = os.path.join(os.path.split(self.path)[0], 'figs')
+                sdir = os.path.join(sdir, self.name + '_plots')
+            if sdir:
+                sdir = os.path.expanduser(sdir)
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            return None
+
+        if times is None:
+            times = [50, 150, 250, 350, 450, 550]
+        times = np.atleast_1d(times)
+        nt = times.size
+
+        if figsize is True:
+            figsize = (6.25, 10)
+        _fopt = dict(dpi=dpi, figsize=figsize)
+        if fopt is None:
+            fopt = {}
+        _fopt.update(fopt)
+        _hr = [.1] + [1] * nt
+        _gsopt = dict(height_ratios=_hr, width_ratios=[.3, 1], top=.90, bottom=.06,
+                      left=.07, right=.92, wspace=.03, hspace=.15)
+        if gsopt is None:
+            gsopt = dict()
+        _gsopt.update(gsopt)
+        _lopt = dict(cb=False, title=False, minmax=False)
+        _ropt = dict(cb=False, title=False, lbls=False, rmax=rmax)
+        if llim is not None:
+            _lopt['vmin'] = llim[0]
+            _lopt['vmax'] = llim[1]
+        if rlim is not None:
+            _ropt['vmin'] = rlim[0]
+            _ropt['vmax'] = rlim[1]
+        if lopt is None:
+            lopt = dict()
+        if ropt is None:
+            ropt = dict()
+        _lopt.update(lopt)
+        _ropt.update(ropt)
+
+        if not fig:
+            fig = plt.figure(**_fopt)
+        gs = mpl.gridspec.GridSpec(1 + nt, 2, **_gsopt)
+        if left == right:
+            lcax = plt.subplot(gs[0, 0:2])
+            rcax = None
+        else:
+            lcax = plt.subplot(gs[0, 0])
+            rcax = plt.subplot(gs[0, 1])
+
+        if norm is not None:
+            if hasattr(left, 'lower'):
+                left += ' / ' + str(norm)
+            else:
+                left /= norm
+            if hasattr(right, 'lower'):
+                right += ' / ' + str(norm)
+            else:
+                right /= norm
+
+        for i, t in enumerate(times):
+            df = t if hasattr(t, 'name') else self.loadfile('cons', t)
+            if i == nt - 1:
+                _lopt['cb'] = True
+                _lopt['cax'] = lcax
+                _lopt['cbopt'] = dict(orientation='horizontal')
+
+                if left != right or llim != rlim:
+                    _ropt['cb'] = True
+                    _ropt['cax'] = rcax
+                    _ropt['cbopt'] = dict(orientation='horizontal')
+
+            lax = plt.subplot(gs[i + 1, 0])
+            df.plot2d(left, ax=lax, **_lopt)
+            lax.set_ylabel(r'$y$')
+            if llim is None:
+                llim = plt.gci().get_clim()
+                _lopt['vmin'] = llim[0]
+                _lopt['vmax'] = llim[1]
+
+            if rlim is None:
+                if left == right:
+                    rlim = llim
+                    _ropt['vmin'] = rlim[0]
+                    _ropt['vmax'] = rlim[1]
+            rax = plt.subplot(gs[i + 1, 1])
+            df.stripe(left, ax=rax, **_ropt)
+            rax.yaxis.set_label_position('right')
+            rax.yaxis.tick_right()
+            rax.set_ylabel(r'$\phi/\pi$')
+            if inc_time:
+                plt.text(.82, .85, r'$t/2\pi={:.3g}$'.format(df.orbit), c='k',
+                         transform=rax.transAxes)
+
+
+            if i < nt - 1:
+                lax.set_xticklabels([])
+                rax.set_xticklabels([])
+            else:
+                xticks = lax.xaxis.get_major_ticks()
+                #xticks[-1].label1.set_visible(False)
+
+            lax.xaxis.set_ticks_position('both')
+            lax.yaxis.set_ticks_position('both')
+            lax.tick_params(axis='both', which='both', direction='in')
+            lax.set_axisbelow(False)
+            lax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(2))
+
+            rax.xaxis.set_ticks_position('both')
+            rax.yaxis.set_ticks_position('both')
+            rax.tick_params(axis='both', which='both', direction='in')
+            rax.set_axisbelow(False)
+            rax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+            rax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+        lax.set_xlabel('$x$')
+        rax.set_xlabel('$r$')
+        try:
+            rcax.xaxis.set_label_position('top')
+            rcax.xaxis.set_ticks_position('top')
+        except (NameError, AttributeError):
+            pass
+        lcax.xaxis.set_label_position('top')
+        lcax.xaxis.set_ticks_position('top')
+
+
+        lcax.yaxis.set_offset_position('left')
         fig.suptitle(helpers.sanitize_lbl(self.name))
 
         if save:
