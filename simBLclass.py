@@ -3922,11 +3922,13 @@ class BLsim(object):
         if os.path.isfile(fn):
             data = FTdataHDF5File(fn, sim=self)
         else:
-            fn = os.path.join(self.path, 'FFT_' + _type + '_' + var + '.npy')
-            if not os.path.isfile(fn):
+            fn2 = os.path.join(self.path, 'FFT_' + _type + '_' + var + '.npy')
+            if not os.path.isfile(fn2):
                 # TODO: store data
                 self.gen_fft_file(var=var)
-            data = FTdataFile(fn, sim=self)
+                data = FTdataHDF5File(fn, sim=self)
+            else:
+                data = FTdataFile(fn2, sim=self)
         if _type == 'coarse':
             self._coarse_data[var] = data
         else:
@@ -5869,7 +5871,7 @@ class BLsim(object):
         return
 
     def map_stripe(self, times=None, left='Rpseudo', right='Rpseudo', llim=None,
-                   rlim=None, lopt=None, ropt=None, fig=None, rmax=4, norm=None,
+                   rlim=None, lopt=None, ropt=None, fig=None, rmax=3, norm=None,
                    fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
                    save=False, ext='png', sdir=False, overwrite=True, dropbox=False):
         if dropbox and not sdir:
@@ -5899,13 +5901,13 @@ class BLsim(object):
         nt = times.size
 
         if figsize is True:
-            figsize = (6.25, 10)
+            figsize = (5, 10)
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
             fopt = {}
         _fopt.update(fopt)
         _hr = [.1] + [1] * nt
-        _gsopt = dict(height_ratios=_hr, width_ratios=[.3, 1], top=.90, bottom=.06,
+        _gsopt = dict(height_ratios=_hr, width_ratios=[.4, 1], top=.90, bottom=.06,
                       left=.07, right=.92, wspace=.03, hspace=.15)
         if gsopt is None:
             gsopt = dict()
@@ -5976,7 +5978,7 @@ class BLsim(object):
             rax.yaxis.tick_right()
             rax.set_ylabel(r'$\phi/\pi$')
             if inc_time:
-                plt.text(.82, .85, r'$t/2\pi={:.3g}$'.format(df.orbit), c='k',
+                plt.text(.8, .85, r'$t/2\pi={:.3g}$'.format(df.orbit), c='k',
                          transform=rax.transAxes)
 
 
