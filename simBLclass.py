@@ -5901,13 +5901,13 @@ class BLsim(object):
         nt = times.size
 
         if figsize is True:
-            figsize = (5, 10)
+            figsize = (4, 9)
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
             fopt = {}
         _fopt.update(fopt)
         _hr = [.1] + [1] * nt
-        _gsopt = dict(height_ratios=_hr, width_ratios=[.4, 1], top=.90, bottom=.06,
+        _gsopt = dict(height_ratios=_hr, width_ratios=[.5, 1], top=.90, bottom=.06,
                       left=.07, right=.92, wspace=.03, hspace=.15)
         if gsopt is None:
             gsopt = dict()
@@ -5978,8 +5978,8 @@ class BLsim(object):
             rax.yaxis.tick_right()
             rax.set_ylabel(r'$\phi/\pi$')
             if inc_time:
-                plt.text(.8, .85, r'$t/2\pi={:.3g}$'.format(df.orbit), c='k',
-                         transform=rax.transAxes)
+                plt.text(.98, .85, r'$t/2\pi={:.3g}$'.format(df.orbit), c='k',
+                         transform=rax.transAxes, ha='right')
 
 
             if i < nt - 1:
