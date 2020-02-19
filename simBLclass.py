@@ -3623,7 +3623,7 @@ class BLsim(object):
         fine_slice = slice(np.searchsorted(times, t0), np.searchsorted(times, tf))
         tmp = np.arange(int(np.round(times[-1])) + 1)
         course_slice = slice(np.searchsorted(tmp, t0), np.searchsorted(tmp, tf))
-        csm = self.CS_RRR_data()
+        csm = np.array(self.CS_RRR_data())
         if csm.shape[0] - tmp.size > - 10:
             print(fine_slice)
             csm = np.real(csm[fine_slice].mean(axis=0))
