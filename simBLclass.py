@@ -5874,18 +5874,22 @@ class BLsim(object):
                    rlim=None, lopt=None, ropt=None, fig=None, rmax=3, norm=None,
                    fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
                    save=False, ext='png', sdir=False, overwrite=True, dropbox=False):
-        if dropbox and not sdir:
-            sdir = '~/Dropbox/Research/IAS/rrr/bl_shared/simulation_results/Production'
-            mach = int(np.round(self.mach))
-            if mach in [5, 6, 9, 12]:
-                sdir += '/M{:02d}'.format(mach)
-            sdir += '/' + self.name + '_plots'
+        if sdir:
+            dropbox = False
+        mach = int(np.round(self.mach))
         if save and fn is None:
             fn = self.name + '_maps_stripes.' + ext
         if save or fn:
             save = True
             if sdir is True:
-                sdir = os.path.join(os.path.split(self.path)[0], 'figs')
+                sdir = ''
+                if dropbox:
+                    sdir = '~/Dropbox/Research/IAS/rrr/bl_shared/simulation_results/Production'
+                else:
+                    sdir = os.path.join(os.path.split(self.path)[0], 'figs')
+                if mach in [5, 6, 9, 12]:
+                    sdir += '/M{:02d}'.format(mach)
+                sdir += '/' + self.name + '_plots'
                 sdir = os.path.join(sdir, self.name + '_plots')
             if sdir:
                 sdir = os.path.expanduser(sdir)
@@ -5896,19 +5900,21 @@ class BLsim(object):
             return None
 
         if times is None:
-            times = [50, 150, 250, 350, 450, 550]
+            times = np.array([50, 150, 250, 350, 450, 550])
+            if mach in [12]:
+                times += 25
         times = np.atleast_1d(times)
         nt = times.size
 
         if figsize is True:
-            figsize = (4, 9)
+            figsize = (7.5, 2.65)
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
             fopt = {}
         _fopt.update(fopt)
-        _hr = [.1] + [1] * nt
-        _gsopt = dict(height_ratios=_hr, width_ratios=[.5, 1], top=.90, bottom=.06,
-                      left=.07, right=.92, wspace=.03, hspace=.15)
+        _wr = [1] * nt + [.1]
+        _gsopt = dict(height_ratios=[1, 1], width_ratios=_wr, top=.85, bottom=.06,
+                      left=.07, right=.92, wspace=0, hspace=0)
         if gsopt is None:
             gsopt = dict()
         _gsopt.update(gsopt)
@@ -5929,13 +5935,13 @@ class BLsim(object):
 
         if not fig:
             fig = plt.figure(**_fopt)
-        gs = mpl.gridspec.GridSpec(1 + nt, 2, **_gsopt)
+        gs = mpl.gridspec.GridSpec(2, 1 + nt, **_gsopt)
         if left == right:
-            lcax = plt.subplot(gs[0, 0:2])
+            lcax = plt.subplot(gs[0:2, -1])
             rcax = None
         else:
-            lcax = plt.subplot(gs[0, 0])
-            rcax = plt.subplot(gs[0, 1])
+            lcax = plt.subplot(gs[0, -1])
+            rcax = plt.subplot(gs[1, -1])
 
         if norm is not None:
             if hasattr(left, 'lower'):
@@ -5947,44 +5953,56 @@ class BLsim(object):
             else:
                 right /= norm
 
+        def add_plbl(lbl, ax=None):
+            if ax is None:
+                ax = plt.gca()
+            ax.text(.96, .87, '(' + lbl + ')', c='k', transform=ax.transAxes, ha='right',
+                    fontsize=8)
+
         for i, t in enumerate(times):
             df = t if hasattr(t, 'name') else self.loadfile('cons', t)
             if i == nt - 1:
                 _lopt['cb'] = True
                 _lopt['cax'] = lcax
-                _lopt['cbopt'] = dict(orientation='horizontal')
+                _lopt['cbopt'] = dict(orientation='vertical')
 
                 if left != right or llim != rlim:
                     _ropt['cb'] = True
                     _ropt['cax'] = rcax
-                    _ropt['cbopt'] = dict(orientation='horizontal')
+                    _ropt['cbopt'] = dict(orientation='vertical')
 
-            lax = plt.subplot(gs[i + 1, 0])
+            lax = plt.subplot(gs[0, i])
             df.plot2d(left, ax=lax, **_lopt)
-            lax.set_ylabel(r'$y$')
+            add_plbl(chr(ord('a') + i))
+            #lax.set_ylabel(r'$y$')
             if llim is None:
                 llim = plt.gci().get_clim()
                 _lopt['vmin'] = llim[0]
                 _lopt['vmax'] = llim[1]
+            if inc_time:
+                lbl = r'{:.3g}$'.format(df.orbit)
+                if i >= 0:
+                    lbl = r't/2\pi=' + lbl
+                lbl = '$' + lbl
+                plt.text(.5, 1.03, lbl, c='k', transform=lax.transAxes, ha='center')
 
             if rlim is None:
                 if left == right:
                     rlim = llim
                     _ropt['vmin'] = rlim[0]
                     _ropt['vmax'] = rlim[1]
-            rax = plt.subplot(gs[i + 1, 1])
+            rax = plt.subplot(gs[1, i])
             df.stripe(left, ax=rax, **_ropt)
-            rax.yaxis.set_label_position('right')
-            rax.yaxis.tick_right()
-            rax.set_ylabel(r'$\phi/\pi$')
-            if inc_time:
-                plt.text(.98, .85, r'$t/2\pi={:.3g}$'.format(df.orbit), c='k',
-                         transform=rax.transAxes, ha='right')
+            add_plbl(chr(ord('a') + i + nt))
+            #rax.yaxis.set_label_position('right')
+            #rax.yaxis.tick_right()
+            if i == 0:
+                rax.set_ylabel(r'$\phi/\pi$')
 
-
-            if i < nt - 1:
-                lax.set_xticklabels([])
-                rax.set_xticklabels([])
+            lax.set_xticklabels([])
+            if i > 0:
+                lax.set_yticklabels([])
+                rax.set_yticklabels([])
             else:
                 xticks = lax.xaxis.get_major_ticks()
                 #xticks[-1].label1.set_visible(False)
@@ -5993,16 +6011,16 @@ class BLsim(object):
             lax.yaxis.set_ticks_position('both')
             lax.tick_params(axis='both', which='both', direction='in')
             lax.set_axisbelow(False)
-            lax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(2))
+            #lax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(2))
 
             rax.xaxis.set_ticks_position('both')
             rax.yaxis.set_ticks_position('both')
             rax.tick_params(axis='both', which='both', direction='in')
             rax.set_axisbelow(False)
-            rax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+            rax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
             rax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
-        lax.set_xlabel('$x$')
-        rax.set_xlabel('$r$')
+            rax.set_xlabel('$r$')
+        #lax.set_xlabel('$x$')
         try:
             rcax.xaxis.set_label_position('top')
             rcax.xaxis.set_ticks_position('top')
