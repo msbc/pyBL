@@ -4868,10 +4868,17 @@ class BLsim(object):
     def mid_star(self):
         return .5 + .5 * self.r[0]
 
+    def compact_diag(self, **kwargs):
+        gsopt = dict(wspace=0, hspace=0)
+        fn = self.name + '_compact_diag.pdf'
+        _kwargs = dict(rs=[-1, 1.2], gsopt=gsopt, fn=fn)
+        _kwargs.update(kwargs)
+        return self.diagnostic(**_kwargs)
+
     def diagnostic(self, rs=None, save=False, fn=None, ext=None, figsize=None,
                    sdir=None, subsample=None, sz=3.5, xmax=2.5, dpi=300, modes=None,
                    add_modes=None, tmark=None, add_max=None, overwrite=True, log=True,
-                   map=False):
+                   map=True, gsopt=None):
         if ext is None:
             if map:
                 ext = 'png'
@@ -4904,10 +4911,12 @@ class BLsim(object):
         else:
             fig = plt.figure(figsize=figsize)
         fsx, fsy = figsize
-        gs = mpl.gridspec.GridSpec(ny, nx,
-                                   top=1 - .75 / fsy, bottom=.5 / fsy,
-                                   left=.75 / fsx, right=1 - .75 / fsx,
-                                   hspace=.1, wspace=.15)
+        _gsopt = dict(top=1 - .75 / fsy, bottom=.5 / fsy, left=.75 / fsx,
+                      right=1 - .75 / fsx, hspace=.1, wspace=.15)
+        if gsopt is None:
+            gsopt = dict()
+        _gsopt.update(gsopt)
+        gs = mpl.gridspec.GridSpec(ny, nx, **_gsopt)
 
         ropt = dict(modes=modes, add_modes=add_modes, add_max=add_max, fig=False)
         for i, r in enumerate(rs):
@@ -5913,7 +5922,7 @@ class BLsim(object):
             fopt = {}
         _fopt.update(fopt)
         _wr = [1] * nt + [.1]
-        _gsopt = dict(height_ratios=[1, 1], width_ratios=_wr, top=.85, bottom=.06,
+        _gsopt = dict(height_ratios=[1, 1], width_ratios=_wr, top=.85, bottom=.08,
                       left=.07, right=.92, wspace=0, hspace=0)
         if gsopt is None:
             gsopt = dict()
@@ -6261,8 +6270,11 @@ class BLsim(object):
             self.write_peak_alpha(overwrite=overwrite, sdir=None)
             gc.collect()
             if not quiet: print('    Diagnostic')
-            self.diagnostic(save=True, add_modes=gmodes, add_max=1, tmark=t[:],
-                            overwrite=overwrite)
+            dopt = dict(save=True, add_modes=gmodes, add_max=1, tmark=t[:],
+                       overwrite=overwrite)
+            self.diagnostic(**dopt)
+            self.compact_diag(**dopt)
+            del(dopt)
             gc.collect()
             if not quiet: print('    m_eff')
             self.m_eff_plot(save=True, overwrite=overwrite)
@@ -6555,11 +6567,13 @@ class modeData(object):
             f.write('\n'.join(out))
         return
 
-    def plot(self, save=False, fn=None, ext='pdf', inc_global=True, show_pl=True):
+    def plot(self, save=False, fn=None, ext='pdf', inc_global=True, show_pl=True,
+             mklbls=True, legend=True, ymax=-1, use_ymax=False):
         markers = 'o', '+', 'x', '.'
         lbls = []
         for i, r in enumerate(self.r):
             try:
+                ymax = max(ymax, self.filter()[i][:, 3].max())
                 plt.scatter(self.filter()[i][:, 0], self.filter()[i][:, 3],
                             marker=markers[i])
                 lbls.append(r'$r={0:.2f}$'.format(r))
@@ -6570,16 +6584,19 @@ class modeData(object):
             if np.any(data):
                 plt.scatter(data[:, 0], data[:, 3], marker='*')
                 lbls.append('Global')
-        plt.legend(lbls)
+        if legend:
+            plt.legend(lbls)
         ax = plt.gca()
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
         ax.yaxis.set_ticks_position('both')
         ax.xaxis.set_ticks_position('both')
         ax.tick_params(axis='both', which='both', direction='in')
-        plt.xlabel('mode')
-        plt.ylabel(r'$\Omega_{\rm p}$')
+        if mklbls:
+            plt.xlabel('mode')
+            plt.ylabel(r'$\Omega_{\rm p}$')
         if self.sim is not None:
-            plt.title(helpers.sanitize_lbl(self.sim.name))
+            if mklbls:
+                plt.title(helpers.sanitize_lbl(self.sim.name))
             if show_pl:
                 xlim = plt.xlim()
                 ylim = plt.ylim()
@@ -6602,11 +6619,18 @@ class modeData(object):
                 omega = np.nan_to_num(sim.flux_data['vphi'] / sim.rc)
                 omax = np.max(omega[2000:].mean(axis=0))
                 plt.axhline(omax, c='.5', lw=1, ls='--', zorder=-2)
+                ymax = max(ymax, omax)
+                ymax = max(ymax, ylim[1])
+        if use_ymax:
+            ymax = min(1, 1.05 * ymax)
+            plt.ylim(None, ymax)
         if save or fn:
             if fn is None:
                 fn = self.sim.name + '_dispersion.' + ext
             plt.savefig(fn)
             plt.close()
+        if use_ymax:
+            return ymax
         return
 
     def __getitem__(self, item):
@@ -7193,6 +7217,58 @@ def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
             fn = 'Dropbox/' + fn
         fig.savefig(fn)
         plt.close()
+
+
+def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300,
+                     fopt=None):
+    if sims is None:
+        if data_dir is None:
+            data_dir = _dirs[-1]
+        short = 'M{:02d}.{:}R.r.a'
+        full = os.path.join(data_dir, short)
+        sims = [short.format(m, 'H') if os.path.isdir(full.format(m, 'H'))
+                else short.format(m, 'F') for m in range(5, 16)]
+        sims.insert(sims.index('M09.HR.r.a'), 'M09.FR.r.a')
+    golden = (1 + 5 ** 0.5) / 2
+    nsim = len(sims)
+    nc = int(np.round(np.sqrt(nsim / golden)))
+    nr = int(np.round(np.sqrt(nsim * golden)))
+    if figsize is None:
+        figsize = (8.5, 11)
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt is None:
+        fopt = {}
+    _fopt.update(fopt)
+    fig = plt.figure(**_fopt)
+    gs = mpl.gridspec.GridSpec(nr, nc, top=.95, bottom=.09, left=.13, right=.85,
+                               wspace=0, hspace=0)
+    axs = [[None] * nc] * nr
+    for r in range(nr):
+        ymax = -1
+        for c in range(nc):
+            i = c + r * nc
+            if i < nsim:
+                opt = dict()
+                if c > 0:
+                    opt['sharey'] = axs[r][0]
+                if r > 0:
+                    opt['sharex'] = axs[0][c]
+                ax = plt.subplot(gs[r, c], **opt)
+                axs[r][c] = ax
+                sim = BLsim(sims[i])
+                md = sim.mode_detect()
+                ymax = md.plot(mklbls=False, legend=(i == 0), ymax=ymax, use_ymax=True)
+                ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+                if c:
+                    plt.setp(ax.get_yticklabels(), visible=False)
+                else:
+                    plt.ylabel(r'$\Omega_p$')
+                if r == nr -1:
+                    plt.xlabel(r'$m$')
+                else:
+                    plt.setp(ax.get_xticklabels(), visible=False)
+                del(md, sim)
+                gc.collect()
 
 
 if __name__ == '__main__':
