@@ -5880,13 +5880,21 @@ class BLsim(object):
         return
 
     def map_stripe(self, times=None, left='Rpseudo', right='Rpseudo', llim=None,
-                   rlim=None, lopt=True, ropt=None, fig=None, rmax=3, norm=None,
+                   rlim=None, lopt=True, ropt=None, fig=None, rmax=None, norm=None,
                    fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
                    save=False, ext='png', sdir=False, overwrite=True, dropbox=False,
                    labelpad=None):
         if sdir:
             dropbox = False
         mach = int(np.round(self.mach))
+        if rmax is None:
+            rmax = 1.4
+            if mach < 14:
+                rmax = 1.75
+            if mach < 11:
+                rmax = 2.25
+            if mach < 9:
+                rmax = 3
         if save and fn is None:
             fn = self.name + '_maps_stripes.' + ext
         if save or fn:
@@ -6046,6 +6054,9 @@ class BLsim(object):
             rax.tick_params(axis='both', which='both', direction='in')
             rax.set_axisbelow(False)
             rax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+            if rmax < 2:
+                rax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
+                rax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(.25))
             rax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
             if labelpad:
                 rax.set_xlabel('$r$', labelpad=labelpad)
