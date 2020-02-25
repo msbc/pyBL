@@ -5880,7 +5880,7 @@ class BLsim(object):
         return
 
     def map_stripe(self, times=None, left='Rpseudo', right='Rpseudo', llim=None,
-                   rlim=None, lopt=True, ropt=None, fig=None, rmax=None, norm=None,
+                   rlim=None, lopt=True, ropt=None, fig=None, rmax=None, norm=True,
                    fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
                    save=False, ext='png', sdir=False, overwrite=True, dropbox=False,
                    labelpad=None):
@@ -5980,6 +5980,8 @@ class BLsim(object):
             rcax = plt.subplot(gs[1, -1])
 
         if norm is not None:
+            if norm is True:
+                norm = 1e-2 if mach < 14 else 1e-3
             if hasattr(left, 'lower'):
                 left += ' / ' + str(norm)
             else:
