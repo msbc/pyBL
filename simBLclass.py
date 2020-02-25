@@ -5880,9 +5880,10 @@ class BLsim(object):
         return
 
     def map_stripe(self, times=None, left='Rpseudo', right='Rpseudo', llim=None,
-                   rlim=None, lopt=None, ropt=None, fig=None, rmax=3, norm=None,
+                   rlim=None, lopt=True, ropt=None, fig=None, rmax=3, norm=None,
                    fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
-                   save=False, ext='png', sdir=False, overwrite=True, dropbox=False):
+                   save=False, ext='png', sdir=False, overwrite=True, dropbox=False,
+                   labelpad=None):
         if sdir:
             dropbox = False
         mach = int(np.round(self.mach))
@@ -5890,6 +5891,8 @@ class BLsim(object):
             fn = self.name + '_maps_stripes.' + ext
         if save or fn:
             save = True
+            if dropbox:
+                sdir = True
             if sdir is True:
                 sdir = ''
                 if dropbox:
@@ -5898,7 +5901,6 @@ class BLsim(object):
                     sdir = os.path.join(os.path.split(self.path)[0], 'figs')
                 if mach in [5, 6, 9, 12]:
                     sdir += '/M{:02d}'.format(mach)
-                sdir += '/' + self.name + '_plots'
                 sdir = os.path.join(sdir, self.name + '_plots')
             if sdir:
                 sdir = os.path.expanduser(sdir)
@@ -5906,7 +5908,23 @@ class BLsim(object):
                     os.mkdir(sdir)
                 fn = os.path.join(sdir, fn)
         if parse_not_overwrite(overwrite, fn):
+            print('Exit on parse_not_overwrite')
             return None
+        if lopt is True:
+            lnorm = False
+            if norm:
+                lnorm = np.log10(float(norm))
+                if lnorm == int(lnorm):
+                    lnorm = str(int(lnorm))
+                else:
+                    lnorm = helpers.eformat(float(norm), prec=2, math=False)
+            _cbl = r'$rv_r\sqrt{\rho}$'
+            if lnorm:
+                _cbl = _cbl.rstrip('$') + ' / ' + lnorm + '$'
+            _vmax = '95%'
+            if mach in [12]:
+                _vmax = 5
+            lopt = {'cbl': _cbl, 'vmax': _vmax}
 
         if times is None:
             times = np.array([50, 150, 250, 350, 450, 550])
@@ -5916,13 +5934,13 @@ class BLsim(object):
         nt = times.size
 
         if figsize is True:
-            figsize = (7.5, 2.65)
+            figsize = (7.5, 2.9)
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
             fopt = {}
         _fopt.update(fopt)
         _wr = [1] * nt + [.1]
-        _gsopt = dict(height_ratios=[1, 1], width_ratios=_wr, top=.85, bottom=.08,
+        _gsopt = dict(height_ratios=[1, 1], width_ratios=_wr, top=.85, bottom=.13,
                       left=.07, right=.92, wspace=0, hspace=0)
         if gsopt is None:
             gsopt = dict()
@@ -6028,7 +6046,10 @@ class BLsim(object):
             rax.set_axisbelow(False)
             rax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
             rax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
-            rax.set_xlabel('$r$')
+            if labelpad:
+                rax.set_xlabel('$r$', labelpad=labelpad)
+            else:
+                rax.set_xlabel('$r$')
         #lax.set_xlabel('$x$')
         try:
             rcax.xaxis.set_label_position('top')
@@ -6045,6 +6066,7 @@ class BLsim(object):
         if save:
             plt.savefig(fn)
             plt.close()
+            print(fn)
 
         return
 
@@ -6568,11 +6590,13 @@ class modeData(object):
         return
 
     def plot(self, save=False, fn=None, ext='pdf', inc_global=True, show_pl=True,
-             mklbls=True, legend=True, ymax=-1, use_ymax=False):
+             mklbls=True, legend=True, ymax=-1, use_ymax=False, cap=1):
         markers = 'o', '+', 'x', '.'
         lbls = []
+        xmax = 0
         for i, r in enumerate(self.r):
             try:
+                xmax = max(xmax, self.filter()[i][:, 0].max())
                 ymax = max(ymax, self.filter()[i][:, 3].max())
                 plt.scatter(self.filter()[i][:, 0], self.filter()[i][:, 3],
                             marker=markers[i])
@@ -6598,7 +6622,7 @@ class modeData(object):
             if mklbls:
                 plt.title(helpers.sanitize_lbl(self.sim.name))
             if show_pl:
-                xlim = plt.xlim()
+                xlim = plt.xlim(None)
                 ylim = plt.ylim()
                 _x = np.linspace(0, 32, 360)
                 if xlim[1] > 40:
@@ -6619,10 +6643,12 @@ class modeData(object):
                 omega = np.nan_to_num(sim.flux_data['vphi'] / sim.rc)
                 omax = np.max(omega[2000:].mean(axis=0))
                 plt.axhline(omax, c='.5', lw=1, ls='--', zorder=-2)
+                xmax = max(xmax + 1, xlim[1])
+                plt.xlim(None, xmax)
                 ymax = max(ymax, omax)
                 ymax = max(ymax, ylim[1])
         if use_ymax:
-            ymax = min(1, 1.05 * ymax)
+            ymax = min(cap, 1.05 * ymax)
             plt.ylim(None, ymax)
         if save or fn:
             if fn is None:
@@ -7243,6 +7269,7 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
     gs = mpl.gridspec.GridSpec(nr, nc, top=.95, bottom=.09, left=.13, right=.85,
                                wspace=0, hspace=0)
     axs = [[None] * nc] * nr
+    cap = 1
     for r in range(nr):
         ymax = -1
         for c in range(nc):
@@ -7257,8 +7284,10 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
                 axs[r][c] = ax
                 sim = BLsim(sims[i])
                 md = sim.mode_detect()
-                ymax = md.plot(mklbls=False, legend=(i == 0), ymax=ymax, use_ymax=True)
+                ymax = md.plot(mklbls=False, legend=(i == 0), ymax=ymax, use_ymax=True,
+                               cap=cap)
                 ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+                ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(5))
                 if c:
                     plt.setp(ax.get_yticklabels(), visible=False)
                 else:
@@ -7269,6 +7298,7 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
                     plt.setp(ax.get_xticklabels(), visible=False)
                 del(md, sim)
                 gc.collect()
+        cap = .95
 
 
 if __name__ == '__main__':
