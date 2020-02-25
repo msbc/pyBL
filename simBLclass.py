@@ -5915,7 +5915,7 @@ class BLsim(object):
             if norm:
                 lnorm = np.log10(float(norm))
                 if lnorm == int(lnorm):
-                    lnorm = str(int(lnorm))
+                    lnorm = "10^{" + str(int(lnorm)) + '}'
                 else:
                     lnorm = helpers.eformat(float(norm), prec=2, math=False)
             _cbl = r'$rv_r\sqrt{\rho}$'
@@ -5924,6 +5924,7 @@ class BLsim(object):
             _vmax = '95%'
             if mach in [12]:
                 _vmax = 5
+                _vmax = '95%'
             lopt = {'cbl': _cbl, 'vmax': _vmax}
 
         if times is None:
