@@ -6067,7 +6067,6 @@ class BLsim(object):
         if save:
             plt.savefig(fn)
             plt.close()
-            print(fn)
 
         return
 
@@ -7249,7 +7248,7 @@ def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
 
 
 def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300,
-                     fopt=None, lopt=None):
+                     fopt=None, lopt=None, fn=None, sdir=None):
     if sims is None:
         if data_dir is None:
             data_dir = _dirs[-1]
@@ -7267,13 +7266,13 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
     nc = int(np.round(np.sqrt(nsim / golden)))
     nr = int(np.round(np.sqrt(nsim * golden)))
     if figsize is None:
-        figsize = (8.5, 11)
+        figsize = (7.5, 9.5)
     _fopt = dict(dpi=dpi, figsize=figsize)
     if fopt is None:
         fopt = {}
     _fopt.update(fopt)
     fig = plt.figure(**_fopt)
-    gs = mpl.gridspec.GridSpec(nr, nc, top=.95, bottom=.09, left=.13, right=.85,
+    gs = mpl.gridspec.GridSpec(nr, nc, top=.99, bottom=.04, left=.07, right=.99,
                                wspace=0, hspace=0)
     axs = [[None] * nc] * nr
     cap = 1
@@ -7308,6 +7307,22 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
                 del(md, sim)
                 gc.collect()
         cap = .95
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'multi_dispersion.pdf'
+        if sdir is True:
+            sdir = data_dir if data_dir else ''
+            sdir = os.path.join(os.path.split(sdir, 'figs'))
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
 
 
 if __name__ == '__main__':
