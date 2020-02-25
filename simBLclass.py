@@ -6590,8 +6590,10 @@ class modeData(object):
         return
 
     def plot(self, save=False, fn=None, ext='pdf', inc_global=True, show_pl=True,
-             mklbls=True, legend=True, ymax=-1, use_ymax=False, cap=1):
+             mklbls=True, legend=True, ymax=-1, use_ymax=False, cap=1, lopt=None):
         markers = 'o', '+', 'x', '.'
+        if lopt is None:
+            lopt=dict()
         lbls = []
         xmax = 0
         for i, r in enumerate(self.r):
@@ -6609,7 +6611,7 @@ class modeData(object):
                 plt.scatter(data[:, 0], data[:, 3], marker='*')
                 lbls.append('Global')
         if legend:
-            plt.legend(lbls)
+            plt.legend(lbls, **lopt)
         ax = plt.gca()
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
         ax.yaxis.set_ticks_position('both')
@@ -7246,7 +7248,7 @@ def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
 
 
 def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300,
-                     fopt=None):
+                     fopt=None, lopt=None):
     if sims is None:
         if data_dir is None:
             data_dir = _dirs[-1]
@@ -7255,6 +7257,10 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
         sims = [short.format(m, 'H') if os.path.isdir(full.format(m, 'H'))
                 else short.format(m, 'F') for m in range(5, 16)]
         sims.insert(sims.index('M09.HR.r.a'), 'M09.FR.r.a')
+        if lopt is None:
+            lopt = dict(loc='upper left')
+    if lopt is None:
+        lopt = dict()
     golden = (1 + 5 ** 0.5) / 2
     nsim = len(sims)
     nc = int(np.round(np.sqrt(nsim / golden)))
@@ -7284,10 +7290,12 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
                 axs[r][c] = ax
                 sim = BLsim(sims[i])
                 md = sim.mode_detect()
-                ymax = md.plot(mklbls=False, legend=(i == 0), ymax=ymax, use_ymax=True,
-                               cap=cap)
+                ymax = md.plot(mklbls=False, legend=(i == 1), ymax=ymax, use_ymax=True,
+                               cap=cap, lopt=lopt)
                 ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
                 ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(5))
+                ax.text(.96, .94, sim.name, c='k', transform=ax.transAxes, ha='right',
+                        fontsize=6)
                 if c:
                     plt.setp(ax.get_yticklabels(), visible=False)
                 else:
