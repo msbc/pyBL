@@ -4592,9 +4592,13 @@ class BLsim(object):
                         c = cd.get(int(m), 'k')
                 except TypeError:
                     pass
+                t *= tau
                 x = (t, t)
                 y = (ylim[0], ylim[0] + .05 * (ylim[1] - ylim[0]))
-                plt.plot(x, y, c=c)
+                if c == 'k':
+                    plt.plot(x, y, c=c, zorder=-10)
+                else:
+                    plt.plot(x, y, c=c)
             plt.xlim(*xlim)
             plt.ylim(*ylim)
         if ylbl:
@@ -5949,9 +5953,10 @@ class BLsim(object):
                 else:
                     sdir = os.path.join(os.path.split(self.path)[0], 'figs')
                 if mach in [5, 6, 9, 12]:
-                    sdir += '/M{:02d}'.format(mach)
+                    sdir = os.path.join(sdir, 'M{:02d}'.format(mach))
                 sdir = os.path.join(sdir, self.name + '_plots')
             if sdir:
+                print(sdir)
                 sdir = os.path.expanduser(sdir)
                 if not os.path.isdir(sdir):
                     os.mkdir(sdir)
@@ -5959,6 +5964,8 @@ class BLsim(object):
         if parse_not_overwrite(overwrite, fn):
             print('Exit on parse_not_overwrite')
             return None
+        if norm is True:
+            norm = 1e-2 if mach < 14 else 1e-3
         if lopt is True:
             lnorm = False
             if norm:
@@ -6021,8 +6028,6 @@ class BLsim(object):
             rcax = plt.subplot(gs[1, -1])
 
         if norm is not None:
-            if norm is True:
-                norm = 1e-2 if mach < 14 else 1e-3
             if hasattr(left, 'lower'):
                 left += ' / ' + str(norm)
             else:
