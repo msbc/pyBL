@@ -4548,7 +4548,7 @@ class BLsim(object):
                 print("ylim error with:", yl, yu)
             #print(i0, yl, self.fft_time[i0] / tau, self.fft_time.shape)
         if title:
-            plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
+            plt.title('$r={0:.2f}$'.format(r))
         plt.xlim(np.floor(self.fft_time[0] / tau), np.ceil(self.fft_time[-1] / tau))
         if cout:
             return cd
@@ -4868,17 +4868,20 @@ class BLsim(object):
     def mid_star(self):
         return .5 + .5 * self.r[0]
 
-    def compact_diag(self, **kwargs):
-        gsopt = dict(wspace=0, hspace=0)
-        fn = self.name + '_compact_diag.pdf'
-        _kwargs = dict(rs=[-1, 1.2], gsopt=gsopt, fn=fn)
+    def compact_diag(self, save=False, **kwargs):
+        gsopt = dict(wspace=0, hspace=0, left=.11, right=.99, bottom=.07, top=.88)
+        fn = None
+        if save:
+            fn = self.name + '_compact_diag.pdf'
+        _kwargs = dict(rs=[-1, 1.2], gsopt=gsopt, fn=fn, map=False, compact=True,
+                       figsize=(5, 6))
         _kwargs.update(kwargs)
         return self.diagnostic(**_kwargs)
 
     def diagnostic(self, rs=None, save=False, fn=None, ext=None, figsize=None,
                    sdir=None, subsample=None, sz=3.5, xmax=2.5, dpi=300, modes=None,
                    add_modes=None, tmark=None, add_max=None, overwrite=True, log=True,
-                   map=True, gsopt=None):
+                   map=True, gsopt=None, compact=False):
         if ext is None:
             if map:
                 ext = 'png'
@@ -4919,18 +4922,56 @@ class BLsim(object):
         gs = mpl.gridspec.GridSpec(ny, nx, **_gsopt)
 
         ropt = dict(modes=modes, add_modes=add_modes, add_max=add_max, fig=False)
+        ylim = [1e9, -1]
         for i, r in enumerate(rs):
             ylbl = not i
             if r == -1:
                 r = self.mid_star()
-            ax = plt.subplot(gs[0, i])
+            if compact and i > 0:
+                ax = plt.subplot(gs[0, i], sharey=ax_top)
+            else:
+                ax = plt.subplot(gs[0, i])
+            ax_top = ax
             plt.sca(ax)
-            self.r_amp(r, xlbl=False, ylbl=ylbl, log=True, legend=(i == 0), set_ylim=True,
+            lbool = False
+            if not compact:
+                lbool = (i == 0)
+            self.r_amp(r, xlbl=False, ylbl=ylbl, log=True, legend=lbool, set_ylim=True,
                        **ropt)
+            tmp = plt.ylim()
+            ylim = [min(ylim[0], tmp[0]), max(ylim[1], tmp[1])]
+            if compact:
+                plt.ylim(*ylim)
+                ax.xaxis.set_ticks_position('both')
+                ax.yaxis.set_ticks_position('both')
+                ax.tick_params(axis='both', which='both', direction='in')
+                ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
+                ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(100))
+                plt.setp(ax.get_xticklabels(), visible=False)
+                if i != 0:
+                    plt.setp(ax.get_yticklabels(), visible=False)
 
-            ax = plt.subplot(gs[1, i])
+            if compact and i > 0:
+                ax = plt.subplot(gs[1, i], sharey=ax_bot)
+            else:
+                ax = plt.subplot(gs[1, i])
+            ax_bot = ax
             plt.sca(ax)
-            self.r_speed(r, ylbl=ylbl, tmark=tmark, title=False, legend=False, **ropt)
+            lbool = False
+            if compact:
+                lbool = (i == 0)
+            self.r_speed(r, ylbl=ylbl, tmark=tmark, title=False, legend=lbool, **ropt)
+            ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
+            if compact:
+                ax.xaxis.set_ticks_position('both')
+                ax.yaxis.set_ticks_position('both')
+                ax.tick_params(axis='both', which='both', direction='in')
+                ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
+                ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(100))
+                tmp = [''] * 2 + ['${:}$'.format(100 * j) for j in range(1, 6)]
+                ax.set_xticklabels(tmp)
+                if i != 0:
+                    plt.setp(ax.get_yticklabels(), visible=False)
 
         if map:
             # map
