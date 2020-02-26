@@ -5928,7 +5928,7 @@ class BLsim(object):
                    rlim=None, lopt=True, ropt=None, fig=None, rmax=None, norm=True,
                    fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
                    save=False, ext='png', sdir=False, overwrite=True, dropbox=False,
-                   labelpad=None):
+                   labelpad=None, title=False):
         if sdir:
             dropbox = False
         mach = int(np.round(self.mach))
@@ -5991,7 +5991,9 @@ class BLsim(object):
         nt = times.size
 
         if figsize is True:
-            figsize = (7.5, 2.9)
+            figsize = [7.5, 2.9]
+            if not title:
+                figsize[1] -= .33
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
             fopt = {}
@@ -5999,6 +6001,8 @@ class BLsim(object):
         _wr = [1] * nt + [.1]
         _gsopt = dict(height_ratios=[1, 1], width_ratios=_wr, top=.85, bottom=.13,
                       left=.07, right=.92, wspace=0, hspace=0)
+        if not title:
+            _gsopt['top'] = .94
         if gsopt is None:
             gsopt = dict()
         _gsopt.update(gsopt)
@@ -6121,7 +6125,8 @@ class BLsim(object):
 
 
         lcax.yaxis.set_offset_position('left')
-        fig.suptitle(helpers.sanitize_lbl(self.name))
+        if title:
+            fig.suptitle(helpers.sanitize_lbl(self.name))
 
         if save:
             plt.savefig(fn)
