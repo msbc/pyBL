@@ -2623,7 +2623,7 @@ class BLsim(object):
                     except AttributeError:
                         pass
                     # print(b, len(files))
-                self.fileDict[out] = sorted(files)
+                self.fileDict[out] = sorted(list(set(files)))
                 var = self.inputs[out].get('variable')
                 if varlist.count(var) == 1:
                     self.varDict[var] = out
