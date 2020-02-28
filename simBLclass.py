@@ -5965,7 +5965,7 @@ class BLsim(object):
             print('Exit on parse_not_overwrite')
             return None
         if norm is True:
-            norm = 1e-2 if mach < 14 else 1e-3
+            norm = 1e-2 if mach < 12 else 1e-3
         if lopt is True:
             lnorm = False
             if norm:
@@ -5985,7 +5985,7 @@ class BLsim(object):
 
         if times is None:
             times = np.array([50, 150, 250, 350, 450, 550])
-            if mach in [12]:
+            if mach in [12, 15]:
                 times += 25
         times = np.atleast_1d(times)
         nt = times.size
