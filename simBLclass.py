@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.stats import scoreatpercentile as percentile
 from scipy.stats import linregress
+import scipy.signal
 import gc
 import os
 from glob import glob
@@ -245,6 +246,14 @@ def parse_not_overwrite(overwrite, fn):
     except TypeError:
         pass
     return False
+
+def lintrend(x, y, axis=0):
+    denom = x.dot(x, axis=axis) - x.mean(axis=axis) * x.sum(axis=axis)
+    m = (x.dot(y, axis=axis) - y.mean(axis=axis)) / denom
+    b = (y.mean(axis=axis) * x.dot(x, axis=axis) - x.mean(axis=axis) * x.dot(y, axis=axis))
+    loc = [np.newaxis] + [slice(None)] * (x.ndim - 1)
+    return m[loc], b[loc]
+
 
 
 class BLfileBase(dict):
@@ -617,7 +626,7 @@ class BLfile(BLfileBase):
                ax=None, log=False, aspect=None, sdir=None, smooth=None, rmin=None, rmax=None, lbls=True,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1, dpi=300,
                figsize=None, overwrite=True, display=False, minmax=False, txt_opt=None,
-               ps=None, mode=1, phi_norm=True):
+               ps=None, mode=1, phi_norm=True, rm_last=False):
         """Plot 2D sim data"""
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
@@ -782,6 +791,8 @@ class BLfile(BLfileBase):
             for r in rplot:
                 plt.axvline(r, lw=1, color='1', ls=':')
         if ps is not None:
+            if ps is True:
+                raise NotImplementedError
             tmp = lindblad_loc(ps, mode)
             plt.axvline(tmp[0], lw=1, color='1', ls='--')
             plt.axvline(tmp[1], lw=1, color='1', ls='-')
@@ -792,10 +803,17 @@ class BLfile(BLfileBase):
             divider = make_axes_locatable(ax)
             if cax is None:
                 cax = divider.append_axes("right", size="5%", pad=0.05)
+            pos = cbopt.pop('pos', 'left')
             cb = plt.colorbar(pcm, cax=cax, **cbopt)
-            cb.ax.yaxis.set_offset_position('left')
+            if pos in ['left', 'right']:
+                cb.ax.yaxis.set_offset_position(pos)
+            else:
+                cb.ax.xaxis.set_offset_position(pos)
             if cbl:
                 cb.set_label(cbl)
+        if rm_last:
+            xticks = ax.xaxis.get_major_ticks()
+            xticks[-1].label1.set_visible(False)
 
         plt.sca(ax)
         # save fig
@@ -2394,7 +2412,7 @@ class npz_wrapper(object):
         return out
 
 
-class FluxDataset(object):
+class Lightcurves(object):
     def __init__(self, filenames, sim=None, path=None, detect_npz=True, auto_export=True):
         self.sim = sim
         if path is None:
@@ -2518,10 +2536,33 @@ class FluxDataset(object):
             self._interpolate()
             return self._remap
 
-    def ft(self, n=None):
+    def tloc(self, time, new=True):
+        t = self.newtime if new else self.time
+        return np.abs(t - time).argmin[0]
+
+    def ft(self, t0=None, t1=None, n=None, window=None, detrend=None):
+        if t0 is not None:
+            t0 = self.tloc(t0)
+        if t1 is not None:
+            t1 = self.tloc(t1)
+        loc = slice(t0, t1)
         if n is None:
-            n = self.newtime.size
-        fourier = np.fft.fft(self.remap, axis=0, n=n) / (.5 * n)
+            n = self.newtime[loc].size
+        data = self.remap[loc]
+        if window is not None:
+            if detrend is None:
+                detrend = True
+            if hasattr(window, 'lower'):
+                window = scipy.signal.get_window(window, n)
+        else:
+            window = 1
+        if detrend is True:
+            m, b = lintrend(self.newtime[loc], data)
+            detrend = m * self.newtime[loc, None, None]
+        if np.any(detrend):
+            data -= detrend
+        data *= window
+        fourier = np.fft.fft(data, axis=0, n=n) / (.5 * n)
         freq = np.fft.fftfreq(n, d=self.newtime[1] / tau)
         return freq, fourier
 
@@ -2650,12 +2691,22 @@ class BLsim(object):
             self.ensure_fft_data_exists()
         # End init
 
+    def _parse_self(self, key):
+        if hasattr(self, key):
+            try:
+                return getattr(self, key)()
+            except TypeError:
+                return getattr(self, key)
+            except ValueError:
+                pass
+        raise KeyError('Unable to parse {0:}'.format(key))
+
     @property
     def lightcurve(self):
         try:
             return self._lightcurve
         except AttributeError:
-            self._lightcurve = FluxDataset(self.files('flux'), sim=self)
+            self._lightcurve = Lightcurves(self.files('flux'), sim=self)
         return self._lightcurve
 
     def upper_omega(self, m, n=0, r=1.1, t0=2000, tf=None):
@@ -2834,6 +2885,8 @@ class BLsim(object):
         if name:
             if name in [True, 1]:
                 name = ''
+                if hasattr(data, 'lower'):
+                    name = data
             if save and fn is None:
                 fn = self.name + '_' + name + '_st_plot.' + ext
 
@@ -2857,7 +2910,12 @@ class BLsim(object):
         if data is None:
             data = self.alpha_eff()
         if type(data) != np.ndarray:
-            raise TypeError('Data has type "{:}", not ndarray.'.format(type(data)))
+            if hasattr(data, 'lower'):
+                data = self._parse_self(data)
+            elif callable(data):
+                data = data(self)
+            else:
+                raise TypeError('Data has type "{:}", not ndarray.'.format(type(data)))
         if data.shape[0] > 1.9 * t.size:
             try:
                 data = 0.5 * (data[0::2] + data[1::2, :])
@@ -2973,16 +3031,86 @@ class BLsim(object):
         return pcm
 
     def stress_st(self, **kwargs):
-        data = self.alpha_eff()
+        data = 'alpha_eff'
         opt = dict(data=data, cbl=r'$\alpha_{\rm stress}$', slog=True, name='alpha_stress')
         opt.update(kwargs)
         return self._st_plot(**opt)
 
     def acc_st(self, **kwargs):
-        data = self.acc_alpha()
+        data = 'acc_alpha'
         opt = dict(data=data, cbl=r'$\alpha_{\rm acc}$', slog=True, name='alpha_acc')
         opt.update(kwargs)
         return self._st_plot(**opt)
+
+    def rho_st(self, delta=False, **kwargs):
+        def dens(sim):
+            data = sim.load_flux_data()['dens']
+            if delta:
+                data -= data[0][None, :]
+            return data
+
+        cbl = r'$\rho$'
+        name = 'dens'
+        if not 'vmax' in kwargs:
+            kwargs['vmax'] = 1
+        if delta:
+            cbl = r'$\Delta \rho$'
+            name = 'delta_dens'
+            if not 'zerocent' in kwargs:
+                kwargs['zerocent'] = True
+        opt = dict(data=dens, cbl=cbl, name=name)
+        opt.update(kwargs)
+        return self._st_plot(**opt)
+
+    def multi_st(self, opts=None, save=False, figsize=None, dpi=300, fopt=None,
+                 fn=None, sdir=None, rmin=True, rmax=True):
+        nvar = 4
+        if rmax is True:
+            mach = float(self.mach)
+            rmax = 1.4
+            if mach < 14:
+                rmax = 1.7
+            if mach < 11:
+                rmax = 2.25
+            if mach < 9:
+                rmax = 3
+        if rmin is True:
+            rmin = .5 + .5 * self.r[0]
+        if figsize is None:
+            margin = .25
+            s0 = 2
+            figsize = (1.5 * s0 + margin, nvar * s0 + margin)
+            #figsize = (7,3.5)
+        _fopt = dict(dpi=dpi, figsize=figsize)
+        if fopt is None:
+            fopt = {}
+        _fopt.update(fopt)
+        fig = plt.figure(**_fopt)
+        gs = mpl.gridspec.GridSpec(nvar, 2, top=.99, bottom=.04, left=.07, right=.99,
+                                   wspace=0, hspace=0, width_ratios=[1, .04])
+        for i in range(nvar):
+            if i:
+                ax = plt.subplot(gs[i, 0], sharex=ax)
+            else:
+                ax = plt.subplot(gs[i, 0])
+            cax = plt.subplot(gs[i, 1])
+            opt = dict(ax=ax, cax=cax)
+            if opts:
+                opt.update(opts[i])
+            if i in [0, 1]:
+                self.rho_st(delta=i, **opt)
+            if i == 2:
+                self.stress_st(**opt)
+            if i == 3:
+                self.acc_st(**opt)
+            if i != nvar - 1:
+                plt.setp(ax.get_xticklabels(), visible=False)
+            ax.yaxis.set_ticks_position('both')
+            #ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+            ax.xaxis.set_ticks_position('both')
+            ax.tick_params(axis='both', which='both', direction='in')
+            plt.ylim(rmin, rmax)
+            gc.collect()
 
     def gen_fft_times(self, ll=True):
         if self._new_fft_time is None:
@@ -3064,8 +3192,13 @@ class BLsim(object):
     def mach_and_bl(self):
         return [self.mach] + self.mean_bl()
 
-    def my_flux_plot(self, data=None, rlist=None, lopt=None, overwrite=True, save=False,
-                     fn=None, sdir='', ext='pdf', fig=None, fopt=None, dt=5):
+    # for backwards compatibility
+    def my_flux_plot(self, **kwargs):
+        return self.flux_vs_time(**kwargs)
+
+    def flux_vs_time(self, data=None, rlist=None, lopt=None, overwrite=True, save=False,
+                     fn=None, sdir='', ext='pdf', fig=None, fopt=None, dt=5,
+                     figsize=None, hide_first_ylbl=None):
         if save or fn:
             save = True
             if fn is None:
@@ -3076,6 +3209,10 @@ class BLsim(object):
         if parse_not_overwrite(overwrite, fn):
             return data
 
+        if hide_first_ylbl is None or False:
+            hide_first_ylbl = []
+        hide_first_ylbl = list(np.atleast_1d(hide_first_ylbl))
+        print('hide_first_ylbl:', hide_first_ylbl)
         if rlist is None:
             rlist = [1 - 4 / self.mach ** 2, 1.2, 1.5, 2, 3]
         if lopt is None:
@@ -3093,14 +3230,16 @@ class BLsim(object):
         if fopt is None:
             fopt = dict()
         if fig is None:
-            _fopt = dict(figsize=(5, 6), dpi=300)
+            if figsize is None:
+                figsize = np.array([5, 6]) * .8
+            _fopt = dict(figsize=figsize, dpi=300)
             _fopt.update(fopt)
             fig = plt.figure(**_fopt)
 
         if dt:
             dt *= tau
             dt = int(dt / np.diff(t).mean() + .5)
-            print(dt)
+            #print(dt)
 
         def get(key):
             out = data[key]
@@ -3109,7 +3248,9 @@ class BLsim(object):
             return out
 
         # CS
-        ax = plt.subplot(311)
+        gs = mpl.gridspec.GridSpec(3, 1, wspace=0, hspace=0, top=.94, bottom=.08,
+                                   left=.17, right=.99)
+        ax = plt.subplot(gs[0])
         for j in js:
             plt.plot(t, get('CS')[:, ilist[j]], zorder=-j)
         # plt.ylim(-.5e-4, 1e-5)
@@ -3118,10 +3259,21 @@ class BLsim(object):
         plt.legend(lbls, ncol=len(ilist), **lopt)
         plt.yscale('symlog', linthreshy=1e-5)
         ax.yaxis.set_ticks_position('both')
+        ax.xaxis.set_ticks_position('both')
         ax.tick_params(axis='both', which='both', direction='in')
+        plt.setp(ax.get_xticklabels(), visible=False)
+        if 0 in hide_first_ylbl:
+            print('Test')
+            yticks = ax.yaxis.get_major_ticks()
+            #plt.draw()
+            #print([i for i in ax.get_yticklabels()])
+            #print(dir(yticks[0].label1))
+            yticks[0].label1.set_visible(False)
+            yticks[1].label1.set_visible(False)
+            yticks[2].label1.set_visible(False)
 
         # Mdot
-        axM = plt.subplot(312, sharex=ax)
+        axM = plt.subplot(gs[1], sharex=ax)
         for j in js:
             plt.plot(t, -get('Mdot')[:, ilist[j]], zorder=-j)
         # plt.ylim(-.5e-4, 2e-5)
@@ -3130,9 +3282,14 @@ class BLsim(object):
         plt.yscale('symlog', linthreshy=1e-6)
         axM.yaxis.set_ticks_position('both')
         axM.tick_params(axis='both', which='both', direction='in')
+        plt.setp(axM.get_xticklabels(), visible=False)
+        if 1 in hide_first_ylbl:
+            yticks = axM.yaxis.get_major_ticks()
+            yticks[0].label1.set_visible(False)
+            yticks[1].label1.set_visible(False)
 
         # dS
-        axS = plt.subplot(313, sharex=ax)
+        axS = plt.subplot(gs[2], sharex=ax)
         for j in js:
             plt.semilogy(t, np.sqrt(get('dd')[:, ilist[j]]), zorder=-j)
         # plt.ylim(-.001, .01)
@@ -3144,7 +3301,12 @@ class BLsim(object):
         axS.yaxis.set_minor_formatter(mpl.ticker.NullFormatter())
         axS.yaxis.set_ticks_position('both')
         axS.tick_params(axis='both', which='both', direction='in')
+        if 2 in hide_first_ylbl:
+            yticks = axS.yaxis.get_major_ticks()
+            yticks[0].label1.set_visible(False)
+            yticks[1].label1.set_visible(False)
 
+        # Not updated since switch to gs
         if 0:
             # R
             axR = plt.subplot(414, sharex=ax)
@@ -5927,15 +6089,17 @@ class BLsim(object):
     def map_stripe(self, times=None, left='Rpseudo', right='Rpseudo', llim=None,
                    rlim=None, lopt=True, ropt=None, fig=None, rmax=None, norm=True,
                    fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
-                   save=False, ext='png', sdir=False, overwrite=True, dropbox=False,
+                   save=False, ext='png', sdir=None, overwrite=True, dropbox=False,
                    labelpad=None, title=False):
         if sdir:
             dropbox = False
+        if not dropbox and sdir is None:
+            sdir = True
         mach = int(np.round(self.mach))
         if rmax is None:
             rmax = 1.4
             if mach < 14:
-                rmax = 1.75
+                rmax = 1.7
             if mach < 11:
                 rmax = 2.25
             if mach < 9:
@@ -6372,7 +6536,7 @@ class BLsim(object):
             self.my_fft_plots(diag=False, quiet=True, sdir=True, overwrite=overwrite)
             gc.collect()
             if not quiet: print('    Flux vs time')
-            self.my_flux_plot(save=True, overwrite=overwrite)
+            self.flux_vs_time(save=True, overwrite=overwrite)
             gc.collect()
             if not quiet: print('    alpha stress')
             self.stress_st(save=True, overwrite=overwrite)
@@ -7310,7 +7474,6 @@ def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
         fig.savefig(fn)
         plt.close()
 
-
 def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300,
                      fopt=None, lopt=None, fn=None, sdir=None):
     if sims is None:
@@ -7387,6 +7550,217 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
         plt.savefig(fn)
         plt.close()
     return
+
+def multi_map(map_dict=None, var=None, save=False, figsize=None, dpi=300, fopt=None,
+              fn=None, sdir=None, nc=None, nr=None, file='cons', txt=True, lbl=True,
+              skeys=None):
+    if map_dict is None:
+        map_dict = {'M05.FR.r.a': [200],
+                    'M06.FR.r.a': [275],
+                    'M09.FR.r.a': [100, 300, 575],
+                    'M06.FR.mix.a': [87]
+                    }
+    if skeys is None:
+        skeys = sorted(list(map_dict.keys()))
+    golden = (1 + 5 ** 0.5) / 2
+    nmap = sum([len(i) for i in map_dict.values()])
+    if nr is None:
+        nr = int(np.round(np.sqrt(nmap / golden)))
+    if nc is None:
+        nc = int(np.round(np.sqrt(nmap * golden)))
+    if figsize is None:
+        margin = .25
+        s0 = 2
+        figsize = (nc * s0 + margin, nr * s0 + margin)
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt is None:
+        fopt = {}
+    _fopt.update(fopt)
+
+    def add_plbl(lbl, ax=None):
+        if ax is None:
+            ax = plt.gca()
+        ax.text(.01, .99, '(' + lbl + ')', c='k', transform=ax.transAxes, ha='left',
+                va='top', fontsize=8)
+
+    fig = plt.figure(**_fopt)
+    gs = mpl.gridspec.GridSpec(nr, nc, top=.99, bottom=.04, left=.07, right=.99,
+                               wspace=0, hspace=0)
+    axs = [[None] * nc] * nr
+    sim = None
+    for r in range(nr):
+        for c in range(nc):
+            i = c + r * nc
+            if i < nmap:
+                opt = dict()
+                if c > 0:
+                    opt['sharey'] = axs[r][0]
+                if r > 0:
+                    opt['sharex'] = axs[0][c]
+                ax = plt.subplot(gs[r, c], **opt)
+                while not map_dict[skeys[0]]:
+                    skeys.pop(0)
+                    sim = None
+                if sim is None:
+                    sim = BLsim(skeys[0])
+                with sim.loadfile(file, map_dict[skeys[0]].pop(0)) as df:
+                    df.plot2d(var, ax=ax, cb=False, title=False, minmax=False)
+                    ax.yaxis.set_ticks_position('both')
+                    ax.xaxis.set_ticks_position('both')
+                    ax.tick_params(axis='both', which='both', direction='in')
+                    if txt:
+                        t = int(df.t / tau + .5)
+                        txt = sim.name + "\n" + r"$t/2\pi={:d}$".format(t)
+                        ax.text(.96, .99, txt, c='k', transform=ax.transAxes, ha='right',
+                                va='top', fontsize=6)
+                if lbl:
+                    add_plbl(chr(ord('a') + i))
+                if c:
+                    plt.setp(ax.get_yticklabels(), visible=False)
+                else:
+                    plt.ylabel(r'$y$')
+                if r == nr -1:
+                    plt.xlabel(r'$x$')
+                else:
+                    plt.setp(ax.get_xticklabels(), visible=False)
+                gc.collect()
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'multi_maps.pdf'
+        if sdir is True:
+            sdir = os.path.split(sim.path)[0]
+            sdir = os.path.join(os.path.split(sdir, 'figs'))
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
+
+class oomfmt(mpl.ticker.ScalarFormatter):
+    def __init__(self, oom, **kwargs):
+        self._oom = oom
+        super(oomfmt, self).__init__(**kwargs)
+        self.orderOfMagnitude = self._oom
+
+    def _set_order_of_magnitude(self):
+        self.orderOfMagnitude = self._oom
+
+def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=None,
+              fn=None, sdir=None, nc=None, nr=None, file='cons', txt=True, lbl=True,
+              lnorm=-2):
+    if plots is None:
+        plots = [dict(sim='M07.FR.r.a', t=450),
+                 dict(sim='M09.FR.r.a', t=175, ps=.314429244, mode=19, rm_last=True),
+                 dict(sim='M13.FR.r.a', t=375),
+                 ]
+    golden = (1 + 5 ** 0.5) / 2
+    nplots = len(plots)
+    if nr is None:
+        nr = int(np.round(np.sqrt(nplots / golden)))
+    if nc is None:
+        if nr is False or nr == 1:
+            nc = nplots
+            nr = 1
+        else:
+            nc = int(np.round(np.sqrt(nplots * golden)))
+    if figsize is None:
+        margin = .25
+        s0 = 2
+        figsize = (nc * s0 + margin, nr * s0 + margin)
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt is None:
+        fopt = {}
+    _fopt.update(fopt)
+
+    def add_plbl(lbl, ax=None):
+        if ax is None:
+            ax = plt.gca()
+        ax.text(.01, .97, '(' + lbl + ')', c='w', transform=ax.transAxes, ha='left',
+                va='top', fontsize=8)
+
+    fig = plt.figure(**_fopt)
+    hr = [.1, 1] * nr
+    gs = mpl.gridspec.GridSpec(nr * 2, nc, top=.9, bottom=.15, left=.07, right=.93,
+                               wspace=0, hspace=0, height_ratios=hr)
+    axs = [[None] * nc * 2] * nr
+    sim = None
+
+    fmt = oomfmt(lnorm)
+    for r in range(nr):
+        for c in range(nc):
+            i = c + r * nc
+            if i < nplots:
+                opt = dict()
+                if c > 0:
+                    opt['sharey'] = axs[r][0]
+                if r > 0:
+                    opt['sharex'] = axs[0][c]
+                ax = plt.subplot(gs[2 * r + 1, c], **opt)
+                cax = plt.subplot(gs[2 * r, c])
+                sname = plots[i]['sim']
+                if getattr(sim, 'name', None) != sname:
+                    sim = BLsim(sname)
+                with sim.loadfile(file, plots[i]['t']) as df:
+                    cbopt = dict(orientation='horizontal', format=fmt)
+                    sopt = dict(ax=ax, cax=cax, title=False, lbls=False, cbopt=cbopt,
+                                cbl=False)
+                    for key in plots[i].keys():
+                        if key not in ['sim', 't']:
+                            sopt[key] = plots[i][key]
+                    if 'opt' in plots[i]:
+                        sopt.update(plots[i]['opt'])
+                    print(sname, sopt)
+                    df.stripe(var, **sopt)
+                    ax.yaxis.set_ticks_position('both')
+                    ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+                    ax.xaxis.set_ticks_position('both')
+                    ax.tick_params(axis='both', which='both', direction='in')
+                    cax.xaxis.set_ticks_position('top')
+                    cax.xaxis.set_label_position('top')
+                    cax.tick_params(axis='x', which='both', direction='in')
+                    cax.xaxis.get_offset_text().set_visible(False)
+                    if txt:
+                        t = int(df.t / tau + .5)
+                        txt = sim.name + "\n" + r"$t/2\pi={:d}$".format(t)
+                        ax.text(.96, .97, txt, c='k', transform=ax.transAxes, ha='right',
+                                va='top', fontsize=6)
+                if lbl:
+                    add_plbl(chr(ord('a') + i))
+                if c:
+                    plt.setp(ax.get_yticklabels(), visible=False)
+                else:
+                    plt.ylabel(r'$\phi/2\pi$')
+                if r == nr -1:
+                    plt.xlabel(r'$r$')
+                else:
+                    plt.setp(ax.get_xticklabels(), visible=False)
+                if r == 0 and c == nc - 1:
+                    cax.text(1.01, 1.13, r'$\times 10^{{{}}}$'.format(lnorm),
+                             transform=ax.transAxes, ha='left', va='bottom')#, fontsize=6)
+                gc.collect()
+    plt.draw()
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'multi_stripes.png'
+        if sdir is True:
+            sdir = os.path.split(sim.path)[0]
+            sdir = os.path.join(os.path.split(sdir, 'figs'))
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
+
 
 
 if __name__ == '__main__':
