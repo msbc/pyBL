@@ -77,6 +77,33 @@ _seed_type = {'r': 'block-random', 'random': 'globally random',
 
 # _res_type = dict(LR='low res')
 
+
+class MidpointNormalize(mpl.colors.Normalize):
+    """
+    Normalise the colorbar so that diverging bars work there way either side from a prescribed midpoint value)
+
+    e.g. im=ax1.imshow(array, norm=MidpointNormalize(midpoint=0.,vmin=-100, vmax=100))
+    """
+    def __init__(self, vmin=None, vmax=None, midpoint=None, clip=False):
+        self.midpoint = midpoint
+        #super(MidpointNormalize, self).__init__(vmin, vmax, clip)
+        mpl.colors.Normalize.__init__(self, vmin, vmax, clip)
+
+    def __call__(self, value, clip=None):
+        # I'm ignoring masked values and all kinds of edge cases to make a
+        # simple example...
+        x, y = [self.vmin, self.midpoint, self.vmax], [0, 0.5, 1]
+        return np.ma.masked_array(np.interp(value, x, y), np.isnan(value))
+
+class oomfmt(mpl.ticker.ScalarFormatter):
+    def __init__(self, oom, **kwargs):
+        self._oom = oom
+        super(oomfmt, self).__init__(**kwargs)
+        self.orderOfMagnitude = self._oom
+
+    def _set_order_of_magnitude(self):
+        self.orderOfMagnitude = self._oom
+
 def r_main(mach):
     tmp = 9 / mach
     out = min(1 + 1.5 * tmp, 1 + 1.5 * tmp ** 2)
@@ -2872,12 +2899,14 @@ class BLsim(object):
                  vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                  ax=None, log=False, sdir=None, dpi=300, r_cut=None, ret_fn=False,
                  rplot=1, overwrite=True, slog=None, linthresh=None, linscale=None,
-                 figsize=(7, 5), dt=True, dr=0, cax=None, ylbl=True):
+                 figsize=(7, 5), dt=True, dr=0, cax=None, ylbl=True, norm=None):
         """Plot 2D sim data"""
         if fopt is None:
             fopt = {'dpi': dpi, 'figsize': figsize}
         if popt is None:
             popt = {}
+        if norm is not None and 'norm' not in popt:
+            popt['norm'] = norm
         if cbopt is None:
             cbopt = {}
         _popt = {}
@@ -3046,7 +3075,7 @@ class BLsim(object):
         def dens(sim):
             data = sim.load_flux_data()['dens']
             if delta:
-                data -= data[0][None, :]
+                data = (data - data[0][None, :]) / data[0][None, :]
             return data
 
         cbl = r'$\rho$'
@@ -3054,7 +3083,7 @@ class BLsim(object):
         if not 'vmax' in kwargs:
             kwargs['vmax'] = 1
         if delta:
-            cbl = r'$\Delta \rho$'
+            cbl = r'$\Delta \rho/\rho_0$'
             name = 'delta_dens'
             if not 'zerocent' in kwargs:
                 kwargs['zerocent'] = True
@@ -3063,8 +3092,22 @@ class BLsim(object):
         return self._st_plot(**opt)
 
     def multi_st(self, opts=None, save=False, figsize=None, dpi=300, fopt=None,
-                 fn=None, sdir=None, rmin=True, rmax=True):
-        nvar = 4
+                 fn=None, sdir=None, rmin=1.0, rmax=2.0, overwrite=True):
+        if save or fn:
+            save = True
+            if not fn:
+                fn = self.name + '_multi_st.png'
+            if sdir is True:
+                sdir = os.path.split(self.path)[0]
+                sdir = os.path.join(os.path.split(sdir, 'figs'))
+            if sdir:
+                sdir = os.path.expanduser(sdir)
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            return None
+        nvar = 3
         if rmax is True:
             mach = float(self.mach)
             rmax = 1.4
@@ -3086,7 +3129,7 @@ class BLsim(object):
             fopt = {}
         _fopt.update(fopt)
         fig = plt.figure(**_fopt)
-        gs = mpl.gridspec.GridSpec(nvar, 2, top=.99, bottom=.04, left=.07, right=.99,
+        gs = mpl.gridspec.GridSpec(nvar, 2, top=.99, bottom=.06, left=.12, right=.8,
                                    wspace=0, hspace=0, width_ratios=[1, .04])
         for i in range(nvar):
             if i:
@@ -3094,23 +3137,35 @@ class BLsim(object):
             else:
                 ax = plt.subplot(gs[i, 0])
             cax = plt.subplot(gs[i, 1])
-            opt = dict(ax=ax, cax=cax)
+            opt = dict(ax=ax, cax=cax, rplot=(rmin < 1))
             if opts:
                 opt.update(opts[i])
-            if i in [0, 1]:
-                self.rho_st(delta=i, **opt)
-            if i == 2:
+            if i == 0:
+                self.rho_st(delta=True, norm=MidpointNormalize(-1, .1, 0),
+                            cmap=helpers.NCcmap, vmin=-1, vmax=.1, zerocent=False, **opt)
+            if i == 1:
                 self.stress_st(**opt)
-            if i == 3:
+            if i == 2:
                 self.acc_st(**opt)
             if i != nvar - 1:
                 plt.setp(ax.get_xticklabels(), visible=False)
             ax.yaxis.set_ticks_position('both')
-            #ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+            ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
             ax.xaxis.set_ticks_position('both')
             ax.tick_params(axis='both', which='both', direction='in')
             plt.ylim(rmin, rmax)
+            if i != 0:
+                yticks = ax.yaxis.get_major_ticks()
+                yticks[-1].label1.set_visible(False)
+                #yticks[t].label2.set_visible(False)
             gc.collect()
+
+        fig.suptitle(self.name)
+
+        if save:
+            plt.savefig(fn)
+            plt.close()
+        return
 
     def gen_fft_times(self, ll=True):
         if self._new_fft_time is None:
@@ -6547,6 +6602,9 @@ class BLsim(object):
             if not quiet: print('    Mdot_CS')
             self.Mdot_CS(save=True, overwrite=overwrite)
             gc.collect()
+            if not quiet: print('    multi_st')
+            self.multi_st(save=True, overwrite=overwrite)
+            gc.collect()
             if gmodes:
                 if not quiet: print('    Speed plots')
                 self.speed_plots(gmodes, tmark=t[:], overwrite=overwrite)
@@ -7641,15 +7699,6 @@ def multi_map(map_dict=None, var=None, save=False, figsize=None, dpi=300, fopt=N
         plt.close()
     return
 
-class oomfmt(mpl.ticker.ScalarFormatter):
-    def __init__(self, oom, **kwargs):
-        self._oom = oom
-        super(oomfmt, self).__init__(**kwargs)
-        self.orderOfMagnitude = self._oom
-
-    def _set_order_of_magnitude(self):
-        self.orderOfMagnitude = self._oom
-
 def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=None,
               fn=None, sdir=None, nc=None, nr=None, file='cons', txt=True, lbl=True,
               lnorm=-2):
@@ -7680,7 +7729,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
     def add_plbl(lbl, ax=None):
         if ax is None:
             ax = plt.gca()
-        ax.text(.01, .97, '(' + lbl + ')', c='w', transform=ax.transAxes, ha='left',
+        ax.text(.01, .97, '(' + lbl + ')', c='k', transform=ax.transAxes, ha='left',
                 va='top', fontsize=8)
 
     fig = plt.figure(**_fopt)
