@@ -5697,7 +5697,7 @@ class BLsim(object):
         # print(tf, dt, times)
         opt = dict(save=True, fopt=fopt, overwrite=overwrite, **popt)
         tn_fn = os.path.join(path, self.name + '_thumbnails.png')
-        if overwrite and os.path.isfile(tn_fn):
+        if not overwrite and os.path.isfile(tn_fn):
             thumbnail = False
         inc = []
         if thumbnail:
