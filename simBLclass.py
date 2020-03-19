@@ -2899,7 +2899,7 @@ class BLsim(object):
                  vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                  ax=None, log=False, sdir=None, dpi=300, r_cut=None, ret_fn=False,
                  rplot=1, overwrite=True, slog=None, linthresh=None, linscale=None,
-                 figsize=(7, 5), dt=True, dr=0, cax=None, ylbl=True, norm=None):
+                 figsize=(7, 5), dt=True, dr=0, cax=None, ylbl=True, norm=None, xlbl=True):
         """Plot 2D sim data"""
         if fopt is None:
             fopt = {'dpi': dpi, 'figsize': figsize}
@@ -3029,7 +3029,8 @@ class BLsim(object):
 
         y = self.r
         pcm = plt.pcolormesh(t, y, data.T, **_popt)
-        plt.xlabel(r'$t/2\pi$')
+        if xlbl:
+            plt.xlabel(r'$t/2\pi$')
         if ylbl:
             plt.ylabel(r'$r$')
         if rplot:
@@ -7505,10 +7506,10 @@ def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
     if 'ylim' not in kwargs:
         kwargs['ylim'] = [1e-1, None]
     if figsize is None:
-        figsize = (8, 4)
+        figsize = (5, 3)
     fig = plt.figure(figsize=figsize, dpi=dpi)
-    gs = mpl.gridspec.GridSpec(1, 3, width_ratios=[1, 1, .05], top=.99, bottom=.1,
-                               left=.075, right=.95, wspace=0)
+    gs = mpl.gridspec.GridSpec(1, 3, width_ratios=[1, 1, .05], top=.99, bottom=.14,
+                               left=.13, right=.92, wspace=0)
     #axs = [plt.subplot(gs[i]) for i in [0, 2, 3]]
     axs = [plt.subplot(i) for i in gs]
     plt.sca(axs[0])
@@ -7520,10 +7521,10 @@ def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
     #axs[1].yaxis.set_ticks_position('both')
     axs[1].tick_params(axis='both', which='both', direction='in')
     axs[1].set_yticklabels([])
-    x, y = 1.5e-4, 3
-    opt = dict(bbox=dict(edgecolor='none', facecolor='white', alpha=.7))
-    axs[0].text(x, y, "A) mean $\pm$ standard-deviation", **opt)
-    axs[1].text(x, y, "B) median $\pm$ quartile", **opt)
+    x, y = 2e-4, 3
+    opt = dict(bbox=dict(edgecolor='none', facecolor='white', alpha=.7), fontsize=6)
+    axs[0].text(x, y, "a) mean $\pm$ standard-deviation", **opt)
+    axs[1].text(x, y, "b) median $\pm$ quartile", **opt)
 
     if save:
         fn = 'CS_Mdot_plot.pdf'
@@ -7579,7 +7580,8 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
                                cap=cap, lopt=lopt)
                 ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
                 ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(5))
-                ax.text(.96, .94, sim.name, c='k', transform=ax.transAxes, ha='right',
+                lbl = chr(ord('a') + i) + ') ' + sim.name
+                ax.text(.96, .94, lbl, c='k', transform=ax.transAxes, ha='right',
                         fontsize=6)
                 if c:
                     plt.setp(ax.get_yticklabels(), visible=False)
@@ -7810,6 +7812,203 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
         plt.close()
     return
 
+def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
+             fn=None, sdir=None, rmin=1.0, rmax=2.0, vmax1=None, vmax2=None):
+    if sims is None:
+        sims = ['M06.HR.r.a'] + ['M{:02d}.FR.r.a'.format(i) for i in [9, 11, 12, 15]]
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'multi_st.png'
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    nvar = 3
+    nsim = len(sims)
+    if figsize is None:
+        margin = .25
+        s0 = 1.8
+        figsize = (1.5 * nsim * s0 + margin, nvar * s0 + margin)
+        #figsize = (7,3.5)
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt is None:
+        fopt = {}
+    _fopt.update(fopt)
+    fig = plt.figure(**_fopt)
+    gs = mpl.gridspec.GridSpec(nvar, nsim + 1, top=.99, bottom=.06, left=.05, right=.94,
+                               wspace=0, hspace=0, width_ratios=[1] * nsim + [.04])
+    col1 = [None] * nvar
+    r1lim = -np.inf
+    r2lim = -np.inf
+    axs = [[None] * nvar] * nsim
+    for j, s in enumerate(sims):
+        sim = BLsim(s)
+        sharex = None
+        for i in range(nvar):
+            sharey = col1[i]
+            ax = plt.subplot(gs[i, j], sharex=sharex, sharey=sharey)
+            sharex = ax
+            axs[j][i] = ax
+            if j == 0:
+                col1[i] = ax
+            opt = dict(ax=ax, cb=False, rplot=(rmin < 1), ylbl=j==0, xlbl=i==nvar-1)
+            if j == nsim - 1:
+                cax = plt.subplot(gs[i, j + 1])
+                opt['cb'] = True
+                opt['cax'] = cax
+            if opts:
+                opt.update(opts[i])
+            if i == 0:
+                sim.rho_st(delta=True, norm=MidpointNormalize(-1, .1, 0),
+                            cmap=helpers.NCcmap, vmin=-1, vmax=.1, zerocent=False, **opt)
+                plt.text(.5, .9, sim.name, c='k', ha='center',
+                         transform=ax.transAxes)
+            if i == 1:
+                sim.stress_st(vmax=vmax1, **opt)
+                r1lim = max(r1lim, max(plt.gci().get_clim()))
+                print(j, 'r1lim', r1lim)
+            if i == 2:
+                sim.acc_st(vmax=vmax2, **opt)
+                r2lim = max(r2lim, max(plt.gci().get_clim()))
+                print(j, 'r2lim', r2lim)
+            if i != nvar - 1:
+                plt.setp(ax.get_xticklabels(), visible=False)
+            if j > 0:
+                plt.setp(ax.get_yticklabels(), visible=False)
+            ax.yaxis.set_ticks_position('both')
+            ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
+            ax.xaxis.set_ticks_position('both')
+            ax.tick_params(axis='both', which='both', direction='in')
+            plt.ylim(rmin, rmax)
+            if i != 0:
+                yticks = ax.yaxis.get_major_ticks()
+                yticks[-1].label1.set_visible(False)
+            if j == nsim - 1:
+                yticks = cax.yaxis.get_major_ticks()
+                yticks[0].label2.set_visible(False)
+            gc.collect()
+        del (sim)
+        gc.collect()
+
+    if vmax1 is None:
+        print('r1lim', r1lim)
+        for j in range(nsim):
+            for im in axs[j][1].get_images():
+                im.set_clim(-r1lim, r1lim)
+    if vmax2 is None:
+        print('r2lim', r2lim)
+        for j in range(nsim):
+            for im in axs[j][1].get_images():
+                im.set_clim(-r2lim, r2lim)
+
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
+
+def multi_omega(sims=None, var=None, save=False, figsize=None, dpi=300, fopt=None,
+                fn=None, sdir=None, nc=None, nr=None, file='cons', txt=True, lbl=True,
+                lnorm=-2, cmap=None, tmin=0, tmax=600, popt=None, rmin=.9, rmax=1.35):
+    if sims is None:
+        sims = ['M{:02d}.FR.r.a'.format(i) for i in range(6, 16)]
+    nsim = len(sims)
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'multi_omega.pdf'
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if nr is None:
+        nr = 2
+    if nc is None:
+        nc = int(np.ceil(nsim / nr))
+    if figsize is None:
+        margin = .25
+        s0 = 2
+        figsize = (nc * s0 + margin, nr * s0 + margin)
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt is None:
+        fopt = {}
+    _fopt.update(fopt)
+    if cmap is None:
+        # sample the colormaps that you want to use. Use 128 from each so we get 256
+        # colors in total
+        n0 = int(np.ceil(51. / 600 * 256))
+        colors1 = plt.cm.cividis(np.linspace(0., 1, n0))
+        colors2 = plt.cm.viridis_r(np.linspace(0, .7, 256 - n0))
+
+        # combine them and build a new colormap
+        colors = np.vstack((colors1, colors2))
+        cmap = mpl.colors.LinearSegmentedColormap.from_list('my_colormap', colors)
+    elif hasattr(cmap, 'lower'):
+        cmap = plt.get_cmap(cmap)
+    if popt is None:
+        popt = dict(lw=1, ls='-')
+    norm = mpl.colors.Normalize(vmin=tmin, vmax=tmax)
+    times = np.array([0, 20, 25, 30, 40, 50] +
+                     list(range(100, int(tmax) + 2, 100)))
+    colors = cmap(norm(times))
+    fig = plt.figure(**_fopt)
+    gs = mpl.gridspec.GridSpec(nr, nc + 1, top=.98, bottom=.09, left=.05, right=.94,
+                               wspace=0, hspace=0, width_ratios=[1] * nc + [.06])
+    col1 = [None] * nr
+    for r in range(nr):
+        for c in range(nc):
+            i = c + r * nc
+            sharex = None
+            sharey = col1[r]
+            if i < nsim:
+                sim = BLsim(sims[i])
+                fd = sim.load_flux_data()
+                omega = fd['vphi'] / sim.rc
+                ax = plt.subplot(gs[r, c], sharex=sharex, sharey=sharey)
+                sharex = ax
+                if c == 0:
+                    col1[r] = ax
+                for t in range(len(times)):
+                    loc = np.abs(fd['t'] - times[t] * tau).argmin()
+                    plt.plot(sim.rc, omega[loc], c=colors[t], **popt)
+                if r == nr - 1:
+                    plt.xlabel(r'$r$')
+                else:
+                    plt.setp(ax.get_xticklabels(), visible=False)
+                if c == 0:
+                    plt.ylabel(r'$\Omega$')
+                else:
+                    plt.setp(ax.get_yticklabels(), visible=False)
+                ax.yaxis.set_ticks_position('both')
+                ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
+                ax.xaxis.set_ticks_position('both')
+                ax.tick_params(axis='both', which='both', direction='in')
+                ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
+                plt.xlim(rmin, rmax)
+                plt.ylim(0, 1)
+                if txt:
+                    lbl = chr(ord('a') + i) + ') ' + sim.name
+                    ax.text(.98, .94, lbl, c='k', transform=ax.transAxes, ha='right',
+                            fontsize=6)
+                if c != nc -1:
+                    xticks = ax.xaxis.get_major_ticks()
+                    xticks[-1].label1.set_visible(False)
+                if r != 0:
+                    yticks = ax.yaxis.get_major_ticks()
+                    yticks[-1].label1.set_visible(False)
+                del(sim, fd, omega)
+                gc.collect()
+    cax = plt.subplot(gs[:, -1])
+    cb = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm)
+    cax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(10))
+    cb.set_label(r'$t/2\pi$')
+
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
 
 
 if __name__ == '__main__':
