@@ -7834,6 +7834,8 @@ def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
         save = True
         if not fn:
             fn = 'multi_st.png'
+        if sdir is True:
+            sdir = os.path.join(_dirs[-1], 'figs')
         if sdir:
             sdir = os.path.expanduser(sdir)
             if not os.path.isdir(sdir):
@@ -7851,7 +7853,7 @@ def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
         fopt = {}
     _fopt.update(fopt)
     fig = plt.figure(**_fopt)
-    gs = mpl.gridspec.GridSpec(nvar, nsim + 1, top=.99, bottom=.06, left=.05, right=.94,
+    gs = mpl.gridspec.GridSpec(nvar, nsim + 1, top=.985, bottom=.07, left=.035, right=.95,
                                wspace=0, hspace=0, width_ratios=[1] * nsim + [.04])
     col1 = [None] * nvar
     r1lim = -np.inf
