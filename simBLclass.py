@@ -7843,6 +7843,7 @@ def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
     r1lim = -np.inf
     r2lim = -np.inf
     axs = [[None] * nvar] * nsim
+    lbl = 'a'
     for j, s in enumerate(sims):
         sim = BLsim(s)
         sharex = None
@@ -7877,6 +7878,9 @@ def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
                 plt.setp(ax.get_xticklabels(), visible=False)
             if j > 0:
                 plt.setp(ax.get_yticklabels(), visible=False)
+            ax.text(.98, .98, lbl + ')', c='w', transform=ax.transAxes, ha='right',
+                va='bottom', fontsize=8)
+            lbl = chr(ord(lbl) + 1)
             ax.yaxis.set_ticks_position('both')
             ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
             ax.xaxis.set_ticks_position('both')
@@ -7912,7 +7916,7 @@ def multi_omega(sims=None, var=None, save=False, figsize=None, dpi=300, fopt=Non
                 fn=None, sdir=None, nc=None, nr=None, file='cons', txt=True, lbl=True,
                 lnorm=-2, cmap=None, tmin=0, tmax=600, popt=None, rmin=.9, rmax=1.35):
     if sims is None:
-        sims = ['M{:02d}.FR.r.a'.format(i) for i in range(6, 16)]
+        sims = ['M06.HR.r.a'] + ['M{:02d}.FR.r.a'.format(i) for i in range(7, 16)]
     nsim = len(sims)
     if save or fn:
         save = True
