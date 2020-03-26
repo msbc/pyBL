@@ -7894,8 +7894,8 @@ def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
                 plt.setp(ax.get_xticklabels(), visible=False)
             if j > 0:
                 plt.setp(ax.get_yticklabels(), visible=False)
-            ax.text(.98, .98, lbl + ')', c='w', transform=ax.transAxes, ha='right',
-                va='bottom', fontsize=8)
+            ax.text(.98, .97, lbl + ')', c='w', transform=ax.transAxes, ha='right',
+                va='top', fontsize=8)
             lbl = chr(ord(lbl) + 1)
             ax.yaxis.set_ticks_position('both')
             ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
