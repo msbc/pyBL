@@ -2718,6 +2718,17 @@ class BLsim(object):
             self.ensure_fft_data_exists()
         # End init
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
+        del(self._rho_ref, self._fft_data, self._coarse_data, self._fft_time,
+            self._phase_angle, self._mode_mask, self._sigmas, self._main_modes,
+            self._mode_detect, self._flux_data, self._sfd, self._new_fft_time,
+            self._cs_rrr_data)
+        gc.collect()
+        return False
+
     def _parse_self(self, key):
         if hasattr(self, key):
             try:
@@ -3539,7 +3550,7 @@ class BLsim(object):
             out[k] /= n
         return out
 
-    def new_fluxes(self, t0, tf, tnorm=tau, nsmooth=True):
+    def new_fluxes(self, t0, tf, tnorm=tau, nsmooth=True, csm=False):
         if not tnorm or tnorm is True:
             tnorm = 1
         t0 *= tnorm
@@ -3570,6 +3581,9 @@ class BLsim(object):
 
         out['dwdt'] /= (tsb - tsa) * self.rc
         out['drhodt'] /= (tsb - tsa) * self.rc
+
+        if csm:
+            out['CSm'] = np.array(self.CS_RRR_data())[i0:il].mean(axis=0)
         # print("t div", tnorm * (out['tf'] - out['t0']), tsb - tsa, tsa, tsb)
 
         return out
@@ -8013,6 +8027,197 @@ def multi_omega(sims=None, var=None, save=False, figsize=None, dpi=300, fopt=Non
         plt.savefig(fn)
         plt.close()
     return
+
+def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
+               sdir=None, file='cons', txt=True, lbl=True, spacer=True, rmin=None,
+               rmax=None, nm=5, lopt=None, lnorm=-3):
+    if sims is None:
+        sims = [dict(name='M06.HR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
+                dict(name='M09.FR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
+                dict(name='M11.FR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
+                dict(name='M12.FR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
+                dict(name='M15.FR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
+                ]
+        #sims = [dict(name='M06.FR.r.a', ts=[[100, 200], [300, 400], [500, 600]])]
+    nsim = len(sims)
+    if not lnorm:
+        lnorm = 0
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'multi_omega.pdf'
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    nc = nsim
+    nvar = 3
+    nr = max([len(i['ts']) for i in sims])
+    if spacer:
+        nr = (nr + 1) * nvar - 1
+    else:
+        nr *= nvar
+    if lopt is None:
+        lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
+    if figsize is None:
+        figsize = (8.5, 11)
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt is None:
+        fopt = {}
+    _fopt.update(fopt)
+    fig = plt.figure(**_fopt)
+
+    hr = [1, .6, 1]
+    if spacer:
+        hr.append(.2)
+    hr *= nvar
+    if spacer:
+        hr.pop(-1)
+    gs = mpl.gridspec.GridSpec(nr, nc, top=.98, bottom=.09, left=.05, right=.94,
+                               hspace=0, wspace=0.1, height_ratios=hr)
+    pre = r'$\mathcal{M}^2'
+    suf = '/10^{' + str(lnorm) + '}$' if lnorm else '$'
+    for ns, s in enumerate(sims):
+        with BLsim(s['name']) as sim:
+            _nm = s.get('nm', nm)
+            rlim = np.empty(2)
+            rlim[0] = sim.r[0] if rmin is None else rmin
+            rlim[1] = sim.r[-1] if rmax is None else rmax
+            rin = sim.rloc(max(1, rlim[0]))
+            rout = sim.rloc(min(3.9, rlim[1]))
+            row = 0
+            ax = None
+            msqr = sim.mach**2 * 10**-lnorm
+            for nt, tlim in enumerate(s['ts']):
+                try:
+                    sims[ns]['data'][nt]
+                except KeyError:
+                    sims[ns]['data'] = [sim.new_fluxes(*tlim, csm=True)]
+                except IndexError:
+                    sims[ns]['data'].append(sim.new_fluxes(*tlim, csm=True))
+                finally:
+                    data = sims[ns]['data'][nt]
+                csm = np.real(data['CSm'])
+                csm[0] = 0
+                cs = data['CS']
+                norm = sim.intr(np.abs(csm))
+                modes = sorted(range(norm.shape[0]), key=lambda x: -norm[x])
+
+                # C_S, C_S,m
+                ax = plt.subplot(gs[row, ns], sharex=ax)
+                plt.plot(sim.rc, msqr * cs, 'k-', label='$C_S$')
+                for m in modes[:_nm]:
+                    plt.plot(sim.rc, msqr * csm[m], label=str(m))
+                plt.plot(sim.rc, msqr * csm[1:].sum(axis=0), c='.5', ls=':', label='sum')
+                plt.xlim(sim.r[0], sim.r[-1])
+                # ylim = plt.ylim()
+                plt.legend(loc='lower center', ncol=_nm + 2, **lopt)
+                plt.axhline(0, c='.5', ls=':', lw=1)
+                plt.axvline(1, c='.5', ls=':', lw=1)
+                # plt.ylim(*ylim)
+                # plt.xlabel('$R$')
+                plt.ylabel(pre +'C_S' + suf)
+                # plt.setp(ax0.get_xticklabels(), fontsize=6)
+                ax.yaxis.set_ticks_position('both')
+                ax.xaxis.set_ticks_position('both')
+                ax.tick_params(axis='both', which='both', direction='in')
+                if txt:
+                    time = r"$t/2\pi={:d}-{:d}$".format(*tlim)
+                    if row == 0:
+                        plt.title(sim.name + ' ' + time)
+                    else:
+                        plt.title(time)
+                def mklbl(lbl):
+                    if lbl:
+                        tmp = row - nt if spacer else row
+                        lbl = chr(ord('A') + ns) + chr(ord('a') + tmp) + ')'
+                        bbox = dict(facecolor='w', alpha=0.5, edgecolor='none')
+                        ax.text(.01, .93, lbl, c='k', transform=ax.transAxes, ha='left',
+                                va='top', fontsize=6, bbox=bbox)
+                mklbl(lbl)
+                plt.setp(ax.get_xticklabels(), visible=False)
+                row += 1
+
+                # C_L, C_A, C_S
+                ax = plt.subplot(gs[row, ns], sharex=ax)
+                keys = [i for i in data.keys() if i[0] == 'C' and len(i) == 2]
+                yu = []
+                yl = []
+                for k in keys:
+                    opt = {'label': '${0:}_{1:}$'.format(*k)}
+                    if k == 'CS':
+                        opt['c'] = 'k'
+                    plt.plot(sim.rc, msqr * data[k], **opt)
+                    r0 = max(sim.rloc(rlim[0]), 20)
+                    yu.append(np.real(msqr * data[k][r0:rout + 1]).max())
+                    yl.append(np.real(msqr * data[k][r0:rout + 1]).min())
+                plt.legend(loc='lower center', ncol=3, **lopt)
+                plt.axhline(0, c='.5', ls=':', lw=1)
+                plt.axvline(1, c='.5', ls=':', lw=1)
+                plt.xlim(sim.r[0], sim.r[-1])
+                yl, yu = np.real(yl).min(), np.real(yu).max()
+                dy = (yu - yl) * .05
+                plt.ylim(yl - dy, yu + dy)
+                # plt.xlabel('R')
+                plt.setp(ax.get_xticklabels(), visible=False)
+                plt.ylabel(pre + 'C_i' + suf)
+                ax.yaxis.set_ticks_position('both')
+                ax.xaxis.set_ticks_position('both')
+                ax.tick_params(axis='both', which='both', direction='in')
+                mklbl(lbl)
+                row += 1
+
+                # M-dot panel
+                # see AR18 Eqn. 4, BRS13a Eqn. 64
+                ax = plt.subplot(gs[row, ns], sharex=ax)
+                lines = [msqr * -data['Mdot']]
+                plt.plot(sim.rc, lines[-1], label=r'$\dot{M}$', c='k')
+                r1 = sim.rloc(1.2)
+                ri2 = sim.rloc(2)
+                norm = 1 / grad(sim.rc, data['vphi'] * sim.rc)
+                ycs = norm * grad(sim.rc, data['CS'])
+                lines.append(msqr * ycs)
+                plt.plot(sim.rc, lines[-1], label=r'$C_S$')
+                ydw = norm * sim.rc ** 3 * data['dens'] * data['dwdt'] * tau
+                lines.append(msqr * ydw)
+                plt.plot(sim.rc, lines[-1], label=r'$\partial_t \Omega$')
+                lines.append(msqr * (ycs + ydw))
+                plt.plot(sim.rc, lines[-1], label=r'$C_S\! +\! \partial_t \Omega$',
+                         c='.5',
+                         ls=':')
+                ydp = np.pi * sim.rc ** 3.5 * grad(sim.rc,
+                                                    data['drhodt']) * sim.mach ** -2
+                ydp /= grad(sim.rc, data['vphi'] * sim.rc)
+                lines.append(msqr * ydp)
+                plt.plot(sim.rc, lines[-1], label=r'$\partial_t\partial_rP$')
+                plt.axhline(0, c='.5', ls=':', lw=1)
+                plt.axvline(1, c='.5', ls=':', lw=1)
+                plt.legend(loc='upper center', ncol=5, **lopt)
+                lines = np.array(lines)
+                yu = lines[:, rin:rout+1].max()
+                yl = lines[:, rin:rout+1].min()
+                d = (yu - yl) * .01
+                yu += d
+                yl -= d
+                ylim = plt.ylim()
+                ylim = plt.ylim(max(ylim[0], yl), min(ylim[1], yu))
+                plt.xlim(rmin, rmax)
+                plt.ylabel(pre + '\dot{M}' + suf)
+                ax.yaxis.set_ticks_position('both')
+                ax.xaxis.set_ticks_position('both')
+                ax.tick_params(axis='both', which='both', direction='in')
+                if nt < len(s['ts']) - 1:
+                    plt.setp(ax.get_xticklabels(), visible=False)
+                else:
+                    plt.xlabel('$R$')
+                mklbl(lbl)
+                row += 1
+                if spacer:
+                    row += 1
+
+    return sims
+
 
 
 if __name__ == '__main__':
