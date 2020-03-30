@@ -3535,15 +3535,8 @@ class BLsim(object):
         print('tf', ft.t / tnorm, tf / tnorm, i, ft.fn)
         print(n, i, i1)
         out['tf'] = ft.t / tnorm
-        # out['dwdt'] += np.real(ft['FT-vel2'][0])
-        # out['drhodt'] += np.real(ft['FT-dens'][0])
-        # print(ft['FT-vel2'][0])
-        # print(out['dw'])
-        # out['dwdt'] /= tnorm * (out['tf'] - out['t0'] - t1) * self.rc * .5
-        # out['drhodt'] /= tnorm * (out['tf'] - out['t0'] - t1) * self.rc * .5
-        # out['dwdt'] /= tnorm * (out['tf'] - out['t0']) * self.rc
         out['dwdt'] /= (tsb - tsa) * self.rc * nsmooth
-        out['drhodt'] /= (tsb - tsa) * self.rc * nsmooth
+        out['drhodt'] /= (tsb - tsa) * nsmooth
         print("t div", tnorm * (out['tf'] - out['t0']), dt * nsmooth, tsb - tsa)
 
         for k in keys:
@@ -3571,16 +3564,16 @@ class BLsim(object):
 
         out['t0'] = times[i0] / tnorm
         out['drho'] = out['dens'] - self.rho_ref
-        out['drhodt'] = - fdata['dens'][i0:i0 + nsmooth].mean(axis=0)
+        tmp = grad(self.rc, fdata['dens'], -1) / fdata['dens']
+        tmp = tmp[il - nsmooth:il].mean(axis=0) - tmp[i0:i0 + nsmooth].mean(axis=0)
         out['dwdt'] = - fdata['vphi'][i0:i0 + nsmooth].mean(axis=0)
-        out['drhodt'] += fdata['dens'][il - nsmooth:il].mean(axis=0)
         out['dwdt'] += fdata['vphi'][il - nsmooth:il].mean(axis=0)
         out['tf'] = times[il]
         tsa = times[i0]
         tsb = times[il]
 
         out['dwdt'] /= (tsb - tsa) * self.rc
-        out['drhodt'] /= (tsb - tsa) * self.rc
+        out['dtdr_rho'] = out['dens'] * tmp / (tsb - tsa)
 
         if csm:
             out['CSm'] = np.array(self.CS_RRR_data())[i0:il].mean(axis=0)
@@ -3588,7 +3581,7 @@ class BLsim(object):
 
         return out
 
-    def plot_fluxes(self, t0=None, tf=None, nm=5, data=None, figsize=None, save=False,
+    def __old_plot_fluxes(self, t0=None, tf=None, nm=5, data=None, figsize=None, save=False,
                     fn=None, ext='pdf', lopt=None, ff=1, sdir='', progress=True,
                     overwrite=True):
         if save or fn:
@@ -3836,7 +3829,7 @@ class BLsim(object):
 
         return data
 
-    def new_plot_fluxes(self, t0, tf, nm=5, figsize=None, save=False, fn=None, ext='pdf',
+    def plot_fluxes(self, t0, tf, nm=5, figsize=None, save=False, fn=None, ext='pdf',
                         lopt=None, ff=1, sdir='', progress=True, overwrite=True):
         if save or fn:
             save = True
@@ -4020,7 +4013,7 @@ class BLsim(object):
         plt.plot(self.rc, ydw, label=r'$\partial_t \Omega$')
         plt.plot(self.rc, ycs + ydw, label=r'$C_S\! +\! \partial_t \Omega$', c='.5',
                  ls=':')
-        ydp = np.pi * self.rc ** 3.5 * grad(self.rc, data['drhodt']) * self.mach ** -2
+        ydp = np.pi * self.rc ** 3.5 * data['drdt_rho'] * self.mach ** -2
         ydp /= grad(self.rc, data['vphi'] * self.rc)
         plt.plot(self.rc, ydp, label=r'$\partial_t\partial_rP$')
         plt.axhline(0, c='.5', ls=':', lw=1)
@@ -8031,8 +8024,8 @@ def multi_omega(sims=None, var=None, save=False, figsize=None, dpi=300, fopt=Non
     return
 
 def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
-               sdir=None, file='cons', txt=True, lbl=True, spacer=True, rmin=None,
-               rmax=None, nm=5, lopt=None, lnorm=-3):
+               sdir=None, txt=True, lbl=True, spacer=True, rmin=None, rmax=None, nm=5,
+               lopt=None, lnorm=-3, popt=None):
     if sims is None:
         sims = [dict(name='M06.HR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
                 dict(name='M09.FR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
@@ -8056,6 +8049,9 @@ def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
     nc = nsim
     nvar = 3
     nr = max([len(i['ts']) for i in sims])
+    _popt = dict(lw=1)
+    if popt is not None:
+        _popt.update(popt)
     if spacer:
         nr = (nr + 1) * nvar - 1
     else:
@@ -8063,7 +8059,7 @@ def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
     if lopt is None:
         lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
     if figsize is None:
-        figsize = (8.5, 11)
+        figsize = np.array([8.5, 11]) * 2
     _fopt = dict(dpi=dpi, figsize=figsize)
     if fopt is None:
         fopt = {}
@@ -8072,7 +8068,7 @@ def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
 
     hr = [1, .6, 1]
     if spacer:
-        hr.append(.2)
+        hr.append(.15)
     hr *= nvar
     if spacer:
         hr.pop(-1)
@@ -8109,17 +8105,29 @@ def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
                 # C_S, C_S,m
                 ax = plt.subplot(gs[row, ns], sharex=ax)
                 plt.plot(sim.rc, msqr * cs, 'k-', label='$C_S$')
+                lines = [msqr * cs]
                 for m in modes[:_nm]:
-                    plt.plot(sim.rc, msqr * csm[m], label=str(m))
-                plt.plot(sim.rc, msqr * csm[1:].sum(axis=0), c='.5', ls=':', label='sum')
-                plt.xlim(sim.r[0], sim.r[-1])
+                    lines.append(msqr * csm[m])
+                    plt.plot(sim.rc, msqr * csm[m], label=str(m), **_popt)
+                plt.plot(sim.rc, msqr * csm[1:].sum(axis=0), c='.5', ls=':', label='sum',
+                         **_popt)
+                lines.append(msqr * csm[1:].sum(axis=0))
+                plt.xlim(*rlim)
                 # ylim = plt.ylim()
+                lines = np.array(lines)
+                yu = lines[:, rin:rout + 1].max()
+                yl = lines[:, rin:rout + 1].min()
+                d = (yu - yl) * .01
+                yu += d
+                yl -= d
+                plt.ylim(yl, yu)
                 plt.legend(loc='lower center', ncol=_nm + 2, **lopt)
                 plt.axhline(0, c='.5', ls=':', lw=1)
                 plt.axvline(1, c='.5', ls=':', lw=1)
                 # plt.ylim(*ylim)
                 # plt.xlabel('$R$')
-                plt.ylabel(pre +'C_S' + suf)
+                if ns == 0:
+                    plt.ylabel(pre +'C_S' + suf)
                 # plt.setp(ax0.get_xticklabels(), fontsize=6)
                 ax.yaxis.set_ticks_position('both')
                 ax.xaxis.set_ticks_position('both')
@@ -8135,7 +8143,7 @@ def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
                         tmp = row - nt if spacer else row
                         lbl = chr(ord('A') + ns) + chr(ord('a') + tmp) + ')'
                         bbox = dict(facecolor='w', alpha=0.5, edgecolor='none')
-                        ax.text(.01, .93, lbl, c='k', transform=ax.transAxes, ha='left',
+                        ax.text(.03, .95, lbl, c='k', transform=ax.transAxes, ha='left',
                                 va='top', fontsize=6, bbox=bbox)
                 mklbl(lbl)
                 plt.setp(ax.get_xticklabels(), visible=False)
@@ -8148,6 +8156,7 @@ def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
                 yl = []
                 for k in keys:
                     opt = {'label': '${0:}_{1:}$'.format(*k)}
+                    opt.update(_popt)
                     if k == 'CS':
                         opt['c'] = 'k'
                     plt.plot(sim.rc, msqr * data[k], **opt)
@@ -8163,7 +8172,8 @@ def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
                 plt.ylim(yl - dy, yu + dy)
                 # plt.xlabel('R')
                 plt.setp(ax.get_xticklabels(), visible=False)
-                plt.ylabel(pre + 'C_i' + suf)
+                if ns ==0:
+                    plt.ylabel(pre + 'C_i' + suf)
                 ax.yaxis.set_ticks_position('both')
                 ax.xaxis.set_ticks_position('both')
                 ax.tick_params(axis='both', which='both', direction='in')
@@ -8173,39 +8183,40 @@ def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
                 # M-dot panel
                 # see AR18 Eqn. 4, BRS13a Eqn. 64
                 ax = plt.subplot(gs[row, ns], sharex=ax)
-                lines = [msqr * -data['Mdot']]
-                plt.plot(sim.rc, lines[-1], label=r'$\dot{M}$', c='k')
                 r1 = sim.rloc(1.2)
                 ri2 = sim.rloc(2)
                 norm = 1 / grad(sim.rc, data['vphi'] * sim.rc)
                 ycs = norm * grad(sim.rc, data['CS'])
+                lines = []
                 lines.append(msqr * ycs)
-                plt.plot(sim.rc, lines[-1], label=r'$C_S$')
+                plt.plot(sim.rc, lines[-1], label=r'$C_S$', **_popt)
                 ydw = norm * sim.rc ** 3 * data['dens'] * data['dwdt'] * tau
                 lines.append(msqr * ydw)
-                plt.plot(sim.rc, lines[-1], label=r'$\partial_t \Omega$')
-                lines.append(msqr * (ycs + ydw))
-                plt.plot(sim.rc, lines[-1], label=r'$C_S\! +\! \partial_t \Omega$',
-                         c='.5',
-                         ls=':')
-                ydp = np.pi * sim.rc ** 3.5 * grad(sim.rc,
-                                                    data['drhodt']) * sim.mach ** -2
+                plt.plot(sim.rc, lines[-1], label=r'$\partial_t \Omega$', **_popt)
+                ydp = np.pi * sim.rc ** 3.5 * data['dtdr_rho'] * sim.mach ** -2
                 ydp /= grad(sim.rc, data['vphi'] * sim.rc)
                 lines.append(msqr * ydp)
-                plt.plot(sim.rc, lines[-1], label=r'$\partial_t\partial_rP$')
+                plt.plot(sim.rc, lines[-1], label=r'$\partial_t\partial_rP$', ls='--',
+                         **_popt)
+                lines.append(msqr * -data['Mdot'])
+                plt.plot(sim.rc, lines[-1], label=r'$\dot{M}$', c='k', **_popt)
+                lines.append(msqr * (ycs + ydw))
+                plt.plot(sim.rc, lines[-1], label=r'$C_S\! +\! \partial_t \Omega$',
+                         c='.5', ls='-', **_popt)
                 plt.axhline(0, c='.5', ls=':', lw=1)
                 plt.axvline(1, c='.5', ls=':', lw=1)
                 plt.legend(loc='upper center', ncol=5, **lopt)
                 lines = np.array(lines)
                 yu = lines[:, rin:rout+1].max()
                 yl = lines[:, rin:rout+1].min()
-                d = (yu - yl) * .01
+                d = (yu - yl) * .03
                 yu += d
                 yl -= d
                 ylim = plt.ylim()
                 ylim = plt.ylim(max(ylim[0], yl), min(ylim[1], yu))
                 plt.xlim(rmin, rmax)
-                plt.ylabel(pre + '\dot{M}' + suf)
+                if ns ==0:
+                    plt.ylabel(pre + '\dot{M}' + suf)
                 ax.yaxis.set_ticks_position('both')
                 ax.xaxis.set_ticks_position('both')
                 ax.tick_params(axis='both', which='both', direction='in')
@@ -8214,6 +8225,8 @@ def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
                 else:
                     plt.xlabel('$R$')
                 mklbl(lbl)
+                plt.xlim(*rlim)
+                ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
                 row += 1
                 if spacer:
                     row += 1
