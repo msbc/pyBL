@@ -676,7 +676,7 @@ class BLfile(BLfileBase):
         if data is None:
             data = self._defvar
         if hasattr(data, 'lower'):
-            if data in ['pseudo', 'Rpseudo'] and r_cut is None:
+            if data in ['pseudo', 'Rpseudo', 'mom1'] and r_cut is None:
                 r_cut = 1.03
                 if vmax is None and vmin is None:
                     vmin = '99.5%'
@@ -5754,6 +5754,8 @@ class BLsim(object):
         fopt = {'dpi': 300, 'figsize': (6, 6)}
         # path = self.name + '_maps'
         path = 'stripes'
+        if base_dir is True:
+            base_dir = self.default_sdir()
         if base_dir is not None:
             path = os.path.join(base_dir, path)
         i = 0
@@ -6542,6 +6544,9 @@ class BLsim(object):
                 tmp = lines.pop(0).split(', ')
                 out[key].append([int(tmp[0])] + [float(i) for i in tmp[1:]])
         return out
+
+    def default_sdir(self):
+        return os.path.join(os.path.split(self.path)[0], 'figs', self.name + '_plots')
 
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
                    sub_dir=False, overwrite=True, stripes=True, vort_prof=True,
