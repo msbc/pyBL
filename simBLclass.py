@@ -282,7 +282,6 @@ def lintrend(x, y, axis=0):
     return m[loc], b[loc]
 
 
-
 class BLfileBase(dict):
     def __init__(self, fn, sim_path=None, t=None, trim=True, data=None, num_ghost=0,
                  defvar=None, ai_data=None, sim=None, file_handle=None, x2_face=None):
@@ -1569,15 +1568,20 @@ class BLFT(BLfile):
         return out
 
     def flux_data(self):
+        def _get(var):
+            try:
+                return np.real(self['FT-' + var + '-Re'][0])
+            except KeyError:
+                return None
         r2 = (tau * self.rc ** 2).astype(np.float32)
-        cl = r2 * np.real(self['FT-CL-Re'][0])
-        u = np.real(self['FT-vel2-Re'])[0]
-        md = np.real(self['FT-Mdot-Re'][0])
-        v = np.real(self['FT-vel1'][0])
+        cl = r2 * _get('CL')
+        u = _get('vel2')
+        md = _get('Mdot')
+        v = _get('vel1')
         ca = r2 * u * md
         cs = cl - ca
-        d = np.real(self['FT-dens-Re'][0])
-        d2 = np.real(self['FT-dens**2-Re'][0])
+        d = _get('dens')
+        d2 = _get('dens**2')
         dd = d2 / d ** 2 - 1.0
         i1 = self.rloc(1)
         i3 = self.rloc(3)
@@ -1588,7 +1592,8 @@ class BLFT(BLfile):
         tmp[:i1] = 0
         tmp[-5:] = 0
         ip = tmp.argmax()
-        return np.array([cs, ca, cl, md, dd, d, v, u])
+        rest = [_get(i) for i in ['pseudo', 'v1v2', 'vortensity', 'rhov2'] if i]
+        return np.array([cs, ca, cl, md, dd, d, v, u] + rest)
 
     def wave_power(self):
         data = np.real(self['FT-vel1'][0])
@@ -2433,6 +2438,8 @@ class npz_wrapper(object):
         self.rc = rc[None, :]
 
     def __getitem__(self, item):
+        if item == 'mom1':
+            return self.npz['Mdot']
         out = self.npz[item]
         if item == 'Mdot':
             out *= tau * self.rc
@@ -2841,13 +2848,14 @@ class BLsim(object):
         if self._flux_data is not None:
             return self._flux_data
         else:
-            fn = os.path.join(self.path, 'flux_data_v1.0.0.npz')
+            fn = os.path.join(self.path, 'flux_data_v1.1.0.npz')
             try:
                 if overwrite:
                     raise IOError
                 out = npz_wrapper(np.load(fn), self.rc)
             except IOError:
-                tmp = ['CS', 'CA', 'CL', 'Mdot', 'dd', 'dens', 'vr', 'vphi']
+                tmp = ['CS', 'CA', 'CL', 'Mdot', 'dd', 'dens', 'vr', 'vphi', 'pseudo',
+                       'v1v2', 'vortensity', 'mom2']
                 if data is None:
                     data = self._mk_flux_data(ll=ll)
                 out = dict(zip(tmp, np.swapaxes(data, 0, 1)))
@@ -3543,13 +3551,24 @@ class BLsim(object):
             out[k] /= n
         return out
 
-    def new_fluxes(self, t0, tf, tnorm=tau, nsmooth=True, csm=False):
+    def new_fluxes(self, t0, tf, tnorm=tau, nsmooth=True, csm=False, plt_data=False,
+                   options=None):
+        fdata = self.load_flux_data()
+        isnew = 'mom2' in fdata.npz.keys()
+        if options is None:
+            options = [2] if isnew else [3]
+        if options is True:
+            options = [1, 2, 3]
+            plt_data = True
+        options = np.atleast_1d(options)
+        if plt_data:
+            csm = True
         if not tnorm or tnorm is True:
             tnorm = 1
         t0 *= tnorm
         tf *= tnorm
         n = 0
-        fdata = self.load_flux_data()
+        rc = self.rc.astype(np.float32)
         times = fdata['t']
         i0, il = np.searchsorted(times, [t0, tf])
         if il < times.size - 1:
@@ -3559,27 +3578,175 @@ class BLsim(object):
         if not nsmooth:
             nsmooth = 1
         # print("ns:", nsmooth, times[i0:i0 + nsmooth].size, times[il - nsmooth:il].size)
-        out = {j: fdata[j][i0:il].mean(axis=0)
-               for j in ['CS', 'CA', 'CL', 'Mdot', 'dd', 'dens', 'vr', 'vphi']}
+        names = ['CS', 'CA', 'CL', 'Mdot', 'dd', 'dens', 'vr', 'vphi', 'mom1', 'mom2']
+        names = [i for i in names if i in fdata.npz.keys()] + ['mom1']
+        out = {j: fdata[j][i0:il].mean(axis=0) for j in names}
 
         out['t0'] = times[i0] / tnorm
         out['drho'] = out['dens'] - self.rho_ref
-        tmp = grad(self.rc, fdata['dens'], -1) / fdata['dens']
-        tmp = tmp[il - nsmooth:il].mean(axis=0) - tmp[i0:i0 + nsmooth].mean(axis=0)
-        out['dwdt'] = - fdata['vphi'][i0:i0 + nsmooth].mean(axis=0)
-        out['dwdt'] += fdata['vphi'][il - nsmooth:il].mean(axis=0)
         out['tf'] = times[il]
         tsa = times[i0]
         tsb = times[il]
-
-        out['dwdt'] /= (tsb - tsa) * self.rc
-        out['dtdr_rho'] = out['dens'] * tmp / (tsb - tsa)
+        invdt = 1.0 / (tsb - tsa)
 
         if csm:
             out['CSm'] = np.array(self.CS_RRR_data())[i0:il].mean(axis=0)
         # print("t div", tnorm * (out['tf'] - out['t0']), tsb - tsa, tsa, tsb)
 
+        # new!
+        print("New:", isnew)
+        if plt_data:
+            r2 = (tau * rc ** 2).astype(np.float32)
+            for o in options:
+                odata = dict()
+                if o == 1:
+                    vphi = self.rc ** -.5
+                    cs = out['CL'] - r2 * out['mom1'] * vphi
+                    dtdr_rho = grad(rc, fdata['dens'], -1)
+                    if isnew:
+                        dm2 = fdata['mom2'] - vphi[None, :] * fdata['dens']
+                elif o == 2:
+                    vphi = fdata['mom2'] / fdata['dens']
+                    cs = out['CL'] - r2 * out['mom1'] * vphi[i0:il].mean(axis=0)
+                    dtdr_rho = grad(rc, fdata['dens'], -1) / fdata['dens']
+                    dm2 = 0
+                elif o == 3:
+                    vphi = fdata['vphi']
+                    cs = out['CS']
+                    dtdr_rho = grad(rc, np.log(fdata['dens']), -1)
+                    if isnew:
+                        dm2 = fdata['mom2'] - vphi[i0:il].mean(axis=0) * fdata['dens']
+                else:
+                    msg = "Option value {:} is not valid. Must be in [1, 2, 3]."
+                    raise ValueError(msg.format(o))
+                dv2dt = 0
+                if vphi.ndim == 2:
+                    dv2dt = - vphi[i0:i0 + nsmooth].mean(axis=0)
+                    dv2dt += vphi[il - nsmooth:il].mean(axis=0)
+                    dv2dt *= invdt
+                    vphi = vphi[i0:il].mean(axis=0)
+                if np.asarray(dm2).ndim == 2:
+                    dm2 = dm2[il - nsmooth:il].mean(axis=0) \
+                          - dm2[i0:i0 + nsmooth].mean(axis=0)
+                    dm2 *= invdt
+                odata['T12'] = cs
+                odata['<vphi>'] = vphi
+                odata['dl'] = grad(rc, vphi * rc)
+                odata['yMdot'] = -out['Mdot'] * odata['dl']
+                odata['norm'] = 1 / odata['dl']
+                # dtdr_rho
+                dtdr_rho = dtdr_rho[il - nsmooth:il].mean(axis=0) \
+                           - dtdr_rho[i0:i0 + nsmooth].mean(axis=0)
+                dtdr_rho *= invdt
+                if o != 1:
+                    dtdr_rho *= out['dens']
+                odata['ydp'] = np.pi * rc ** 3.5 * dtdr_rho * self.mach ** -2
+                odata['ycs'] = grad(rc, cs)
+                #odata['ydw'] = rc ** 3 * out['dens'] * out['dwdt'] * tau
+                if isnew:
+                    assert(np.asarray(dv2dt * dm2).ndim < 2)
+                    odata['ydv2'] = rc ** 2 * tau * (out['dens'] * dv2dt + dm2)
+                odata['ydd'] = fdata['dens'][il - nsmooth:il].mean(axis=0)
+                odata['ydd'] -= fdata['dens'][i0:i0 + nsmooth].mean(axis=0)
+                odata['ydd'] *= rc ** 2 * vphi * invdt * tau
+
+                if len(options) == 1:
+                    out.update(odata)
+                else:
+                    out['opt{:d}'.format(o)] = odata
+
         return out
+
+    def flux_compare(self, t0, tf, nm=5, figsize=None, save=False, fn=None, ext='pdf',
+                     lopt=None, ff=1, sdir='', progress=True, overwrite=True, dpi=300):
+        if save or fn:
+            save = True
+            if fn is None:
+                fn = '_flux_compare_{:04d}_{:04d}.'.format(t0, tf)
+                fn = os.path.join(sdir, self.name + fn + ext)
+                if sdir:
+                    if not os.path.isdir(sdir):
+                        os.mkdir(sdir)
+        if parse_not_overwrite(overwrite, fn):
+            return
+        flux_data = self.new_fluxes(t0, tf, plt_data=True, options=True)
+
+        if lopt is None:
+            lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
+
+        if figsize is None:
+            figsize = np.array((11*.5, 8.5)) * .8
+        fig = plt.figure(figsize=figsize, dpi=dpi)
+        gs = mpl.gridspec.GridSpec(3, 1, top=.93, left=.08, right=.98, bottom=.08,
+                                   hspace=0)
+
+        ax = None
+        _yl = 0
+        _yu = -np.inf
+        for i in range(3):
+            data = flux_data['opt' + str(i + 1)]
+            ax = plt.subplot(gs[i], sharex=ax, sharey=ax)
+            ri = self.rloc(1.2)
+            ri2 = self.rloc(2)
+            plt.plot(self.rc, data['ycs'], label=r'$T_{r\phi}$')
+            plt.plot(self.rc, data['ydv2'], label=r'$\partial_t v_\phi$')
+            plt.plot(self.rc, data['yMdot'], label=r'$\dot{M}\partial_r\ell$', c='k')
+            if i != 2:
+                plt.plot(self.rc, data['ydp'], label=r'$\partial_t\partial_rP$', ls=':')
+                plt.setp(ax.get_xticklabels(), visible=False)
+            plt.plot(self.rc, data['ycs'] + data['ydv2'],
+                     label=r'$T_{r\phi}\! +\! \partial_t v_\phi$', c='.5', lw=1)
+            plt.axhline(0, c='.5', ls=':', lw=1)
+            plt.axvline(1, c='.5', ls=':', lw=1)
+
+            # ylim
+            yu = np.maximum(data['ycs'], data['yMdot'])
+            # yu = -data['Mdot']
+            yu = max(yu[ri:ri2].max() * 1.05, _yu)
+            yl = np.minimum(data['ydv2'], data['yMdot'])
+            # yl = -data['Mdot']
+            yl = min(yl[ri:ri2].min() - .1 * yu, _yl)
+            if i ==0:
+                ylim = plt.ylim()
+            _yl, _yu = plt.ylim(yl, yu)
+
+            # labels
+            plt.legend(ncol=5, **lopt)
+            plt.xlim(self.r[0], self.r[-1])
+            if i == 2:
+                plt.xlabel('$R$')
+            lbl = chr(ord('a') + i) + ') Option ' + str(i + 1)
+            ax.text(.96, .8, lbl, c='k', transform=ax.transAxes, ha='right', fontsize=8)
+            ax.xaxis.set_ticks_position('both')
+            ax.yaxis.set_ticks_position('both')
+            ax.tick_params(axis='both', which='both', direction='in', zorder=10)
+            ax.set_axisbelow(False)
+            # ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
+            # ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(100))
+
+        title = ''
+        try:
+            title = self.name + ' '
+        except AttributeError:
+            pass
+        title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
+        fig.suptitle(title)
+
+        if save or fn:
+            plt.savefig(fn)
+            plt.close()
+
+        return
+
+    def compare_series(self, t0=None, delta_t=100, dt0=50, save=True, sdir=None, **kwargs):
+        if sdir is True:
+            # sdir = self.name + '_fluxes'
+            sdir = 'compare_fluxes'
+        if t0 is None:
+            t0 = np.round(np.arange(0, self.fft_time[-1] / tau, dt0)).astype(int)
+        for t in t0:
+            tf = min(t + delta_t, self.fft_time.size)
+            self.flux_compare(t, tf, save=save, sdir=sdir, **kwargs)
 
     def __old_plot_fluxes(self, t0=None, tf=None, nm=5, data=None, figsize=None, save=False,
                     fn=None, ext='pdf', lopt=None, ff=1, sdir='', progress=True,
@@ -3842,21 +4009,11 @@ class BLsim(object):
         if parse_not_overwrite(overwrite, fn):
             return
         fdata = self.load_flux_data()
-        data = self.new_fluxes(t0, tf)
+        data = self.new_fluxes(t0, tf, plt_data=True)
         times = fdata['t'] / tau
-        # compute time indices
-        fine_slice = slice(np.searchsorted(times, t0), np.searchsorted(times, tf))
-        tmp = np.arange(int(np.round(times[-1])) + 1)
-        course_slice = slice(np.searchsorted(tmp, t0), np.searchsorted(tmp, tf))
-        csm = np.array(self.CS_RRR_data())
-        if csm.shape[0] - tmp.size > - 10:
-            print(fine_slice)
-            csm = np.real(csm[fine_slice].mean(axis=0))
-        else:
-            print(course_slice)
-            csm = np.real(csm[course_slice].mean(axis=0))
-        csm[0] = 0
-        cs = data['CS']
+
+        csm = data['CSm']
+        csm[0, :] = 0
         window = np.ones_like(self.rc)
         window[:2] = 0
         window[-2:] = 0
@@ -3878,7 +4035,7 @@ class BLsim(object):
 
         # C_S, C_S,m
         ax0 = plt.subplot(gs[0, 0])
-        plt.plot(self.rc, cs, 'k-', label='$C_S$')
+        plt.plot(self.rc, data['CS'], 'k-', label='$C_S$')
         for m in modes[:nm]:
             plt.plot(self.rc, csm[m], label=str(m))
         plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls=':', label='sum')
@@ -3897,6 +4054,7 @@ class BLsim(object):
         for i, m in enumerate(modes[:nm]):
             plt.plot(self.rc, csm[m], label=str(m), zorder=i + 1)
         ylim = plt.ylim()
+        cs = data['CS']
         plt.plot(self.rc, cs, 'k-', label='$C_S$', zorder=0)
         plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls=':', label='sum', zorder=nm + 2)
         cs_rmax = max(min(self.rc[cs.argmax()] * 1.01, 2), 1.2)
@@ -4001,27 +4159,25 @@ class BLsim(object):
         plt.text(xlim[1], yl, r'$\Omega_{\rm max}=$' + '{0:.3g}  '.format(omega.max()),
                  ha='right', va='bottom')
 
-        # Mdot
+        # Mdot, new!
         ax = plt.subplot(gs[2, 0], sharex=ax0)
-        plt.plot(self.rc, - data['Mdot'], label=r'$\dot{M}$', c='k')
         ri = self.rloc(1.2)
         ri2 = self.rloc(2)
-        norm = 1 / grad(self.rc, data['vphi'] * self.rc)
-        ycs = norm * grad(self.rc, data['CS'])
-        plt.plot(self.rc, ycs, label=r'$C_S$')
-        ydw = norm * self.rc ** 3 * data['dens'] * data['dwdt'] * tau
-        plt.plot(self.rc, ydw, label=r'$\partial_t \Omega$')
-        plt.plot(self.rc, ycs + ydw, label=r'$C_S\! +\! \partial_t \Omega$', c='.5',
-                 ls=':')
-        ydp = np.pi * self.rc ** 3.5 * data['drdt_rho'] * self.mach ** -2
-        ydp /= grad(self.rc, data['vphi'] * self.rc)
-        plt.plot(self.rc, ydp, label=r'$\partial_t\partial_rP$')
+        n = data['norm']
+        plt.plot(self.rc, data['ycs'] * n, label=r'$T_{r\phi}$')
+        plt.plot(self.rc, data['ydv2'] * n, label=r'$\partial_t v_\phi$')
+        plt.plot(self.rc, -data['Mdot'], label=r'$\dot{M}$', c='k')
+        plt.plot(self.rc, data['ydp'] * n, label=r'$\partial_t\partial_rP$', ls=':')
+        plt.plot(self.rc, data['ycs'] * n + data['ydv2'],
+                 label=r'$T_{r\phi}\! +\! \partial_t v_\phi$', c='.5', lw=1)
         plt.axhline(0, c='.5', ls=':', lw=1)
         plt.axvline(1, c='.5', ls=':', lw=1)
         plt.legend(ncol=5, **lopt)
-        yu = np.maximum(ycs, data['Mdot'])
+        yu = np.maximum(data['ycs'] * n, -data['Mdot'])
+        #yu = -data['Mdot']
         yu = yu[ri:ri2].max() * 1.05
-        yl = np.minimum(ydw, data['Mdot'])
+        yl = np.minimum(data['ydv2'] * n, -data['Mdot'])
+        #yl = -data['Mdot']
         yl = min(yl[ri:ri2].min() - .1 * yu, 0)
         ylim = plt.ylim()
         ylim = plt.ylim(max(ylim[0], yl), min(ylim[1], yu))
@@ -4095,7 +4251,7 @@ class BLsim(object):
             t0 = np.round(np.arange(0, self.fft_time[-1] / tau, dt0)).astype(int)
         for t in t0:
             tf = min(t + delta_t, self.fft_time.size)
-            self.new_plot_fluxes(t, tf, save=save, sdir=sdir, **kwargs)
+            self.plot_fluxes(t, tf, save=save, sdir=sdir, **kwargs)
 
     def sortedFFT(self):
         ffts = [out for out in self.fileDict.keys()
@@ -6641,6 +6797,9 @@ class BLsim(object):
             if fluxes:
                 if not quiet: print('    Flux Series')
                 self.flux_series(sdir=True, progress=(not quiet), overwrite=overwrite)
+                if '.lc.' in self.name or self.name[-2:] == 'lc':
+                    self.compare_series(sdir=True, progress=(not quiet),
+                                        overwrite=overwrite)
                 gc.collect()
         finally:
             os.chdir(pwd)
@@ -8030,7 +8189,7 @@ def multi_omega(sims=None, var=None, save=False, figsize=None, dpi=300, fopt=Non
 
 def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
                sdir=None, txt=True, lbl=True, spacer=True, rmin=None, rmax=None, nm=5,
-               lopt=None, lnorm=-3, popt=None):
+               lopt=None, lnorm=-3, popt=None, new=True):
     if sims is None:
         sims = [dict(name='M06.HR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
                 dict(name='M09.FR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
@@ -8190,24 +8349,30 @@ def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
                 ax = plt.subplot(gs[row, ns], sharex=ax)
                 r1 = sim.rloc(1.2)
                 ri2 = sim.rloc(2)
+                lines = []
+                # C_S, blue curve
                 norm = 1 / grad(sim.rc, data['vphi'] * sim.rc)
                 ycs = norm * grad(sim.rc, data['CS'])
-                lines = []
                 lines.append(msqr * ycs)
                 plt.plot(sim.rc, lines[-1], label=r'$C_S$', **_popt)
+                # d_t Omega, orange curve
                 ydw = norm * sim.rc ** 3 * data['dens'] * data['dwdt'] * tau
                 lines.append(msqr * ydw)
                 plt.plot(sim.rc, lines[-1], label=r'$\partial_t \Omega$', **_popt)
+                # d_t d_r P, green curve
                 ydp = np.pi * sim.rc ** 3.5 * data['dtdr_rho'] * sim.mach ** -2
                 ydp /= grad(sim.rc, data['vphi'] * sim.rc)
                 lines.append(msqr * ydp)
                 plt.plot(sim.rc, lines[-1], label=r'$\partial_t\partial_rP$', ls='--',
                          **_popt)
+                # Mdot, black curve
                 lines.append(msqr * -data['Mdot'])
                 plt.plot(sim.rc, lines[-1], label=r'$\dot{M}$', c='k', **_popt)
+                # C_S + d_t Omega, gray curve
                 lines.append(msqr * (ycs + ydw))
                 plt.plot(sim.rc, lines[-1], label=r'$C_S\! +\! \partial_t \Omega$',
                          c='.5', ls='-', **_popt)
+                # axes settings
                 plt.axhline(0, c='.5', ls=':', lw=1)
                 plt.axvline(1, c='.5', ls=':', lw=1)
                 plt.legend(loc='upper center', ncol=5, **lopt)
