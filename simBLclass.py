@@ -56,9 +56,11 @@ _rl = {5: .83, 6: .84, 7: .86, 8: .88, 9: .90, 10: .92, 11: .92, 12: .92, 13: .9
        14: .93, 15: .84}
 _ru = {15: 1.04, 14: 1.08, 13: 1.13, 12: 1.14, 11: 1.07, 10: 1.16, 9: 1.2, 8: 1.3,
        7: 1.4, 6: 1.4, 5: 1.4}
-_dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/gpfs/sashaph/BLayer',
+_dirs = ['', '~/', '~/Dropbox/dev/pyBL',
+         '/scratch/gpfs/sashaph/BLayer',
          '/perseus/scratch/gpfs/sashaph/BLayer',
-         '~/BLayer', '~/BLayer/fft_tests', '~/archive', '~/data/bl',
+         '~/BLayer', '~/BLayer/fft_tests', '~/BLayer/2d_new/',
+         '/scratch/mcoleman/2d_bl_lc', '~/archive', '~/data/bl',
          '~/data/pleiades_data/bl']
 _dirs = list(map(os.path.expanduser, _dirs))
 _dirs += [os.path.join(d, 'Mach8stampede') for d in _dirs]
@@ -3594,25 +3596,21 @@ class BLsim(object):
         # print("t div", tnorm * (out['tf'] - out['t0']), tsb - tsa, tsa, tsb)
 
         # new!
-        print("New:", isnew)
         if plt_data:
             r2 = (tau * rc ** 2).astype(np.float32)
             for o in options:
                 odata = dict()
                 if o == 1:
                     vphi = self.rc ** -.5
-                    cs = out['CL'] - r2 * out['mom1'] * vphi
                     dtdr_rho = grad(rc, fdata['dens'], -1)
                     if isnew:
                         dm2 = fdata['mom2'] - vphi[None, :] * fdata['dens']
                 elif o == 2:
                     vphi = fdata['mom2'] / fdata['dens']
-                    cs = out['CL'] - r2 * out['mom1'] * vphi[i0:il].mean(axis=0)
                     dtdr_rho = grad(rc, fdata['dens'], -1) / fdata['dens']
                     dm2 = 0
                 elif o == 3:
                     vphi = fdata['vphi']
-                    cs = out['CS']
                     dtdr_rho = grad(rc, np.log(fdata['dens']), -1)
                     if isnew:
                         dm2 = fdata['mom2'] - vphi[i0:il].mean(axis=0) * fdata['dens']
@@ -3620,11 +3618,13 @@ class BLsim(object):
                     msg = "Option value {:} is not valid. Must be in [1, 2, 3]."
                     raise ValueError(msg.format(o))
                 dv2dt = 0
+                dl = grad(rc, vphi * rc, axis=-1)
                 if vphi.ndim == 2:
                     dv2dt = - vphi[i0:i0 + nsmooth].mean(axis=0)
                     dv2dt += vphi[il - nsmooth:il].mean(axis=0)
                     dv2dt *= invdt
                     vphi = vphi[i0:il].mean(axis=0)
+                cs = out['CL'] - r2 * out['mom1'] * vphi
                 if np.asarray(dm2).ndim == 2:
                     dm2 = dm2[il - nsmooth:il].mean(axis=0) \
                           - dm2[i0:i0 + nsmooth].mean(axis=0)
@@ -3632,7 +3632,7 @@ class BLsim(object):
                 odata['T12'] = cs
                 odata['<vphi>'] = vphi
                 odata['dl'] = grad(rc, vphi * rc)
-                odata['yMdot'] = -out['Mdot'] * odata['dl']
+                odata['yMdot'] = (-fdata['Mdot'] * dl)[i0:il].mean(axis=0)
                 odata['norm'] = 1 / odata['dl']
                 # dtdr_rho
                 dtdr_rho = dtdr_rho[il - nsmooth:il].mean(axis=0) \
@@ -3657,8 +3657,86 @@ class BLsim(object):
 
         return out
 
-    def flux_compare(self, t0, tf, nm=5, figsize=None, save=False, fn=None, ext='pdf',
-                     lopt=None, ff=1, sdir='', progress=True, overwrite=True, dpi=300):
+    def time_fluxes(self, csm=False, options=True):
+        rc = self.rc.astype(np.float32)
+        fdata = self.load_flux_data()
+        t = fdata['t']
+        t0 = 0
+        tf = t.size - 1
+        while t[t0] == t[t0 + 1]:
+            t0 += 1
+        while t[tf] == t[tf - 1]:
+            tf -= 1
+        isnew = 'mom2' in fdata.npz.keys()
+        if options is None:
+            options = [2] if isnew else [3]
+        if options is True:
+            options = [1, 2, 3]
+        options = np.atleast_1d(options)
+
+        names = ['t', 'CS', 'CA', 'CL', 'Mdot', 'dd', 'dens', 'vr', 'vphi', 'mom1',
+                 'mom2']
+        names = [i for i in names if i in fdata.npz.keys()] + ['mom1']
+        out = {j: fdata[j][t0:tf+1] for j in names}
+        t = out['t']
+        if csm:
+            out['CSm'] = np.array(self.CS_RRR_data())
+
+        # new!
+        r2 = (tau * rc ** 2).astype(np.float32)
+        for o in options:
+            odata = dict()
+            if o == 1:
+                vphi = self.rc ** -.5
+                dr_rho = grad(rc, out['dens'], -1)
+                if isnew:
+                    dm2 = out['mom2'] - vphi[None, :] * out['dens']
+            elif o == 2:
+                vphi = out['mom2'] / out['dens']
+                dr_rho = grad(rc, out['dens'], -1) / out['dens']
+                dm2 = 0
+            elif o == 3:
+                vphi = out['vphi']
+                dr_rho = grad(rc, np.log(out['dens']), -1)
+                if isnew:
+                    dm2 = out['mom2'] - vphi * out['dens']
+            else:
+                msg = "Option value {:} is not valid. Must be in [1, 2, 3]."
+                raise ValueError(msg.format(o))
+            dv2dt = 0
+            dl = grad(rc, vphi * rc, axis=-1)
+            if vphi.ndim == 2:
+                dv2dt = grad(t, vphi, axis=0)
+            cs = out['CL'] - r2 * out['mom1'] * vphi
+            if np.asarray(dm2).ndim == 2:
+                dm2 = grad(t, dm2, axis=0)
+            odata['T12'] = cs
+            odata['<vphi>'] = vphi
+            odata['dl'] = grad(rc, vphi * rc, axis=-1)
+            odata['yMdot'] = -out['Mdot'] * dl
+            # dr_rho
+            odata['dr_rho'] = dr_rho
+            coef = 1
+            if o != 1:
+                coef = out['dens']
+            odata['coef_dp'] = coef * np.pi * rc ** 3.5 * self.mach ** -2
+            odata['ycs'] = grad(rc, cs, axis=1)
+            #odata['ydw'] = rc ** 3 * out['dens'] * out['dwdt'] * tau
+            if isnew:
+                #assert(np.asarray(dv2dt * dm2).ndim == 2)
+                odata['ydv2'] = rc ** 2 * tau * (out['dens'] * dv2dt + dm2)
+            odata['ydd'] = rc ** 2 * vphi * tau * grad(t, out['dens'], axis=0)
+
+            if len(options) == 1:
+                out.update(odata)
+            else:
+                out['opt{:d}'.format(o)] = odata
+
+        return out
+
+    def flux_compare(self, t0, tf, tnorm=tau, figsize=None, save=False, fn=None,
+                     ext='pdf', lopt=None, sdir='', overwrite=True, dpi=300,
+                     flux_data=None, ts=1, dtf=None):
         if save or fn:
             save = True
             if fn is None:
@@ -3668,8 +3746,34 @@ class BLsim(object):
                     if not os.path.isdir(sdir):
                         os.mkdir(sdir)
         if parse_not_overwrite(overwrite, fn):
-            return
-        flux_data = self.new_fluxes(t0, tf, plt_data=True, options=True)
+            return None
+        if flux_data is None:
+            flux_data = self.time_fluxes(options=True)
+        if dtf is None:
+            if tf >= 600:
+                if self.name == 'M12.FR.mix.lc.a':
+                    dtf = 2
+                    dft = None
+        if not tnorm or tnorm is True:
+            tnorm = 1
+        title = ''
+        try:
+            title = self.name + ' '
+        except AttributeError:
+            pass
+        if tnorm == tau:
+            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
+        t0 *= tnorm
+        tf *= tnorm
+        if tnorm != tau:
+            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0 / tau, tf / tau)
+        times = flux_data['t']
+        i0, il = np.searchsorted(times, [t0, tf])
+        if il < times.size - 1:
+            il += 1
+        ts *= tnorm
+        ts = int(np.round(np.searchsorted(times, ts))) + 1
+        loc = (slice(i0, il), slice(None))
 
         if lopt is None:
             lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
@@ -3685,26 +3789,43 @@ class BLsim(object):
         _yu = -np.inf
         for i in range(3):
             data = flux_data['opt' + str(i + 1)]
+            def v(name):
+                return data[name][loc].mean(axis=0)
             ax = plt.subplot(gs[i], sharex=ax, sharey=ax)
-            ri = self.rloc(1.2)
+            if self.mach < 8:
+                ri = self.rloc(.95 if i else 1.01)
+            else:
+                ri = self.rloc(1.05 if i else 1.2)
             ri2 = self.rloc(2)
-            plt.plot(self.rc, data['ycs'], label=r'$T_{r\phi}$')
-            plt.plot(self.rc, data['ydv2'], label=r'$\partial_t v_\phi$')
-            plt.plot(self.rc, data['yMdot'], label=r'$\dot{M}\partial_r\ell$', c='k')
+            plt.plot(self.rc, v('ycs'), label=r'$T_{r\phi}$', lw=1)
+            plt.plot(self.rc, v('ydv2'), label=r'$\partial_t v_\phi$', lw=1)
+            plt.plot(self.rc, v('yMdot'), label=r'$\dot{M}\partial_r\ell$', c='k')
             if i != 2:
-                plt.plot(self.rc, data['ydp'], label=r'$\partial_t\partial_rP$', ls=':')
+                ydp = data['dr_rho'].copy()
+                if i == 0:
+                    ydp = ydp[il-ts:il+1].mean(axis=0) - ydp[i0:i0+ts+1].mean(axis=0)
+                    ydp *= data['coef_dp'] / (tf - t0)
+                else:
+                    kern = scipy.signal.hanning(ts)[:, None]
+                    kern /= kern.sum()
+                    if dtf:
+                        ydp[:-dtf] = ydp[-dtf-1]
+                    ydp = scipy.signal.convolve(ydp, kern, mode='same') / tau
+                    ydp = grad(times, ydp, axis=0) * data['coef_dp']
+                    ydp = ydp[loc].mean(axis=0)
+                plt.plot(self.rc, ydp, label=r'$\partial_t\partial_rP$', ls=':', lw=1)
                 plt.setp(ax.get_xticklabels(), visible=False)
-            plt.plot(self.rc, data['ycs'] + data['ydv2'],
+            plt.plot(self.rc, v('ycs') + v('ydv2'),
                      label=r'$T_{r\phi}\! +\! \partial_t v_\phi$', c='.5', lw=1)
             plt.axhline(0, c='.5', ls=':', lw=1)
             plt.axvline(1, c='.5', ls=':', lw=1)
 
             # ylim
-            yu = np.maximum(data['ycs'], data['yMdot'])
-            # yu = -data['Mdot']
+            yu = np.maximum(v('ycs'), v('yMdot'))
+            # yu = -v('Mdot')
             yu = max(yu[ri:ri2].max() * 1.05, _yu)
-            yl = np.minimum(data['ydv2'], data['yMdot'])
-            # yl = -data['Mdot']
+            yl = np.minimum(v('ydv2'), v('yMdot'))
+            # yl = -v('Mdot')
             yl = min(yl[ri:ri2].min() - .1 * yu, _yl)
             if i ==0:
                 ylim = plt.ylim()
@@ -3724,19 +3845,13 @@ class BLsim(object):
             # ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
             # ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(100))
 
-        title = ''
-        try:
-            title = self.name + ' '
-        except AttributeError:
-            pass
-        title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
         fig.suptitle(title)
 
         if save or fn:
             plt.savefig(fn)
             plt.close()
 
-        return
+        return flux_data
 
     def compare_series(self, t0=None, delta_t=100, dt0=50, save=True, sdir=None, **kwargs):
         if sdir is True:
@@ -3744,9 +3859,12 @@ class BLsim(object):
             sdir = 'compare_fluxes'
         if t0 is None:
             t0 = np.round(np.arange(0, self.fft_time[-1] / tau, dt0)).astype(int)
+        flux_data = None
         for t in t0:
             tf = min(t + delta_t, self.fft_time.size)
-            self.flux_compare(t, tf, save=save, sdir=sdir, **kwargs)
+            if self.name == "M12.FR.mix.lc.a":
+                tf = min(tf, 599)
+            flux_data = self.flux_compare(t, tf, save=save, sdir=sdir, flux_data=flux_data, **kwargs)
 
     def __old_plot_fluxes(self, t0=None, tf=None, nm=5, data=None, figsize=None, save=False,
                     fn=None, ext='pdf', lopt=None, ff=1, sdir='', progress=True,
@@ -6705,7 +6823,7 @@ class BLsim(object):
         return os.path.join(os.path.split(self.path)[0], 'figs', self.name + '_plots')
 
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
-                   sub_dir=False, overwrite=True, stripes=True, vort_prof=True,
+                   sub_dir=False, overwrite=True, stripes=False, vort_prof=True,
                    prof=True):
         if working_dir is True:
             working_dir = self.name + '_plots'
@@ -6798,8 +6916,7 @@ class BLsim(object):
                 if not quiet: print('    Flux Series')
                 self.flux_series(sdir=True, progress=(not quiet), overwrite=overwrite)
                 if '.lc.' in self.name or self.name[-2:] == 'lc':
-                    self.compare_series(sdir=True, progress=(not quiet),
-                                        overwrite=overwrite)
+                    self.compare_series(sdir=True, overwrite=overwrite)
                 gc.collect()
         finally:
             os.chdir(pwd)
