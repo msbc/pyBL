@@ -3657,7 +3657,7 @@ class BLsim(object):
 
         return out
 
-    def time_fluxes(self, csm=False, options=True):
+    def time_fluxes(self, csm=False, options=True, cumsum=True, ts=False):
         rc = self.rc.astype(np.float32)
         fdata = self.load_flux_data()
         t = fdata['t']
@@ -3721,11 +3721,23 @@ class BLsim(object):
                 coef = out['dens']
             odata['coef_dp'] = coef * np.pi * rc ** 3.5 * self.mach ** -2
             odata['ycs'] = grad(rc, cs, axis=1)
+            odata['ydp'] = odata['coef_dp'] * grad(t, dr_rho, axis=0)
             #odata['ydw'] = rc ** 3 * out['dens'] * out['dwdt'] * tau
             if isnew:
                 #assert(np.asarray(dv2dt * dm2).ndim == 2)
                 odata['ydv2'] = rc ** 2 * tau * (out['dens'] * dv2dt + dm2)
             odata['ydd'] = rc ** 2 * vphi * tau * grad(t, out['dens'], axis=0)
+            if cumsum:
+                for i in odata:
+                    if i[0] == 'y':
+                        #print('Sum:', i)
+                        if ts:
+                            kern = scipy.signal.windows.hann(ts)[:, None]
+                            kern /= kern.sum()
+                            tmp = scipy.signal.convolve(odata[i], kern, mode='same')
+                            odata[i] = tmp.cumsum(axis=0)
+                        else:
+                            odata[i] = odata[i].cumsum(axis=0)
 
             if len(options) == 1:
                 out.update(odata)
@@ -3736,7 +3748,7 @@ class BLsim(object):
 
     def flux_compare(self, t0, tf, tnorm=tau, figsize=None, save=False, fn=None,
                      ext='pdf', lopt=None, sdir='', overwrite=True, dpi=300,
-                     flux_data=None, ts=1, dtf=None):
+                     flux_data=None, ts=1, dtf=None, ydp=1):
         if save or fn:
             save = True
             if fn is None:
@@ -3765,15 +3777,19 @@ class BLsim(object):
             title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
         t0 *= tnorm
         tf *= tnorm
+        ts *= tnorm
+        invdt = 1 / (tf - t0 - ts)
         if tnorm != tau:
             title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0 / tau, tf / tau)
         times = flux_data['t']
         i0, il = np.searchsorted(times, [t0, tf])
         if il < times.size - 1:
             il += 1
-        ts *= tnorm
         ts = int(np.round(np.searchsorted(times, ts))) + 1
+        print(ts)
         loc = (slice(i0, il), slice(None))
+        loc1 = (slice(i0, i0 + ts + 1), slice(None))
+        loc2 = (slice(il - ts - 1, il), slice(None))
 
         if lopt is None:
             lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
@@ -3789,8 +3805,14 @@ class BLsim(object):
         _yu = -np.inf
         for i in range(3):
             data = flux_data['opt' + str(i + 1)]
-            def v(name):
-                return data[name][loc].mean(axis=0)
+            def v(name, ds=0):
+                d = data[name].copy()
+                d = (d[loc2] - d[loc1]).mean(axis=0) * invdt
+                if ds:
+                    kern = scipy.signal.windows.hann(ds)
+                    kern /= kern.sum()
+                    d = scipy.signal.convolve(d, kern, mode='same')
+                return d # (d[loc2] - d[loc1]).mean(axis=0) * invdt
             ax = plt.subplot(gs[i], sharex=ax, sharey=ax)
             if self.mach < 8:
                 ri = self.rloc(.95 if i else 1.01)
@@ -3800,21 +3822,8 @@ class BLsim(object):
             plt.plot(self.rc, v('ycs'), label=r'$T_{r\phi}$', lw=1)
             plt.plot(self.rc, v('ydv2'), label=r'$\partial_t v_\phi$', lw=1)
             plt.plot(self.rc, v('yMdot'), label=r'$\dot{M}\partial_r\ell$', c='k')
-            if i != 2:
-                ydp = data['dr_rho'].copy()
-                if i == 0:
-                    ydp = ydp[il-ts:il+1].mean(axis=0) - ydp[i0:i0+ts+1].mean(axis=0)
-                    ydp *= data['coef_dp'] / (tf - t0)
-                else:
-                    kern = scipy.signal.hanning(ts)[:, None]
-                    kern /= kern.sum()
-                    if dtf:
-                        ydp[:-dtf] = ydp[-dtf-1]
-                    ydp = scipy.signal.convolve(ydp, kern, mode='same') / tau
-                    ydp = grad(times, ydp, axis=0) * data['coef_dp']
-                    ydp = ydp[loc].mean(axis=0)
-                plt.plot(self.rc, ydp, label=r'$\partial_t\partial_rP$', ls=':', lw=1)
-                plt.setp(ax.get_xticklabels(), visible=False)
+            if i != 2 and ydp:
+                plt.plot(self.rc, ydp * v('ydp'), label=r'$\partial_t\partial_rP$', ls=':', lw=1)
             plt.plot(self.rc, v('ycs') + v('ydv2'),
                      label=r'$T_{r\phi}\! +\! \partial_t v_\phi$', c='.5', lw=1)
             plt.axhline(0, c='.5', ls=':', lw=1)
@@ -3836,6 +3845,8 @@ class BLsim(object):
             plt.xlim(self.r[0], self.r[-1])
             if i == 2:
                 plt.xlabel('$R$')
+            else:
+                plt.setp(ax.get_xticklabels(), visible=False)
             lbl = chr(ord('a') + i) + ') Option ' + str(i + 1)
             ax.text(.96, .8, lbl, c='k', transform=ax.transAxes, ha='right', fontsize=8)
             ax.xaxis.set_ticks_position('both')
