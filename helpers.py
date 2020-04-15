@@ -82,7 +82,7 @@ def grad(t, data, axis=0):
     out[c] = (dl**-1 - dr**-1) * data[c] + Dinv / rat * data[r] - rat * Dinv * data[l]
     #data[c] *= norm
     out[loc + (0,)] = (data[loc + (1,)] - data[loc + (0,)]) / dl[loc + (0,)]
-    out[loc + (-1,)] = (data[loc + (-2,)] - data[loc + (-1,)]) / dr[loc + (-1,)]
+    out[loc + (-1,)] = -(data[loc + (-2,)] - data[loc + (-1,)]) / dr[loc + (-1,)]
     return out
 
 def sanitize_lbl(name):
