@@ -2522,8 +2522,6 @@ class FluxData(object):
             vphi = self.dopt
         try:
             if vphi == int(vphi):
-                if vphi == 2:
-                    return 0
                 vphi = getattr(self, 'vphi' + str(vphi))()
         except TypeError:
             pass
