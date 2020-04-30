@@ -7289,7 +7289,7 @@ class BLsim(object):
                 if not quiet: print('    Flux Series')
                 self.flux_series(sdir=True, progress=(not quiet), overwrite=overwrite)
                 if '.lc.' in self.name or self.name[-2:] == 'lc':
-                    self.compare_series(sdir=True, overwrite=overwrite)
+                    self.compare_series(sdir=True, overwrite=True)
                     self.paper_flux_series(sdir=True, overwrite=True)
                 gc.collect()
         finally:
@@ -8987,4 +8987,3 @@ if __name__ == '__main__':
                        overwrite=args.overwrite, fluxes=args.flux,
                        vort_prof=args.vort_prof, prof=args.prof, stripes=args.stripes)
             BLsim(sims[0], skip_data_gen=args.skip).main_plots(**opt)
-
