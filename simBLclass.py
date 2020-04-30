@@ -3657,8 +3657,9 @@ class BLsim(object):
 
         return out
 
-    def time_fluxes(self, csm=False, options=True, cumsum=False, ts=False, ns=False):
-        rc = self.rc.astype(np.float32)
+    def time_fluxes(self, csm=False, options=True, cumsum=False, ts=False, ns=False,
+                    sopt=1):
+        rc = self.rc
         fdata = self.load_flux_data()
         t = fdata['t']
         t0 = 0
@@ -3684,15 +3685,19 @@ class BLsim(object):
 
         # new!
         r2 = (tau * rc ** 2).astype(np.float32)
-        def hann(f):
-            if not ns:
-                return f
-            kern = scipy.signal.windows.hann(ns)
-            if f.ndim == 2:
-                kern = kern[:, np.newaxis]
-            kern /= kern.sum()
-            return scipy.signal.convolve(f, kern, mode='same')
         for o in options:
+            def hann(f):
+                if not ns:
+                    return f
+                if o == 1 and sopt == 1:
+                    return f
+                #print("ns:", ns, 'o:', o, 's:', sopt)
+                kern = scipy.signal.windows.hann(ns)
+                if f.ndim == 2:
+                    kern = kern[:, np.newaxis]
+                kern /= kern.sum()
+                return scipy.signal.fftconvolve(np.real(f), kern, mode='same', axes=0)
+
             odata = dict()
             if o == 1:
                 vphi = self.rc ** -.5
@@ -3701,7 +3706,11 @@ class BLsim(object):
                     dm2 = out['mom2'] - vphi[None, :] * out['dens']
             elif o == 2:
                 vphi = out['mom2'] / out['dens']
-                dr_rho = grad(rc, out['dens'], -1) / out['dens']
+                if sopt == 1:
+                    dr_rho = grad(rc, out['dens'], -1) / out['dens']
+                else:
+                    hd = hann(out['dens'])
+                    dr_rho = grad(rc, hd, -1) / hd
                 dm2 = 0
             elif o == 3:
                 vphi = out['vphi']
@@ -3719,6 +3728,7 @@ class BLsim(object):
             if np.asarray(dm2).ndim == 2:
                 dm2 = grad(t, hann(dm2), axis=0)
             odata['T12'] = cs
+            odata['drdtsd'] = grad(rc, grad(t, hann(out['dens']), axis=0), axis=1)
             odata['<vphi>'] = vphi
             odata['dl'] = grad(rc, vphi * rc, axis=-1)
             odata['yMdot'] = -out['Mdot'] * dl
@@ -3727,16 +3737,18 @@ class BLsim(object):
             coef = 1
             if o != 1:
                 coef = out['dens']
+                if sopt == 2:
+                    coef = hann(coef)
             odata['coef_dp'] = coef * np.pi * rc ** 3.5 * self.mach ** -2
             odata['ycs'] = grad(rc, cs, axis=1)
-            if o == 1:
-                odata['ydp'] = odata['coef_dp'] * grad(t, dr_rho, axis=0) / tau
-            else:
-                odata['ydp'] = odata['coef_dp'] * grad(t, hann(dr_rho), axis=0) / tau
+            odata['ydp'] = odata['coef_dp'] * grad(t, hann(dr_rho), axis=0) / tau
             #odata['ydw'] = rc ** 3 * out['dens'] * out['dwdt'] * tau
             if isnew:
-                #assert(np.asarray(dv2dt * dm2).ndim == 2)
-                odata['ydv2'] = tau * rc ** 2 * (out['dens'] * dv2dt + dm2)
+                #assert(np.asarray(dv2dt * _dm2).ndim == 2)
+                if sopt == 1:
+                    odata['ydv2'] = tau * rc ** 2 * (out['dens'] * dv2dt + dm2)
+                else:
+                    odata['ydv2'] = tau * rc ** 2 * (hann(out['dens']) * dv2dt + dm2)
             odata['ydd'] = rc ** 2 * vphi * tau * grad(t, hann(out['dens']), axis=0)
             if cumsum:
                 for i in odata:
@@ -3756,6 +3768,153 @@ class BLsim(object):
                 out['opt{:d}'.format(o)] = odata
 
         return out
+
+    def smooth_flux_comp(self, t0, tf, tnorm=tau, figsize=None, save=False, fn=None,
+                         ext='pdf', lopt=None, sdir='', overwrite=True, dpi=300,
+                         s1data=None, s2data=None, ts=False, dtf=None, ydp=1, ns=100):
+        if save or fn:
+            save = True
+            if fn is None:
+                fn = '_smooth_flux_comp_{:04d}_{:04d}.'.format(t0, tf)
+                fn = os.path.join(sdir, self.name + fn + ext)
+                if sdir:
+                    if not os.path.isdir(sdir):
+                        os.mkdir(sdir)
+        if parse_not_overwrite(overwrite, fn):
+            return None
+        if s1data is None:
+            s1data = self.time_fluxes(options=True, ns=ns, sopt=1)
+        if s2data is None:
+            s2data = self.time_fluxes(options=True, ns=ns, sopt=1)
+        if not tnorm or tnorm is True:
+            tnorm = 1
+        title = ''
+        try:
+            title = self.name + ' '
+        except AttributeError:
+            pass
+        if tnorm == tau:
+            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
+        t0 *= tnorm
+        tf *= tnorm
+        ts *= tnorm
+        invdt = 1 / (tf - t0 - ts)
+        if tnorm != tau:
+            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0 / tau, tf / tau)
+        t = s1data['t']
+        i0, il = np.searchsorted(t, [t0, tf])
+        if il < t.size - 1:
+            il += 1
+        ts = int(np.round(np.searchsorted(t, ts))) + 1
+        #print(ts)
+        loc = (slice(i0, il), slice(None))
+        loc1 = (slice(i0, i0 + ts + 1), slice(None))
+        loc2 = (slice(il - ts - 1, il), slice(None))
+
+        if lopt is None:
+            lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
+
+        if figsize is None:
+            figsize = np.array((11*.5, 8.5)) * .8
+        fig = plt.figure(figsize=figsize, dpi=dpi)
+        gs = mpl.gridspec.GridSpec(2, 2, top=.93, left=.08, right=.98, bottom=.08,
+                                   hspace=0, wspace=0)
+
+        ax = None
+        _yl = 0
+        _yu = 0
+        ri = self.rloc(1.01)
+        ro = -5
+
+        i = 0
+        for s in range(1, 3):
+            for o in range(1, 3):
+                ax = plt.subplot(gs[s-1, o-1], sharex=ax, sharey=ax)
+                data = s1data if s == 1 else s2data
+                data = data['opt' + str(o)]
+
+                def v(name, ds=0):
+                    return data[name][loc].mean(axis=0)
+
+                y = [v('ycs'), None, v('yMdot'), None]
+                if o == 1:
+                    r2 = (tau * self.rc ** 2).astype(np.float32)
+                    if s == 1:
+                        def hann(f, d):
+                            return f
+                    else:
+                        def hann(f, d):
+                            if not d:
+                                return f
+                            #print('ns:', ns)
+                            kern = scipy.signal.windows.hann(d)
+                            if f.ndim == 2:
+                                kern = kern[:, np.newaxis]
+                            kern /= kern.sum()
+                            return scipy.signal.fftconvolve(np.real(f), kern, mode='same',
+                                                            axes=0)
+                    def _dt(f):
+                        out = hann(s1data[f] if f in s1data else data[f], ns)
+                        return (out[loc2] - out[loc1]).mean(axis=0) * invdt
+
+                    y[1] = r2 * (_dt('mom2') - self.rc**-.5 * _dt('dens'))
+                    if s == 1:
+                        y[3] = data['coef_dp'] * grad(self.rc, _dt('dens'), axis=-1)
+                    else:
+                        #print('os', o, s)
+                        y[3] = data['coef_dp'] * s2data['opt2']['drdtsd'][loc].mean(axis=0) / tau
+
+                else:
+                    y[1] = v('ydv2') / (1 if o == 1 else tau)
+                    y[3] = v('ydp')
+                y.append(y[0] + y[1])
+                plt.plot(self.rc, y[0], label=r'$T_{r\phi}$', lw=1)
+                plt.plot(self.rc, y[1], label=r'$\partial_t v_\phi$', lw=1)
+                plt.plot(self.rc, y[2], label=r'$\dot{M}\partial_r\ell$', c='k')
+                plt.plot(self.rc, ydp * y[3], label=r'$\partial_t\partial_rP$', ls=':',
+                         lw=1)
+                plt.plot(self.rc, y[4], label=r'$T_{r\phi}\! +\! \partial_t v_\phi$',
+                         c='.5', lw=1)
+                plt.axhline(0, c='.5', ls=':', lw=1)
+                plt.axvline(1, c='.5', ls=':', lw=1)
+
+                # ylim
+                y.pop(3)
+                y = np.array(y)[:, ri:ro]
+                yu = max(y.max(), _yu)
+                yl = max(y.min(), _yl)
+                if s != 2 and o != 1:
+                    _yl, _yu = plt.ylim(yl, yu)
+                    dy = (yu - yl) * .05
+                    plt.ylim(min(yl - dy, -2.5 * dy), max(yu + dy, 2.5 * dy))
+
+                # labels
+                if i == 0:
+                    plt.legend(ncol=3, **lopt)
+                plt.xlim(self.r[0], self.r[-1])
+                if s == 2:
+                    plt.xlabel('$R$')
+                else:
+                    plt.setp(ax.get_xticklabels(), visible=False)
+                lbl = chr(ord('a') + i) + ') Option ' + str(o) + chr(ord('a') + s - 1)
+                ax.text(.96, .8, lbl, c='k', transform=ax.transAxes, ha='right',
+                        fontsize=8)
+                ax.xaxis.set_ticks_position('both')
+                ax.yaxis.set_ticks_position('both')
+                ax.tick_params(axis='both', which='both', direction='in', zorder=10)
+                ax.set_axisbelow(False)
+                plt.xlim(1, self.r[-1])
+                # ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
+                # ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(100))
+                i += 1
+
+        fig.suptitle(title)
+
+        if save or fn:
+            plt.savefig(fn)
+            plt.close()
+
+        return s1data, s2data
 
     def flux_compare(self, t0, tf, tnorm=tau, figsize=None, save=False, fn=None,
                      ext='pdf', lopt=None, sdir='', overwrite=True, dpi=300,
@@ -3797,7 +3956,7 @@ class BLsim(object):
         if il < times.size - 1:
             il += 1
         ts = int(np.round(np.searchsorted(times, ts))) + 1
-        print(ts)
+        #print(ts)
         loc = (slice(i0, il), slice(None))
         loc1 = (slice(i0, i0 + ts + 1), slice(None))
         loc2 = (slice(il - ts - 1, il), slice(None))
