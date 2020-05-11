@@ -58,11 +58,9 @@ _rl = {5: .83, 6: .84, 7: .86, 8: .88, 9: .90, 10: .92, 11: .92, 12: .92, 13: .9
        14: .93, 15: .84}
 _ru = {15: 1.04, 14: 1.08, 13: 1.13, 12: 1.14, 11: 1.07, 10: 1.16, 9: 1.2, 8: 1.3,
        7: 1.4, 6: 1.4, 5: 1.4}
-_dirs = ['', '~/', '~/Dropbox/dev/pyBL',
-         '/scratch/gpfs/sashaph/BLayer',
-         '/perseus/scratch/gpfs/sashaph/BLayer',
-         '~/BLayer', '~/BLayer/fft_tests', '~/BLayer/2d_new/',
-         '/scratch/mcoleman/2d_bl_lc', '~/archive', '~/data/bl',
+_dirs = ['', '~/', '~/Dropbox/dev/pyBL', '/scratch/mcoleman/2d_bl_lc',
+         '/scratch/gpfs/sashaph/BLayer', '/perseus/scratch/gpfs/sashaph/BLayer',
+         '~/BLayer', '~/BLayer/fft_tests', '~/BLayer/2d_new/', '~/archive', '~/data/bl',
          '~/data/pleiades_data/bl']
 _dirs = list(map(os.path.expanduser, _dirs))
 _dirs += [os.path.join(d, 'Mach8stampede') for d in _dirs]
@@ -2469,6 +2467,14 @@ class FluxData(object):
         self.dsmooth = smoothing
         self.r2 = tau * sim.rc ** 2
         self._load_or_make()
+        t = self.npz['t']
+        i0 = 0
+        while t[i0] == t[i0 + 1]:
+            i0 += 1
+        jf = t.size - 1
+        while t[jf] == t[jf - 1]:
+            jf -= 1
+        self._sl = slice(i0, jf + 1)
 
     def _load(self):
         if not hasattr(self.npz, 'lower'):
@@ -2498,32 +2504,37 @@ class FluxData(object):
 
     def __getitem__(self, item):
         if item == 'mom1':
-            return self.npz['Mdot']
+            return self.npz['Mdot'][self._sl]
         if item == 'Mdot':
             return self.Mdot()
         try:
-            return self.npz[item]
+            return self.npz[item][self._sl]
         except KeyError:
             pass
         tmp = {'vr': 'vel1', 'vphi': 'vel2', 'mom2': 'rhov2'}
         if item in tmp:
-            return self.npz[tmp[item]]
+            return self[tmp[item]]
         if item == 'CS':
             return self.T12(3)
         if item == 'CA':
             return self.CA(3)
         if item == 'dd':
-            return self.npz['dens**2'] / self.npz['dens'] - 1.0
+            return self['dens**2'] / self['dens'] - 1.0
         raise KeyError("FluxData does not contain {:}.".format(item))
 
     @property
     def csm(self):
-        return self.sim.CS_RRR_data()
+        return self.sim.CS_RRR_data()[self._sl]
 
     def Mdot(self):
-        return tau * self.rc * self.npz['Mdot']
+        return tau * self.rc * self['mom1']
 
     def hann(self, f, ns=None, dt=False):
+        try:
+            if ns < 0:
+                ns = 0
+        except TypeError:
+            pass
         if ns is None:
             ns = self.ns
         if not ns:
@@ -2534,8 +2545,9 @@ class FluxData(object):
         kern /= kern.sum()
         if dt:
             if ns > 2:
-                print(self['t'][ns] * _ff / tau)
+
                 kern /= self['t'][ns] * _ff
+                f = np.vstack((f, f[-1:-ns-2:-1, :]))
         #print(kern)
         return scipy.signal.fftconvolve(np.real(f), kern, mode='same', axes=0)
         #return scipy.signal.oaconvolve(np.real(f), kern, mode='same', axes=0)
@@ -2550,7 +2562,16 @@ class FluxData(object):
         return self['vphi']
 
     def dt(self, f, ns=None):
-        return grad(self['t'], self.hann(f, ns=ns, dt=True), axis=0)
+        if not ns:
+            return grad(self['t'], self.hann(f, ns=ns, dt=True), axis=0)
+        t = self['t']
+        loc = slice(0, t.size)
+        t = np.hstack([t, t[1:-ns+2] + t[-1]])
+        if ns < 0:
+            hf = f
+        else:
+            hf = self.hann(f, ns=ns, dt=True)
+        return grad(t, hf, axis=0)[loc]
 
 
     def dr(self, f):
@@ -2684,7 +2705,7 @@ class FluxData(object):
 
         if o == 1:
             return coef * self.smooth_dt(dr_rho, **sd)
-        return coef * self.dt(dr_rho, ns=0)
+        return coef * self.dt(dr_rho, ns=-ns)
 
     def ydv2(self, vphi=None, s=None, ns=None):
         vphi = self._vphi(vphi)
@@ -2747,10 +2768,10 @@ class FluxData(object):
             plt.legend(loc=9, ncol=5, **lopt)
             # set_ylim
             ri = self.sim.rloc(1.01)
-            ri2 = self.sim.rloc(2)
-            yu = np.maximum(lines[0], lines[2])
+            ri2 = self.sim.rloc(3)
+            yu = np.maximum(np.nan_to_num(lines[0]), np.nan_to_num(lines[2]))
             yu = yu[ri:ri2].max() * 1.05
-            yl = np.minimum(lines[1], lines[2])
+            yl = np.minimum(np.nan_to_num(lines[1]), np.nan_to_num(lines[2]))
             # yl = -v('Mdot')
             yl = yl[ri:ri2].min() - .1 * yu
             _yl, _yu = plt.ylim(yl, yu)
@@ -2818,24 +2839,24 @@ class FluxData(object):
         return
 
     def paper_flux_plot(self, o=None, s=None, ns=None, nm=5, figsize=None, dpi=300,
-                        fn=None, save=None, lnorm=True, lopt=None, **kwargs):
+                        fn=None, save=None, lnorm=True, norm=1, lopt=None, axs=None,
+                        use_txt=True, **kwargs):
         ts = self.time_slice(**kwargs)
         lntxt = '$'
         if lnorm:
             if lnorm is True:
                 lnorm = int(np.round(-2 * np.log10(self.sim.mach) - 3))
-                lntxt = '/10^{' + str(lnorm) + '}$'
-            else:
-                lnorm = 0
+            lntxt = '/10^{' + str(lnorm) + '}$'
+        else:
+            lnorm = 0
         # choose modes to plot
-        csm = self.csm[ts['loc']].mean(axis=0) * 10**(-lnorm)
+        csm = self.csm[ts['loc']].mean(axis=0) * 10**(-lnorm) * norm
         csm[0, :] = 0
         window = np.ones_like(self.rc)
         window[:self.sim.rloc(1.0)] = 0
         window[-5:] = 0
-        norm = self.sim.intr(np.abs(csm * window[None, :]))
-        modes = sorted(range(norm.shape[0]), key=lambda x: -norm[x])
-        print(modes)
+        _norm = self.sim.intr(np.abs(csm * window[None, :]))
+        modes = sorted(range(_norm.shape[0]), key=lambda x: -_norm[x])
 
         # setup plotting
         if lopt is None:
@@ -2843,16 +2864,22 @@ class FluxData(object):
         if figsize is None:
             figsize = np.array((11*.5, 8.5)) * .8
         ax = None
-        fig = plt.figure(figsize=figsize, dpi=dpi)
-        gs = mpl.gridspec.GridSpec(3, 1, top=.92, left=.15, right=.98, bottom=.05,
-                                   wspace=.15, hspace=0)
+        if axs is None:
+            fig = plt.figure(figsize=figsize, dpi=dpi)
+            gs = mpl.gridspec.GridSpec(3, 1, top=.92, left=.15, right=.98, bottom=.05,
+                                       wspace=.15, hspace=0)
+            axs = []
+            for i in range(3):
+                ax = plt.subplot(gs[i], sharex=ax)
+                axs.append(ax)
         tx, ty = .98, .94
         topt = dict(c='k', ha='right', fontsize=8)
-        ri = self.sim.rloc(1.01)
+        ri = self.sim.rloc(1.02)
 
         # C_S, C_S,m plot
-        ax = plt.subplot(gs[0])
-        cs = self.T12(o)[ts['loc']].mean(axis=0) * 10**(-lnorm)
+        ax = axs[0]
+        plt.sca(ax)
+        cs = self.T12(o)[ts['loc']].mean(axis=0) * 10**(-lnorm) * norm
         plt.plot(self.rc, cs, 'k-', label='$C_S$')
         ym = []
         for m in modes[:nm]:
@@ -2874,7 +2901,8 @@ class FluxData(object):
         plt.ylim(min(yl - dy, -2.5 * dy), max(yu + dy, 2.5 * dy))
         # labels
         plt.ylabel('$C_S' + lntxt)
-        ax.text(tx, ty, 'a)', transform=ax.transAxes, **topt)
+        if use_txt:
+            ax.text(tx, ty, 'a)', transform=ax.transAxes, **topt)
         plt.setp(ax.get_xticklabels(), visible=False)
         ax.xaxis.set_ticks_position('both')
         ax.yaxis.set_ticks_position('both')
@@ -2882,10 +2910,11 @@ class FluxData(object):
         ax.set_axisbelow(False)
 
         # C_L, C_A, C_S
-        ax = plt.subplot(gs[1], sharex=ax)
+        ax = axs[1]
+        plt.sca(ax)
         yu = []
         yl = []
-        cl = self['CL'][ts['loc']].mean(axis=0) * 10**(-lnorm)
+        cl = self['CL'][ts['loc']].mean(axis=0) * 10**(-lnorm) * norm
         ca = cl - cs
         plt.plot(self.rc, cs, label='$C_S$', c='k')
         plt.plot(self.rc, ca, label='$C_A$', lw=1)
@@ -2898,7 +2927,8 @@ class FluxData(object):
         dy = (yu - yl) * .05
         plt.ylim(yl - dy, max(yu + dy, 2.5 * dy))
         plt.ylabel('$C_i' + lntxt)
-        ax.text(tx, ty, 'b)', transform=ax.transAxes, **topt)
+        if use_txt:
+            ax.text(tx, ty, 'b)', transform=ax.transAxes, **topt)
         plt.setp(ax.get_xticklabels(), visible=False)
         ax.xaxis.set_ticks_position('both')
         ax.yaxis.set_ticks_position('both')
@@ -2906,10 +2936,12 @@ class FluxData(object):
         ax.set_axisbelow(False)
 
         # Mdot, new!
-        ax = plt.subplot(gs[2], sharex=ax)
-        self.plot_lines(o=o, s=s, ax=ax, norm=10**(-lnorm), **kwargs)
+        ax = axs[2]
+        plt.sca(ax)
+        self.plot_lines(o=o, s=s, ax=ax, norm=10**(-lnorm) * norm, **kwargs)
         plt.ylabel(r'$\left[\dot{M}\partial_r\ell\right]' + lntxt)
-        ax.text(tx, ty, 'c)', transform=ax.transAxes, **topt)
+        if use_txt:
+            ax.text(tx, ty, 'c)', transform=ax.transAxes, **topt)
 
         if save or fn:
             plt.savefig(fn)
@@ -3812,7 +3844,12 @@ class BLsim(object):
                                    left=.17, right=.99)
         ax = plt.subplot(gs[0])
         for j in js:
-            plt.plot(t, get('CS')[:, ilist[j]], zorder=-j)
+            y = get('CS')[:, ilist[j]]
+            try:
+                plt.plot(t, y, zorder=-j)
+            except ValueError:
+                t = t[:y.shape[0]]
+                plt.plot(t, y, zorder=-j)
         # plt.ylim(-.5e-4, 1e-5)
         plt.axhline(0, lw=1, c='k', ls=':')
         plt.ylabel(r'$C_S$')
@@ -4425,7 +4462,7 @@ class BLsim(object):
                        tnorm=tnorm, fn=fn)
             self.load_flux_data().flux_compare(**opt)
             return None
-        except AttrbuteError:
+        except AttributeError:
             pass
         if flux_data is None:
             flux_data = self.time_fluxes(options=True, ns=ns)
@@ -4550,7 +4587,8 @@ class BLsim(object):
 
     def paper_flux_plot(self, t0, tf, flux_data=None, figsize=None, save=False, fn=None,
                         ext='pdf', lopt=None, sdir='', overwrite=True, option=2,
-                        tnorm=tau, dpi=300, nm=5, ydp=False, lnorm=True):
+                        tnorm=tau, dpi=300, nm=5, ydp=False, axs=None, use_txt=True,
+                        lnorm=True, o=2, s=1, norm=1):
         if save or fn:
             save = True
             if fn is None:
@@ -4562,11 +4600,11 @@ class BLsim(object):
         if parse_not_overwrite(overwrite, fn):
             return
         try:
-            opt = dict(t0=t0, tf=tf, ts=1, s=1, o=2, pns=20, nm=nm, figsize=figsize, dpi=dpi,
-                       tnorm=tnorm, fn=fn, lopt=lopt)
+            opt = dict(t0=t0, tf=tf, ts=1, s=s, o=o, pns=20, nm=nm, figsize=figsize, dpi=dpi,
+                       tnorm=tnorm, fn=fn, lopt=lopt, axs=axs, use_txt=use_txt, norm=norm, lnorm=lnorm)
             self.load_flux_data().paper_flux_plot(**opt)
             return None
-        except AttrbuteError:
+        except AttributeError:
             pass
         if flux_data is None:
             flux_data = self.time_fluxes(options=option, csm=True)
@@ -4605,27 +4643,29 @@ class BLsim(object):
         if lopt is None:
             lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
 
-        if figsize is None:
-            figsize = np.array((11*.5, 8.5)) * .8
-        fig = plt.figure(figsize=figsize, dpi=dpi)
-
         def v(name):
-            return flux_data[name][loc].mean(axis=0) * 10**(-lnorm)
+            return flux_data[name][loc].mean(axis=0) * 10**(-lnorm) * norm
 
         csm = v('CSm')
         csm[0, :] = 0
         window = np.ones_like(self.rc)
         window[:self.rloc(1.0)] = 0
         window[-5:] = 0
-        norm = self.intr(np.abs(csm * window[None, :]))
-        modes = sorted(range(norm.shape[0]), key=lambda x: -norm[x])
+        _norm = self.intr(np.abs(csm * window[None, :]))
+        modes = sorted(range(_norm.shape[0]), key=lambda x: -_norm[x])
         ri = self.rloc(1.01)
 
         if figsize is None:
             figsize = np.array((11, 8.5)) * .8
-        fig = plt.figure(figsize=figsize, dpi=dpi)
-        gs = mpl.gridspec.GridSpec(3, 1, top=.92, left=.15, right=.98, bottom=.05,
-                                   wspace=.15, hspace=0)
+        ax = None
+        if axs is None:
+            fig = plt.figure(figsize=figsize, dpi=dpi)
+            gs = mpl.gridspec.GridSpec(3, 1, top=.92, left=.15, right=.98, bottom=.05,
+                                       wspace=.15, hspace=0)
+            axs = []
+            for i in range(3):
+                ax = plt.subplot(gs[i], sharex=ax)
+                axs.append(ax)
         tx, ty = .98, .94
         topt = dict(c='k', ha='right', fontsize=8)
 
@@ -4634,7 +4674,8 @@ class BLsim(object):
         #########
 
         # C_S, C_S,m
-        ax = plt.subplot(gs[0])
+        ax = axs[0]
+        plt.sca(ax)
         cs = v('T12')
         plt.plot(self.rc, cs, 'k-', label='$C_S$')
         ym = []
@@ -4656,11 +4697,13 @@ class BLsim(object):
         dy = (yu - yl) * .05
         plt.ylim(min(yl - dy, -2.5 * dy), max(yu + dy, 2.5 * dy))
         plt.ylabel('$C_S' + lntxt)
-        ax.text(tx, ty, 'a)', transform=ax.transAxes, **topt)
+        if use_txt:
+            ax.text(tx, ty, 'a)', transform=ax.transAxes, **topt)
         plt.setp(ax.get_xticklabels(), visible=False)
 
         # C_L, C_A, C_S
-        ax = plt.subplot(gs[1], sharex=ax)
+        ax = axs[1]
+        plt.sca(ax)
         keys = [i for i in flux_data.keys() if i[0] == 'C' and len(i) == 2]
         yu = []
         yl = []
@@ -4678,11 +4721,13 @@ class BLsim(object):
         plt.ylim(yl - dy, max(yu + dy, 2.5 * dy))
         plt.ylabel('$C_i' + lntxt)
         # plt.xlabel('R')
-        ax.text(tx, ty, 'b)', transform=ax.transAxes, **topt)
+        if use_txt:
+            ax.text(tx, ty, 'b)', transform=ax.transAxes, **topt)
         plt.setp(ax.get_xticklabels(), visible=False)
 
         # Mdot, new!
-        ax = plt.subplot(gs[2], sharex=ax)
+        ax = axs[2]
+        plt.sca(ax)
         #ri = self.rloc(1.0)
         ri2 = self.rloc(2)
         plt.plot(self.rc, v('ycs'), label=r'$T_{r\phi}$', lw=1)
@@ -4707,7 +4752,8 @@ class BLsim(object):
         plt.xlim(1, self.r[-1])
         plt.xlabel('$R$')
         plt.ylabel(r'$\left[\dot{M}\partial_r\ell\right]' + lntxt)
-        ax.text(tx, ty, 'c)', transform=ax.transAxes, **topt)
+        if use_txt:
+            ax.text(tx, ty, 'c)', transform=ax.transAxes, **topt)
         ax.xaxis.set_ticks_position('both')
         ax.yaxis.set_ticks_position('both')
         ax.tick_params(axis='both', which='both', direction='in', zorder=10)
@@ -7788,11 +7834,19 @@ class BLsim(object):
                 gc.collect()
             if vort_prof:
                 if not quiet: print('    Vortensity profiles')
-                self.vortensity_profiles(save=True, overwrite=overwrite)
+                try:
+                    self.vortensity_profiles(save=True, overwrite=overwrite)
+                except Exception as e:
+                    print('Vortensity profiles FAILED.')
+                    print(e)
                 gc.collect()
             if prof:
                 if not quiet: print('    Profiles')
-                self.evo_prof(save=True, overwrite=overwrite)
+                try:
+                    self.evo_prof(save=True, overwrite=overwrite)
+                except Exception as e:
+                    print('evo prof FAILED.')
+                    print(e)
                 gc.collect()
             if maps:
                 if not quiet: print('    Maps')
@@ -7804,7 +7858,10 @@ class BLsim(object):
                 gc.collect()
             if fluxes:
                 if not quiet: print('    Flux Series')
-                self.flux_series(sdir=True, progress=(not quiet), overwrite=overwrite)
+                try:
+                    self.flux_series(sdir=True, progress=(not quiet), overwrite=overwrite)
+                except:
+                    pass
                 if '.lc.' in self.name or self.name[-2:] == 'lc':
                     self.compare_series(sdir=True, overwrite=overwrite)
                     self.paper_flux_series(sdir=True, overwrite=True)
@@ -9414,6 +9471,109 @@ def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
 
     return sims
 
+
+def AM_plot(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sdir=None,
+            txt=True, lbl=True, spacer=True, rmin=None, rmax=None, nm=5, lopt=None,
+            lnorm=-3, popt=None, new=True, o=2, s=1):
+    if sims is None:
+        sims = [dict(name='M06.HR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
+                dict(name='M09.FR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
+                dict(name='M11.FR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
+                dict(name='M12.FR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
+                dict(name='M15.FR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
+                ]
+        sims = [dict(name='M06.HR.r.lc.a', ts=[[50, 150], [250, 350], [500, 600]]),
+                dict(name='M09.FR.r.lc.a', ts=[[50, 150], [250, 350], [400, 500]]),
+                dict(name='M12.FR.r.lc.a', ts=[[50, 150], [250, 350], [500, 600]]),
+                ]
+    nsim = len(sims)
+    if not lnorm:
+        lnorm = 0
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'AM_curves.pdf'
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    nc = nsim
+    nvar = 3
+    nr = max([len(i['ts']) for i in sims])
+    _popt = dict(lw=1)
+    if popt is not None:
+        _popt.update(popt)
+    if spacer:
+        nr = (nr + 1) * nvar - 1
+    else:
+        nr *= nvar
+    if lopt is None:
+        lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
+    if figsize is None:
+        figsize = np.array([8.5, 11]) * 2
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt is None:
+        fopt = {}
+    _fopt.update(fopt)
+    fig = plt.figure(**_fopt)
+
+    hr = [1, .6, 1]
+    if spacer:
+        hr.append(.17)
+    hr *= nvar
+    if spacer:
+        hr.pop(-1)
+    gs = mpl.gridspec.GridSpec(nr, nc, top=.98, bottom=.02, left=.05, right=.99, hspace=0,
+                               wspace=0.1, height_ratios=hr)
+    pre = r'$\mathcal{M}^2'
+    suf = '/10^{' + str(lnorm) + '}$' if lnorm else '$'
+    _s = s
+    for ns, s in enumerate(sims):
+        with BLsim(s['name']) as sim:
+            _nm = s.get('nm', nm)
+            rlim = np.empty(2)
+            rlim[0] = sim.r[0] if rmin is None else rmin
+            rlim[1] = sim.r[-1] if rmax is None else rmax
+            rin = sim.rloc(max(1, rlim[0]))
+            rout = sim.rloc(min(3.9, rlim[1]))
+            row = 0
+            ax = None
+            msqr = sim.mach**2
+            for nt, tlim in enumerate(s['ts']):
+                axs = []
+                for i in range(3):
+                    ax = plt.subplot(gs[row + i, ns], sharex=ax)
+                    axs.append(ax)
+                plt.sca(axs[0])
+                time = r"$t/2\pi={:d}-{:d}$".format(*tlim)
+                if row == 0:
+                    plt.title(sim.name + ' ' + time)
+                else:
+                    plt.title(time)
+                sim.paper_flux_plot(o=o, s=_s, t0=tlim[0], tf=tlim[1], axs=axs, norm=msqr,
+                                    lnorm=lnorm, use_txt=False)
+                if nt < 2:
+                    plt.xlabel('')
+                for i, ax in enumerate(axs):
+                    tmp = (row - nt if spacer else row) + i
+                    lbl = chr(ord('A') + ns) + chr(ord('a') + tmp) + ')'
+                    bbox = dict(facecolor='w', alpha=0.5, edgecolor='none')
+                    ax.text(.03, .95, lbl, c='k', transform=ax.transAxes, ha='left',
+                            va='top', fontsize=6, bbox=bbox)
+                    if ns == 0:
+                        axs[0].set_ylabel(pre +'C_S' + suf)
+                        axs[1].set_ylabel(pre +'C_i' + suf)
+                        axs[2].set_ylabel(pre + r'\left[\dot{M}\partial_r\ell\right]' + suf)
+                    else:
+                        [ax.set_ylabel('') for ax in axs]
+                row += 3
+                if spacer:
+                    row += 1
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
 
 
 if __name__ == '__main__':
