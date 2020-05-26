@@ -760,12 +760,6 @@ class BLfile(BLfileBase):
                     lnorm = -3 #int(np.round(-2 * np.log10(self.sim.mach) - 3))
                 else:
                     lnorm = 0
-            if lnorm:
-                lntxt = '/10^{' + str(lnorm) + '}'
-                if cbl:
-                    cbl = cbl.rstrip('$') + lntxt
-                    if '$' in cbl:
-                        cbl = cbl + '$'
         else:
             lnorm = 0
         if display:
@@ -896,6 +890,11 @@ class BLfile(BLfileBase):
                 cb.ax.xaxis.set_label_position('top')
                 cb.ax.xaxis.set_ticks_position('top')
             if cbl:
+                if lnorm:
+                    lntxt = '/10^{' + str(lnorm) + '}'
+                    cbl = cbl.rstrip('$') + lntxt
+                    if '$' in cbl:
+                        cbl = cbl + '$'
                 cb.set_label(cbl)
         if rm_last:
             xticks = ax.xaxis.get_major_ticks()
@@ -7252,11 +7251,13 @@ class BLsim(object):
     def thumbnails(self, dt=None, times=None, base_dir=None, file='cons', nr=2, nc=6,
                    popt=None, var=None, save=False, fn=None, dpi=300, figsize=None,
                    path='.', stripes=False, rmax=None, vmaxlist=None, printvmax=False,
-                   lnorm=True, minmax=False):
+                   lnorm=True, minmax=False, vmax=None):
         if popt is None:
             popt = {}
         if var is None:
             var = 'Rpseudo'
+            lnorm = -3 if lnorm is True else lnorm
+            vmax = 15 if vmax is None else vmax
         if base_dir is not None:
             path = os.path.join(base_dir, path)
         i = 0
@@ -7268,26 +7269,22 @@ class BLsim(object):
             dt = tf // (nr*nc)
         if times is None:
             times = list(range(0, tf + 1, dt))
-        if var is None and lnorm is True:
-            lnorm = -3
         # print(tf, dt, times)
         if save and fn is None:
             fn = '_stripes' if stripes else ''
             fn = os.path.join(path, self.name + fn + '_thumbnails.png')
         if figsize is None:
-            figsize = (8, 3.4 if stripes else 3.3) #2.86)
+            figsize = (8, 2.8 if stripes else 2.8) #2.86)
         fig = plt.figure(figsize=figsize, dpi=dpi)
+        wr = [1] * nc + [.1]
+        gsopt = dict(wspace=0, hspace=0, top=.94, bottom=.12, left=.05, right=.93,
+                     width_ratios=wr)
         if stripes:
-            hr = height_ratios=[.05, 1, 1, .2, .05]
-        else:
-            hr = [.05, 1, 1, .05]
-        gsopt = dict(wspace=0, hspace=0, top=.88, bottom=.08, left=.05, right=.99,
-                     height_ratios=hr)
-        if stripes:
-            gsopt['bottom'] = .07
-            gsopt['left'] = .05
+            pass
+            #gsopt['bottom'] = .07
+            #gsopt['left'] = .05
         nr = 2
-        gs = mpl.gridspec.GridSpec(nr * 2 + (1 if stripes else 0), nc , **gsopt)
+        gs = mpl.gridspec.GridSpec(nr, nc + 1, **gsopt)
         #axs = [plt.subplot(i) for i in gs]
         sample = len(times) // (nr*nc)
         inc = times[1::sample][:nr*nc]
@@ -7296,20 +7293,18 @@ class BLsim(object):
             row = j // nc
             col = j % nc
             with self.loadfile(file, i) as bf:
-                ax = gs[row * 2, col]
-                cax = gs[row * 2 + 1, col]
-                cbopt = dict(orientation='horizontal')
-                if row == 0 and nr == 2:
+                ax = gs[row, col]
+                cax = gs[:, -1]
+                cax = plt.subplot(cax) if j == 0 else None
+                cbopt = dict(orientation='vertical')
+                if 0 and row == 0 and nr == 2:
                     cax = gs[0, col]
                     ax = gs[1, col]
                     cbopt['pos'] = 'top'
-                if row == nr - 1 and stripes:
-                    cax = gs[-1, col]
                 ax = plt.subplot(ax)
-                cax = plt.subplot(cax)
-                opt = dict(ax=ax, cb=True, cax=cax, title=False, txt_opt={'fontsize': 8},
+                opt = dict(ax=ax, cb=cax, cax=cax, title=False, txt_opt={'fontsize': 8},
                            display=True, printvmax=printvmax, cbopt=cbopt, lnorm=lnorm,
-                           cbl=False, minmax=minmax)
+                           cbl=None, minmax=minmax, vmax=vmax)
                 if vmaxlist is not None:
                     opt['vmax'] = vmaxlist[j]
                 if stripes:
@@ -7328,18 +7323,27 @@ class BLsim(object):
                 if col == 0:
                     if not stripes:
                         ax.set_ylabel('$y$')
-                if not col:
-                    yticks = ax.yaxis.get_major_ticks()
-                    if stripes:
-                        yticks[-1].label1.set_visible(False)
-                        yticks[-2].label1.set_visible(False)
-                    else:
-                        yticks[0].label1.set_visible(False)
-                        yticks[-1].label1.set_visible(False)
-                if not stripes or row < nr - 1:
+                if row == nr - 1:
+                    if not stripes:
+                        ax.set_xlabel('$r$' if stripes else '$x$')
+                else:
+                    ax.set_xlabel('')
+                if not stripes:
+                    ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(2))
+                    ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+                    ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(2))
+                    ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+                xticks = ax.xaxis.get_major_ticks()
+                yticks = ax.yaxis.get_major_ticks()
+                if stripes and row:
+                    yticks[-1].label1.set_visible(False)
+                    yticks[-2].label1.set_visible(False)
+                else:
+                    for k in [0, 1, -1, -2]:
+                        xticks[k].label1.set_visible(False)
+                        yticks[k].label1.set_visible(False)
+                if row < nr - 1:
                     ax.set_xticklabels([])
-                if stripes and row == nr - 1:
-                    ax.set_xlim('$r', labelpad=0)
                 if j % nc:
                     ax.set_ylabel('')
                 ax.tick_params(axis='both', which='both', direction="in", zorder=10)
