@@ -548,7 +548,6 @@ class BLfile(BLfileBase):
                 return fn
             return None
         if lnorm:
-            print(name)
             if lnorm is True:
                 if name in ['Rpseudo', 'pseudo']:
                     lnorm = -3 #int(np.round(-2 * np.log10(self.sim.mach) - 3))
@@ -1200,7 +1199,7 @@ class BLConsPrim(BL3Dfile):
         return self.vorticity(dvphi=dvphi) / self['dens']
 
     def plt_vortensity(self, init=None, fopt=None, vmax=None, fig=None, sdir=None,
-                       fn=None, save=False, overwrite=False, ext='png'):
+                       fn=None, save=False, overwrite=True, ext='png'):
         if save or fn:
             save = True
             if fn is None:
@@ -2796,7 +2795,21 @@ class FluxData(object):
         return out
 
     def plot_lines(self, o=None, s=None, ns=None, extras=True, ax=None, lopt=None,
-                   plt_ydp=True, **kwargs):
+                   plt_ydp=True, save=False, fn=None, overwrite=True, **kwargs):
+        if save or fn:
+            save = True
+            if fn is None:
+                t0 = kwargs.get('t0', 0)
+                tf = kwargs.get('tf', 0)
+                fn = '_flux_{:04d}_{:04d}.'.format(t0, tf)
+                sdir = kwargs.get('sdir', '')
+                ext = kwargs.get('ext', 'pdf')
+                fn = os.path.join(sdir, self.sim.name + fn + '.' + ext.lstrip('.'))
+                if sdir:
+                    if not os.path.isdir(sdir):
+                        os.mkdir(sdir)
+        if parse_not_overwrite(overwrite, fn):
+            return
         if ax is None:
             ax = plt.gca()
         else:
@@ -3176,11 +3189,13 @@ class Lightcurves(object):
         return freq, fourier
 
     def plot_ft(self, pi=None, vi=None, data=None, tloc=True, xlim=True, ylim=True, dpi=300,
-                figsize=None, nufit=10, detrend=False, fig=None, ax=None):
+                figsize=None, nufit=10, detrend=False, fig=None, ax=None, tmin=None):
         if data is None:
             if vi is None or pi is None:
                 raise ValueError('If data not specified, then pi and vi must be.')
             if tloc is None:
+                if tmin:
+                    tloc = slice(self.tloc(tmin * tau), None)
                 tloc = slice(None)
             if tloc == True:
                 tloc = slice(self.tloc(self.skip), None)
@@ -3231,11 +3246,13 @@ class Lightcurves(object):
 
     def periodogram(self, pi=None, vi=None, data=None, tloc=True, xlim=True, ylim=True,
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
-                    nu0=None, fig=None, ax=None, ylog=True, rel=False):
+                    nu0=None, fig=None, ax=None, ylog=True, rel=False, tmin=None):
         if data is None:
             if vi is None or pi is None:
                 raise ValueError('If data not specified, then pi and vi must be.')
             if tloc is None:
+                if tmin:
+                    tloc = slice(self.tloc(tmin * tau), None)
                 tloc = slice(None)
             if tloc == True:
                 tloc = slice(self.tloc(self.skip), None)
@@ -7251,7 +7268,7 @@ class BLsim(object):
     def thumbnails(self, dt=None, times=None, base_dir=None, file='cons', nr=2, nc=6,
                    popt=None, var=None, save=False, fn=None, dpi=300, figsize=None,
                    path='.', stripes=False, rmax=None, vmaxlist=None, printvmax=False,
-                   lnorm=True, minmax=False, vmax=None):
+                   lnorm=True, minmax=False, vmax=None, overwrite=True):
         if popt is None:
             popt = {}
         if var is None:
@@ -7273,6 +7290,8 @@ class BLsim(object):
         if save and fn is None:
             fn = '_stripes' if stripes else ''
             fn = os.path.join(path, self.name + fn + '_thumbnails.png')
+        if parse_not_overwrite(overwrite, fn):
+            return None
         if figsize is None:
             figsize = (8, 2.8 if stripes else 2.8) #2.86)
         fig = plt.figure(figsize=figsize, dpi=dpi)
@@ -7602,7 +7621,8 @@ class BLsim(object):
     def vortex_evo(self, times, left='Rpseudo', mid='ve', right='Rpseudo', llim=None,
                    mlim=None, rlim=None, lopt=None, mopt=None, ropt=None, fig=None,
                    fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
-                   save=False, ext='png', sdir=False, overwrite=True, dropbox=False):
+                   save=False, ext='png', sdir=False, overwrite=True, dropbox=False,
+                   lnorm=None):
         if dropbox and not sdir:
             sdir = '~/Dropbox/Research/IAS/rrr/BL_shared/simulation_results/Production'
             mach = int(np.round(self.mach))
@@ -7624,11 +7644,14 @@ class BLsim(object):
         if parse_not_overwrite(overwrite, fn):
             return None
 
+        if lnorm is None:
+            if left == 'Rpseudo' and right == 'Rpseudo':
+                lnorm = -3
         times = np.atleast_1d(times)
         nt = times.size
 
         if figsize is True:
-            figsize = (6.25, 7)
+            figsize = (6.25, 9.5)
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
             fopt = {}
@@ -7636,13 +7659,13 @@ class BLsim(object):
         _fopt.update(fopt)
         _hr = [.1] + [1] * nt
         _gsopt = dict(height_ratios=_hr, width_ratios=[1, .3, .45], top=.90, bottom=.06,
-                      left=.07, right=.92, wspace=.03, hspace=.15)
+                      left=.07, right=.92, wspace=0, hspace=0)
         if gsopt is None:
             gsopt = dict()
         _gsopt.update(gsopt)
-        _lopt = dict(cb=False, title=False, lbls=False, rmax=4)
+        _lopt = dict(cb=False, title=False, lbls=False, rmax=4, lnorm=lnorm)
         _mopt = dict(cb=False, title=False, lbls=False, rmax=1.6)
-        _ropt = dict(cb=False, title=False, minmax=False)
+        _ropt = dict(cb=False, title=False, minmax=False, lnorm=lnorm)
         if llim is not None:
             _lopt['vmin'] = llim[0]
             _lopt['vmax'] = llim[1]
@@ -7687,6 +7710,9 @@ class BLsim(object):
             lax = plt.subplot(gs[i + 1, 0])
             df.stripe(left, ax=lax, **_lopt)
             lax.set_ylabel(r'$\phi/\pi$')
+            if i:
+                yticks = lax.yaxis.get_major_ticks()
+                yticks[-1].label1.set_visible(False)
             if llim is None:
                 llim = plt.gci().get_clim()
                 _lopt['vmin'] = llim[0]
@@ -7714,6 +7740,15 @@ class BLsim(object):
             rax.yaxis.set_label_position('right')
             rax.yaxis.tick_right()
             rax.set_ylabel(r'$y$')
+            rax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+            rax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(2))
+            rax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+            rax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(2))
+            xticks = rax.xaxis.get_major_ticks()
+            yticks = rax.yaxis.get_major_ticks()
+            for k in [0, 1, -1, -2]:
+                xticks[k].label1.set_visible(False)
+                yticks[k].label1.set_visible(False)
 
             if i < nt - 1:
                 lax.set_xticklabels([])
@@ -8284,7 +8319,7 @@ class BLsim(object):
 
     def vortensity_profiles(self, times=None, files=None, cmap=None, popt=None, fn=None,
                             init=None, data=None, t0=None, save=False, fig=None,
-                            sdir=None, overwrite=False, ext='pdf'):
+                            sdir=None, overwrite=True, ext='pdf'):
         if save or fn:
             save = True
             if sdir is None:
@@ -8341,7 +8376,7 @@ class BLsim(object):
 
     def evo_prof(self, times=None, files=None, cmap=None, popt=None, fn=None, cb=False,
                  init=None, data=None, t0=0, save=False, fig=None, var_list=None,
-                 sdir=None, overwrite=False, ext='pdf', rmax=None, dpi=300, figsize=None,
+                 sdir=None, overwrite=True, ext='pdf', rmax=None, dpi=300, figsize=None,
                  lopt=None):
         if save or fn:
             save = True
@@ -9187,7 +9222,21 @@ def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
         plt.close()
 
 def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300,
-                     fopt=None, lopt=None, fn=None, sdir=None):
+                     fopt=None, lopt=None, fn=None, sdir=None, overwrite=True):
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'multi_dispersion.pdf'
+        if sdir is True:
+            sdir = data_dir if data_dir else ''
+            sdir = os.path.join(os.path.split(sdir, 'figs'))
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if parse_not_overwrite(overwrite, fn):
+        return None
     if sims is None:
         if data_dir is None:
             data_dir = _dirs[-1]
@@ -9250,18 +9299,6 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
                 del(md, sim)
                 gc.collect()
         cap = .95
-    if save or fn:
-        save = True
-        if not fn:
-            fn = 'multi_dispersion.pdf'
-        if sdir is True:
-            sdir = data_dir if data_dir else ''
-            sdir = os.path.join(os.path.split(sdir, 'figs'))
-        if sdir:
-            sdir = os.path.expanduser(sdir)
-            if not os.path.isdir(sdir):
-                os.mkdir(sdir)
-            fn = os.path.join(sdir, fn)
     if save:
         plt.savefig(fn)
         plt.close()
@@ -9359,7 +9396,7 @@ def multi_map(map_dict=None, var=None, save=False, figsize=None, dpi=300, fopt=N
 
 def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=None,
               fn=None, sdir=None, nc=None, nr=None, file='cons', txt=True, lbl=True,
-              lnorm=-2):
+              lnorm=-2, overwrite=True):
     if plots is None:
         plots = [dict(sim='M07.FR.r.a', t=450),
                  dict(sim='M09.FR.r.lc.a', t=175, ps=.316, mode=19, rm_last=True),
@@ -9383,6 +9420,11 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
     if fopt is None:
         fopt = {}
     _fopt.update(fopt)
+
+    if save and not fn:
+        fn = 'multi_stripes.png'
+    if parse_not_overwrite(overwrite, fn):
+        return None
 
     def add_plbl(lbl, ax=None):
         if ax is None:
@@ -9453,8 +9495,6 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
     plt.draw()
     if save or fn:
         save = True
-        if not fn:
-            fn = 'multi_stripes.png'
         if sdir is True:
             sdir = os.path.split(sim.path)[0]
             sdir = os.path.join(os.path.split(sdir, 'figs'))
@@ -9469,7 +9509,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
     return
 
 def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
-             fn=None, sdir=None, rmin=1.0, rmax=2.0, vmax1=None, vmax2=None):
+             fn=None, sdir=None, rmin=1.0, rmax=2.0, vmax1=None, vmax2=None, overwrite=True):
     if sims is None:
         sims = ['M06.HR.r.lc.a', 'M09.FR.r.lc.a', 'M11.FR.r.a', 'M12.FR.r.lc.a',
                 'M15.FR.r.a']
@@ -9484,6 +9524,8 @@ def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
             if not os.path.isdir(sdir):
                 os.mkdir(sdir)
             fn = os.path.join(sdir, fn)
+    if parse_not_overwrite(overwrite, fn):
+        return None
     nvar = 3
     nsim = len(sims)
     if figsize is None:
@@ -9573,7 +9615,8 @@ def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
 
 def multi_omega(sims=None, var=None, save=False, figsize=None, dpi=300, fopt=None,
                 fn=None, sdir=None, nc=None, nr=None, file='cons', txt=True, lbl=True,
-                lnorm=-2, cmap=None, tmin=0, tmax=600, popt=None, rmin=.9, rmax=1.35):
+                lnorm=-2, cmap=None, tmin=0, tmax=600, popt=None, rmin=.9, rmax=1.35,
+                overwrite=True, use_maps=False):
     if sims is None:
         sims = ['M06.HR.r.lc.a', 'M07.FR.r.a', 'M08.FR.r.a', 'M09.FR.r.lc.a',
                 'M10.FR.r.a', 'M11.FR.r.a', 'M12.FR.r.lc.a', 'M13.FR.r.a', 'M14.FR.r.a',
@@ -9588,6 +9631,8 @@ def multi_omega(sims=None, var=None, save=False, figsize=None, dpi=300, fopt=Non
             if not os.path.isdir(sdir):
                 os.mkdir(sdir)
             fn = os.path.join(sdir, fn)
+    if parse_not_overwrite(overwrite, fn):
+        return None
     if nr is None:
         nr = 2
     if nc is None:
@@ -9629,14 +9674,25 @@ def multi_omega(sims=None, var=None, save=False, figsize=None, dpi=300, fopt=Non
             sharey = col1[r]
             if i < nsim:
                 sim = BLsim(sims[i])
-                fd = sim.load_flux_data()
-                omega = fd['vphi'] / sim.rc
+                omega = []
+                fd = None
+                if use_maps:
+                    print(sim)
+                    for t in times:
+                        print('t', t)
+                        with sim.loadfile('cons', int(t)) as df:
+                            omega.append(df['mom2'].mean(axis=0) /
+                                         (sim.rc * df['dens'].mean(axis=0)))
+                        gc.collect()
+                else:
+                    fd = sim.load_flux_data()
+                    omega = fd['vphi'] / (sim.rc)
                 ax = plt.subplot(gs[r, c], sharex=sharex, sharey=sharey)
                 sharex = ax
                 if c == 0:
                     col1[r] = ax
                 for t in range(len(times)):
-                    loc = np.abs(fd['t'] - times[t] * tau).argmin()
+                    loc = t if use_maps else np.abs(fd['t'] - times[t] * tau).argmin()
                     plt.plot(sim.rc, omega[loc], c=colors[t], **popt)
                 if r == nr - 1:
                     plt.xlabel(r'$r$')
@@ -9897,7 +9953,7 @@ def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
 
 def AM_plot(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sdir=None,
             txt=True, lbl=True, spacer=True, rmin=None, rmax=None, nm=5, lopt=None,
-            lnorm=-3, popt=None, new=True, o=2, s=1, plt_ydp=False):
+            lnorm=-3, popt=None, new=True, o=2, s=1, plt_ydp=False, overwrite=True):
     if sims is None:
         sims = [dict(name='M06.HR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
                 dict(name='M09.FR.r.a', ts=[[100, 200], [300, 400], [500, 600]]),
@@ -9921,6 +9977,8 @@ def AM_plot(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sd
             if not os.path.isdir(sdir):
                 os.mkdir(sdir)
             fn = os.path.join(sdir, fn)
+    if parse_not_overwrite(overwrite, fn):
+        return None
     nc = nsim
     nvar = 3
     nr = max([len(i['ts']) for i in sims])
@@ -10000,9 +10058,11 @@ def AM_plot(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sd
     return
 
 
-def mode_hist(sims=None, fn=None, save=None, data=None, ll=True):
+def mode_hist(sims=None, fn=None, save=None, data=None, ll=True, overwrite=True):
     if fn is None and save:
         fn = 'mode_hist.pdf'
+    if parse_not_overwrite(overwrite, fn):
+        return None
     if data is None:
         if hasattr(sims, 'lower'):
             if os.path.isfile(sims):

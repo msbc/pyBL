@@ -48,7 +48,7 @@ def labeler(name):
                'pres': 'P', 'Rpseudo': r'rv_r\sqrt{\rho}', 'pseudo': r'v_r\sqrt{\rho}',
                'vorticity': r'\omega_z', 'vortensity': r'\omega_z/\rho',
                'vi': r'$r^2\nabla\times\left(v_r,\delta v_\phi\right)$',
-               've': r'$r^2\nabla\times\left(v_r,\delta v_\phi\right)/\rho$',
+               've': r'$r^2\omega_{\rm eff}/\rho$',
                }[name]
         if sub:
             out += '_' + sub
