@@ -2563,6 +2563,8 @@ class FluxData(object):
             return self.npz['Mdot'][self._sl]
         if item == 'Mdot':
             return self.Mdot()
+        if item == 'mdot':
+            raise KeyError("Key 'mdot' does not exist, but 'Mdot' does.")
         try:
             return self.npz[item][self._sl]
         except KeyError:
@@ -2584,6 +2586,9 @@ class FluxData(object):
 
     def Mdot(self):
         return tau * self.rc * self['mom1']
+
+    def mdot(self):
+        raise AttributeError("Did you mean 'Mdot' instead of 'mdot'?")
 
     def hann(self, f, ns=None, dt=False):
         try:
@@ -2778,6 +2783,69 @@ class FluxData(object):
         return self['rhoDvrDt'] - self['rhov2v2'] + 2 * vphi * self['rhov2'] \
                - vphi**2 * self['dens']
 
+    def mdot_split(self, t0, tf, save=False, fn=False, sdir=None, overwrite=True,
+                   figsize=None, dpi=300, popt=None, fig=None, ax=None, title=True,
+                   lnorm=True, ext='pdf', lloc=None, legend=True):
+        if save or fn:
+            save = True
+            if fn is None:
+                fn = '_mdot_split_{:04d}_{:04d}.'.format(t0, tf)
+                fn = os.path.join(sdir, self.sim.name + fn + '.' + ext.lstrip('.'))
+                if sdir:
+                    if not os.path.isdir(sdir):
+                        os.mkdir(sdir)
+        if parse_not_overwrite(overwrite, fn):
+            return
+        ts = self.time_slice(t0=t0, tf=tf)
+        loc = ts['loc']
+        lntxt = '$'
+        if lnorm:
+            if lnorm is True:
+                lnorm = -3
+            lnorm = int(lnorm)
+            lntxt = '/10^{' + str(lnorm) + '}$'
+        if not lnorm:
+            lnorm = 0
+        if popt is None:
+            popt = dict()
+
+        ys = [tau * self.rc * (self['vr'] * self['dens'])[loc].mean(axis=0) * 10**-lnorm]
+        mdot = (self['Mdot'])[loc].mean(axis=0)
+        ys.extend([mdot * 10**-lnorm - ys[0], mdot * 10**-lnorm])
+
+        if fig is None and ax is None:
+            fig = plt.figure(figsize=figsize, dpi=dpi)
+        if ax is not None:
+            plt.sca(ax)
+        for i in range(3):
+            plt.plot(self.rc, -ys[i], c=('k' if i == 2 else None), **popt)
+        lbls = [r'$-2\pi r\left<v_r\right>\left<\Sigma\right>$',
+                r'$-2\pi r\left<v_r\delta\Sigma\right>$',
+                r'$\dot{M}$']
+        plt.axhline(0, c='.5', lw=1, ls=':', zorder=-10)
+        rin = self.sim.rloc(1.01)
+        rout = -10
+        ys = np.array(ys)
+        yl, yu = ys[:, rin:rout].min(), ys[:, rin:rout].max()
+        dy = (yu - yl) * .05
+        plt.ylim(yl - dy, yu + dy)
+        plt.xlim(1, self.sim.r[-1])
+        ax = plt.gca()
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+        if legend:
+            plt.legend(lbls, loc=lloc)
+        plt.xlabel('$r$')
+        plt.ylabel(r'$\dot{M}' + lntxt)
+        if title is True:
+            title = ts['title']
+        if title:
+            plt.title(title)
+
+        if save or fn:
+            plt.savefig(fn)
+            plt.close()
+        return
+
     def lines(self, o=None, s=None, ns=None, pns=None, mean=True, norm=1, **kwargs):
         if pns is None:
             pns = ns
@@ -2847,6 +2915,9 @@ class FluxData(object):
             yl = yl[ri:ri2].min() - .1 * yu
             _yl, _yu = plt.ylim(yl, yu)
             plt.xlim(1, self.sim.r[-1])
+        if save or fn:
+            plt.savefig(fn)
+            plt.close()
         return lines
 
     def R_plot(self, o=None, s=None, ns=None, extras=True, ax=None, **kwargs):
@@ -2880,6 +2951,9 @@ class FluxData(object):
             # set_ylim
             _plt.ylim(-5e-2, 5e-2)
             plt.xlim(1, self.sim.r[-1])
+        if save or fn:
+            plt.savefig(fn)
+            plt.close()
         return lines
 
     def flux_compare(self, s=None, ns=None, figsize=None, dpi=300, fn=None, save=None,
@@ -3022,7 +3096,7 @@ class FluxData(object):
 
 class Lightcurves(object):
     def __init__(self, filenames, sim=None, path=None, detect_npz=True, auto_export=True,
-                 tfud=18.4, skip=50):
+                 tunit=18.4, skip=50):
         self.sim = sim
         if path is None:
             if sim is None:
@@ -3037,7 +3111,7 @@ class Lightcurves(object):
                 filenames = fn
         self.filenames = np.atleast_1d(filenames)
         self._auto_export = auto_export
-        self.tfud = tfud
+        self.tunit = tunit
         self.skip = skip
 
     def _extract(self):
@@ -3236,11 +3310,11 @@ class Lightcurves(object):
         plt.xlabel('freq. (per orbit)')
         plt.ylabel(r'$\left|A_\nu\right|$')
         def fwd(x):
-            return x / self.tfud
+            return x / self.tunit
         def bak(x):
-            return x * self.tfud
+            return x * self.tunit
         ax2 = ax.secondary_xaxis('top', functions=(fwd, bak))
-        ax2.set_xlim(*(np.array(ax.get_xlim()) / self.tfud))
+        ax2.set_xlim(*(np.array(ax.get_xlim()) / self.tunit))
         ax2.set_xlabel('Est. freq. (Hz)')
         ax2.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
 
@@ -3294,11 +3368,11 @@ class Lightcurves(object):
         plt.xlabel('freq. (per orbit)')
         plt.ylabel(r'periodogram')
         def fwd(x):
-            return x / self.tfud
+            return x / self.tunit
         def bak(x):
-            return x * self.tfud
+            return x * self.tunit
         ax2 = ax.secondary_xaxis('top', functions=(fwd, bak))
-        ax2.set_xlim(*(np.array(ax.get_xlim()) / self.tfud))
+        ax2.set_xlim(*(np.array(ax.get_xlim()) / self.tunit))
         ax2.set_xlabel('Est. freq. (Hz)')
         ax2.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
         plt.sca(ax)
@@ -3370,11 +3444,11 @@ class Lightcurves(object):
         #ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(1))
         #ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
         def fwd(x):
-            return x / self.tfud
+            return x / self.tunit
         def bak(x):
-            return x * self.tfud
+            return x * self.tunit
         ax2 = ax.secondary_yaxis('right', functions=(fwd, bak))
-        ax2.set_ylim(*(np.array(ax.get_ylim()) / self.tfud))
+        ax2.set_ylim(*(np.array(ax.get_ylim()) / self.tunit))
         ax2.set_ylabel('Est. freq. (Hz)')
         #ax2.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
         plt.sca(ax)
@@ -3389,9 +3463,6 @@ class BLsim(object):
             fmts = _file_fmts
         self._fmts = fmts
         self.name = os.path.split(os.path.abspath(path))[-1]
-        if _rename_lc:
-            if '.lc' in self.name:
-                self.name.replace('.lc', '')
         path = os.path.expanduser(path)
         if path == self.name and not os.path.isdir(path):
             for d in _dirs:
@@ -3399,6 +3470,9 @@ class BLsim(object):
                 if os.path.isdir(tmp):
                     path = tmp
                     break
+        if _rename_lc:
+            if '.lc' in self.name:
+                self.name = self.name.replace('.lc', '')
         if not os.path.isdir(path):
             raise IOError('Simulation directory "{0:}" not found.'.format(path))
         self.path = path
@@ -7622,7 +7696,7 @@ class BLsim(object):
                    mlim=None, rlim=None, lopt=None, mopt=None, ropt=None, fig=None,
                    fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
                    save=False, ext='png', sdir=False, overwrite=True, dropbox=False,
-                   lnorm=None):
+                   lnorm=None, title=False):
         if dropbox and not sdir:
             sdir = '~/Dropbox/Research/IAS/rrr/BL_shared/simulation_results/Production'
             mach = int(np.round(self.mach))
@@ -7651,15 +7725,15 @@ class BLsim(object):
         nt = times.size
 
         if figsize is True:
-            figsize = (6.25, 9.5)
+            figsize = (6.5, 8)
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
             fopt = {}
             fopt = {}
         _fopt.update(fopt)
         _hr = [.1] + [1] * nt
-        _gsopt = dict(height_ratios=_hr, width_ratios=[1, .3, .45], top=.90, bottom=.06,
-                      left=.07, right=.92, wspace=0, hspace=0)
+        _gsopt = dict(height_ratios=_hr, width_ratios=[1, .3, .45], top=.90 if title else .95, bottom=.04,
+                      left=.06, right=.95, wspace=0, hspace=0)
         if gsopt is None:
             gsopt = dict()
         _gsopt.update(gsopt)
@@ -7710,9 +7784,10 @@ class BLsim(object):
             lax = plt.subplot(gs[i + 1, 0])
             df.stripe(left, ax=lax, **_lopt)
             lax.set_ylabel(r'$\phi/\pi$')
-            if i:
+            if i < nt - 1:
                 yticks = lax.yaxis.get_major_ticks()
-                yticks[-1].label1.set_visible(False)
+                for k in [0]:
+                    yticks[k].label1.set_visible(False)
             if llim is None:
                 llim = plt.gci().get_clim()
                 _lopt['vmin'] = llim[0]
@@ -7748,7 +7823,7 @@ class BLsim(object):
             yticks = rax.yaxis.get_major_ticks()
             for k in [0, 1, -1, -2]:
                 xticks[k].label1.set_visible(False)
-                yticks[k].label1.set_visible(False)
+                yticks[k].label2.set_visible(False)
 
             if i < nt - 1:
                 lax.set_xticklabels([])
@@ -7786,7 +7861,8 @@ class BLsim(object):
 
         lcax.yaxis.set_offset_position('left')
         mcax.yaxis.set_offset_position('left')
-        fig.suptitle(helpers.sanitize_lbl(self.name))
+        if title:
+            fig.suptitle(helpers.sanitize_lbl(self.name))
 
         if save:
             plt.savefig(fn)
@@ -10135,6 +10211,67 @@ def mode_hist(sims=None, fn=None, save=None, data=None, ll=True, overwrite=True)
         plt.close()
 
     return data
+
+
+def multi_mdot_split(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
+                     sdir=None, lbl=True, lnorm=True, overwrite=True, lloc=4):
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'multi_mdot_split.pdf'
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if parse_not_overwrite(overwrite, fn):
+        return None
+    _opt = dict(title=False, lnorm=lnorm, lloc=lloc)
+    if sims is None:
+        sims = [dict(name='M06.HR.r.lc.a', args=[400, 500], kwargs=_opt),
+                dict(name='M09.FR.r.lc.a', args=[100, 200], kwargs=_opt),
+                dict(name='M12.FR.r.lc.a', args=[500, 600], kwargs=_opt),
+                ]
+    nr = len(sims)
+    nc = 1
+
+    if figsize is None:
+        figsize = np.array([4, 7])
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt is None:
+        fopt = {}
+    _fopt.update(fopt)
+    fig = plt.figure(**_fopt)
+    gs = mpl.gridspec.GridSpec(nr, nc, top=.99, bottom=.06, left=.15, right=.97,
+                               hspace=0)
+    ax = None
+    for ns, s in enumerate(sims):
+        ax = plt.subplot(gs[ns], sharex=ax)
+        fd = BLsim(s['name']).load_flux_data()
+        fd.mdot_split(*s['args'], ax=ax, legend=not ns, **s['kwargs'])
+        lbl = fd.time_slice(*s['args'])['title']
+        tmp = lbl.split(' ')
+        lbl = tmp[0] + '\n' + ' '.join(tmp[1:]).replace('.0', '')
+        lbl = chr(ord('a') + ns) + ') ' + lbl
+        ax.text(.98, .94, lbl, c='k', transform=ax.transAxes, ha='right', va='top',
+                fontsize=6)
+        ax.yaxis.set_ticks_position('both')
+        ax.xaxis.set_ticks_position('both')
+        yl, yu = plt.ylim()
+        if yu - yl > 3:
+            ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+        else:
+            ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+        ax.tick_params(axis='both', which='both', direction='in', zorder=10)
+        ax.set_axisbelow(False)
+        if ns < nr - 1:
+            plt.setp(ax.get_xticklabels(), visible=False)
+            plt.xlabel('')
+
+    if fn or save:
+        plt.savefig(fn)
+        plt.close()
+    return
 
 
 if __name__ == '__main__':
