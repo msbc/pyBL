@@ -77,7 +77,9 @@ _file_fmts = ['.'.join([a, 'out' + b, _int_fmt, c]) for a in _pre for b in _i fo
               _ext]
 _seed_type = {'r': 'block-random', 'random': 'globally random',
               'mix': 'block-phased-mixed', 'prime': 'prime modes'}
-
+_fig_base_dir = '/data/mcoleman/pleiades_data/bl/figs'
+if not os.path.isdir(_fig_base_dir):
+    _fig_base_dir = ''
 
 # _res_type = dict(LR='low res')
 
@@ -489,10 +491,13 @@ class BLfile(BLfileBase):
                vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None,
                ax=None, log=False, aspect=1, sdir=None, smooth=None, cax=None,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1, lnorm=None,
-               overwrite=True, display=False, minmax=True, txt_opt=None, printvmax=False):
+               overwrite=True, display=False, minmax=True, txt_opt=None, printvmax=False,
+               figsize=None, dpi=300):
         """Plot 2D sim data"""
-        if fopt is None:
-            fopt = {}
+        _fopt = dict(figsize=figsize, dpi=dpi)
+        if fopt:
+            _fopt.update(fopt)
+        fopt = _fopt
         if popt is None:
             popt = {}
         if cbopt is None:
@@ -1513,6 +1518,29 @@ class BLConsPrim(BL3Dfile):
         if total:
             return flux.sum()
         return flux
+
+    def integrate_spiral(self, omega_p, phi0=0, r0=1, nan_out=False):
+        omega = self['mom2'].mean(axis=0) / self['dens'].mean(axis=0) / self.rc
+        integrand = (omega - omega_p) * self.mach * np.diff(self.r)
+        phi = integrand.cumsum()
+        ri = self.rloc(r0)
+        phi += phi0 - phi[ri]
+        if nan_out:
+            phi[:ri] = np.nan
+        return phi
+
+    def draw_arm(self, omega_p, phi0=0, r0=1, nan_out=True, popt=None, cart=True,
+                 phi_norm=1):
+        if popt is None:
+            popt = dict()
+        _popt = dict(c='w', lw=1, ls=':')
+        _popt.update(popt)
+        phi = self.integrate_spiral(omega_p, phi0=phi0, r0=r0, nan_out=nan_out)
+        r = self.rc
+        if cart:
+            plt.plot(r * np.cos(phi), r * np.sin(phi), **_popt)
+        else:
+            plt.plot(r, (phi % tau) / phi_norm, **_popt)
 
 
 class BLcons(BLConsPrim):
@@ -2674,6 +2702,10 @@ class FluxData(object):
         vphi = self._vphi(vphi)
         return self.r2 * self['mom1'] * vphi
 
+    def yCA(self, vphi=None):
+        dlogl = self.dr(np.log(self._vphi(vphi) * self.rc))
+        return self.CA(vphi) * dlogl
+
     def T12(self, vphi=None):
         vphi = self._vphi(vphi)
         return self['CL'] - self.CA(vphi)
@@ -2766,7 +2798,7 @@ class FluxData(object):
 
         if o == 1:
             return coef * self.smooth_dt(dr_rho, **sd)
-        return coef * self.dt(dr_rho, ns=-ns)
+        return coef * self.dt(dr_rho, ns=-ns if ns else ns)
 
     def ydv2(self, vphi=None, s=None, ns=None):
         vphi = self._vphi(vphi)
@@ -2846,12 +2878,15 @@ class FluxData(object):
             plt.close()
         return
 
-    def lines(self, o=None, s=None, ns=None, pns=None, mean=True, norm=1, **kwargs):
+    def lines(self, o=None, s=None, ns=None, pns=None, mean=True, norm=1, yCA=False,
+              **kwargs):
         if pns is None:
             pns = ns
         vphi = self._vphi(o)
         out = [self.ycs(vphi, ns=ns), self.ydv2(vphi, s, ns=ns), self.yMdot(vphi, ns=ns),
                self.ydp(o, s, ns=pns, **kwargs)]
+        if yCA:
+            out.append(self.yCA(vphi))
         if norm and norm != 1:
             out = [i * norm for i in out]
         if mean:
@@ -2890,6 +2925,8 @@ class FluxData(object):
             plt.plot(self.rc, lines[3], label=r'$\partial_t\partial_rP$', ls=':', lw=1)
         plt.plot(self.rc, lines[4], label=r'$\partial_r C_{\rm S}\! +\! \partial_t v_\phi$',
                  c='.5', lw=1)
+        if len(lines) > 5:
+            plt.plot(self.rc, -lines[5], label=r'$-C_{\rm A}\partial_r \ln\ell$', lw=1)
         if extras:
             plt.axhline(0, c='.5', ls=':', lw=1)
             plt.axvline(1, c='.5', ls=':', lw=1)
@@ -2911,6 +2948,8 @@ class FluxData(object):
             yu = np.maximum(np.nan_to_num(lines[0]), np.nan_to_num(lines[2]))
             yu = yu[ri:ri2].max() * 1.05
             yl = np.minimum(np.nan_to_num(lines[1]), np.nan_to_num(lines[2]))
+            if len(lines) > 5:
+                yl = np.minimum(yl, np.nan_to_num(-lines[5]))
             # yl = -v('Mdot')
             yl = yl[ri:ri2].min() - .1 * yu
             _yl, _yu = plt.ylim(yl, yu)
@@ -3263,7 +3302,8 @@ class Lightcurves(object):
         return freq, fourier
 
     def plot_ft(self, pi=None, vi=None, data=None, tloc=True, xlim=True, ylim=True, dpi=300,
-                figsize=None, nufit=10, detrend=False, fig=None, ax=None, tmin=None):
+                figsize=None, nufit=10, detrend=False, fig=None, ax=None, tmin=None,
+                nu_dno=-1, save=False):
         if data is None:
             if vi is None or pi is None:
                 raise ValueError('If data not specified, then pi and vi must be.')
@@ -3296,6 +3336,7 @@ class Lightcurves(object):
         else:
             ax = plt.gca()
         plt.plot(x, np.abs(y / pl - 1))
+        plt.axvline(nu_dno, zorder=-1, lw=1, ls=':', c='.5')
         if xlim:
             if xlim is True:
                 xlim = [0, 6.5]
@@ -3317,10 +3358,14 @@ class Lightcurves(object):
         ax2.set_xlim(*(np.array(ax.get_xlim()) / self.tunit))
         ax2.set_xlabel('Est. freq. (Hz)')
         ax2.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
+        if save:
+            plt.savefig(self.sim.name + '_lc_ft.pdf')
+            plt.close()
 
     def periodogram(self, pi=None, vi=None, data=None, tloc=True, xlim=True, ylim=True,
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
-                    nu0=None, fig=None, ax=None, ylog=True, rel=False, tmin=None):
+                    nu0=None, fig=None, ax=None, ylog=True, rel=False, tmin=None,
+                    nu_dno=-1, save=False):
         if data is None:
             if vi is None or pi is None:
                 raise ValueError('If data not specified, then pi and vi must be.')
@@ -3351,6 +3396,7 @@ class Lightcurves(object):
             plt.semilogy(f, Pxx_den, zorder=0)
         else:
             plt.plot(f, Pxx_den, zorder=0)
+        plt.axvline(nu_dno, zorder=-1, lw=1, ls=':', c='.5')
         if xlim:
             if xlim is True:
                 xlim = [0, 6.5]
@@ -3376,12 +3422,15 @@ class Lightcurves(object):
         ax2.set_xlabel('Est. freq. (Hz)')
         ax2.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
         plt.sca(ax)
+        if save:
+            plt.savefig(self.sim.name + '_periodogram.pdf')
+            plt.close()
 
     def spectrogram(self, pi=None, vi=None, data=None, tloc=True, xlim=True, ylim=True,
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
                     nu0=None, fig=None, ax=None, log=True, rel=False, nperseg=None,
                     tperseg=20, vmin=1e-8, vmax=True, norm=None, cmap=None, sdata=None,
-                    cb=True, cbl=True, cax=None):
+                    cb=True, cbl=True, cax=None, nu_dno=-1, save=False):
         if sdata is None:
             if data is None:
                 if vi is None or pi is None:
@@ -3419,6 +3468,7 @@ class Lightcurves(object):
         if vmax is True:
             vmax = Sxx[1:, 1:].max()
         im = plt.pcolormesh(t, f, Sxx, norm=norm, vmin=vmin, vmax=vmax, cmap=cmap)
+        plt.axhline(nu_dno, lw=1, ls=':', c='.5')
         ax = plt.gca()
         plt.ylabel('freq. (per orbit)')
         plt.xlabel(r'$t/2\pi$')
@@ -3452,7 +3502,58 @@ class Lightcurves(object):
         ax2.set_ylabel('Est. freq. (Hz)')
         #ax2.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
         plt.sca(ax)
+        if save:
+            plt.savefig(self.sim.name + '_spectrogram.png')
+            plt.close()
         return f, t, Sxx, nu0, nperseg
+
+    def plot_lc(self, pi, vi, save=False, dpi=300):
+        plt.figure(dpi=dpi)
+        plt.plot(self.newtime / tau, self.remap[:,pi, vi])
+        if save:
+            plt.savefig(self.sim.name + '_full_lightcurve.pdf')
+            plt.close()
+
+    def zoom_lc(self, pi, vi, tl, tu, save=False, dpi=300):
+        plt.figure(dpi=dpi)
+        il = self.tloc(tl * tau)
+        iu = self.tloc(tu * tau) + 1
+        d = self.remap[:,pi, vi]
+        plt.plot(self.newtime / tau, d)
+        yl = d[il:iu].min()
+        yu = d[il:iu].max()
+        dy = (yu - yl) * .025
+        plt.xlim(tl, tu)
+        plt.ylim(yl - dy, yu + dy)
+        if save:
+            plt.savefig(self.sim.name + '_zoom_lc.pdf')
+            plt.close()
+
+    def several_plots(self, pi=2, vi=4, tl=275, tu=300, sdir=None, save=True, tmin=100):
+        sim = self.sim
+        if not save:
+            sdir = None
+        if sdir is None:
+            sdir = ''
+        if sdir is True:
+            sdir = os.path.split(sim.path)[-1] + '_plots'
+            sdir = os.path.join(_fig_base_dir, sdir, 'lc')
+        if not os.path.isdir(sdir):
+            os.mkdir(sdir)
+        pwd = os.getcwd()
+        try:
+            os.chdir(sdir)
+            sim.compact_diag(save=save)
+            nu_dno = sim.cc_op_plots(tu, save=save, rmin=1.6)
+            print('nu = {:.3g} per orbit, {:.3g} mHz'.format(nu_dno, nu_dno / self.tunit * 1e3))
+            self.plot_lc(pi, vi, save=save)
+            self.zoom_lc(pi, vi, tl, tu, save=save)
+            self.plot_ft(pi, vi, tmin=tmin, save=save, nu_dno=nu_dno)
+            self.periodogram(pi, vi, tmin=tmin, save=save, nu_dno=nu_dno)
+            self.spectrogram(pi, vi, save=save, nu_dno=nu_dno)
+        finally:
+            os.chdir(pwd)
+
 
 class BLsim(object):
     def __init__(self, path, fmts=None, coarse_data=None, fft_time=None,
@@ -3470,8 +3571,9 @@ class BLsim(object):
                 if os.path.isdir(tmp):
                     path = tmp
                     break
+        self._is_lc_sim = '.lc.' in self.name
         if _rename_lc:
-            if '.lc' in self.name:
+            if '.lc.' in self.name:
                 self.name = self.name.replace('.lc', '')
         if not os.path.isdir(path):
             raise IOError('Simulation directory "{0:}" not found.'.format(path))
@@ -7729,10 +7831,9 @@ class BLsim(object):
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
             fopt = {}
-            fopt = {}
         _fopt.update(fopt)
         _hr = [.1] + [1] * nt
-        _gsopt = dict(height_ratios=_hr, width_ratios=[1, .3, .45], top=.90 if title else .95, bottom=.04,
+        _gsopt = dict(height_ratios=_hr, width_ratios=[1, .3, .45], top=.90 if title else .94, bottom=.04,
                       left=.06, right=.95, wspace=0, hspace=0)
         if gsopt is None:
             gsopt = dict()
@@ -8269,7 +8370,7 @@ class BLsim(object):
 
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
                    sub_dir=False, overwrite=True, stripes=False, vort_prof=True,
-                   prof=True):
+                   prof=True, lightcurves=True):
         if working_dir is True:
             working_dir = self.name + '_plots'
         if not working_dir:
@@ -8383,9 +8484,12 @@ class BLsim(object):
                     self.flux_series(sdir=True, progress=(not quiet), overwrite=overwrite)
                 except:
                     pass
-                if '.lc.' in self.name or self.name[-2:] == 'lc':
+                if self._is_lc_sim:
                     self.compare_series(sdir=True, overwrite=overwrite)
                     self.paper_flux_series(sdir=True, overwrite=True)
+                    gc.collect()
+            if lightcurves and self._is_lc_sim:
+                self.lightcurve.several_plots(sdir=True)
                 gc.collect()
         finally:
             os.chdir(pwd)
