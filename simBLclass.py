@@ -692,10 +692,11 @@ class BLfile(BLfileBase):
     def stripe(self, data=None, fn=None, save=False, subsample=False, title=None,
                name=None, ext='png', popt=None, cb=True, cbl=None, zerocent=None,
                vmin=None, vmax=None, cmap=None, cbopt=None, fig=None, fopt=None, cax=None,
-               ax=None, log=False, aspect=None, sdir=None, smooth=None, rmin=None, rmax=None, lbls=True,
-               phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1, dpi=300,
-               figsize=None, overwrite=True, display=False, minmax=False, txt_opt=None,
-               ps=None, mode=1, phi_norm=True, rm_last=False, printvmax=False, lnorm=False):
+               ax=None, log=False, aspect=None, sdir=None, smooth=None, rmin=None,
+               rmax=None, lbls=True, phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False,
+               rplot=1, dpi=300, figsize=None, overwrite=True, display=False,
+               minmax=False, txt_opt=None, ps=None, mode=1, phi_norm=True, rm_last=False,
+               printvmax=False, lnorm=False, init=None):
         """Plot 2D sim data"""
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
@@ -767,7 +768,22 @@ class BLfile(BLfileBase):
         else:
             lnorm = 0
         if display:
-            print('    Map of t/orb={:d}'.format(int(self.orbit + .5)))
+            print('    Stripe of t/orb={:d}'.format(int(self.orbit + .5)))
+
+        if data == 'd_vortensity':
+            if init is None:
+                if self.t == 0:
+                    init = self.vortensity().mean(axis=0)
+                else:
+                    init = self.sim.loadfile('cons', 0).vortensity().mean(axis=0)
+            elif init is True:
+                init = self.vortensity().mean(axis=0)
+            elif type(init) == int:
+                init = self.sim.loadfile('cons', init).vortensity().mean(axis=0)
+            dv = (self.vortensity() - init[np.newaxis, :]) * self.rc[np.newaxis, :] ** 2
+            if vmax is True:
+                vmax = dv.mean(axis=0)[self.rloc(1):self.rloc(3)].max()
+            data = dv
 
         data = self._parse_data(data)
         if type(data) != np.ndarray:
@@ -914,11 +930,15 @@ class BLfile(BLfileBase):
         if ret_fn:
             return fn
 
+        if init is not None:
+            return pcm, init
         return pcm
 
     def stripe_and_data(self, var=None, fn=None, save=False, sdir=None, overwrite=True,
                         dpi=300, figsize=None, fopt=None, ext='png', ret_fn=False,
                         rho0=None, omega0=True, **kwargs):
+        if var == "d_vortensity":
+            d_vortensity = True
         if figsize is None:
             figsize = (5, 6)
         _fopt = dict(dpi=dpi, figsize=figsize)
@@ -953,7 +973,15 @@ class BLfile(BLfileBase):
                                    hspace=.1)
         ax0 = plt.subplot(gs[0, 0])
         cax = plt.subplot(gs[0, 1])
-        pcm = self.stripe(var, ax=ax0, cax=cax, lbls=False, **kwargs)
+        if d_vortensity or kwargs.get('init') is not None:
+            out = self.stripe(var, ax=ax0, cax=cax, lbls=False, **kwargs)
+            try:
+                pcm, init = out
+            except TypeError:
+                init = out
+        else:
+            init = None
+            pcm = self.stripe(var, ax=ax0, cax=cax, lbls=False, **kwargs)
         xlim = ax0.get_xlim()
         #print(xlim)
         plt.ylabel(r'$\phi/\pi$')
@@ -989,8 +1017,12 @@ class BLfile(BLfileBase):
             plt.savefig(fn)
             plt.close()
         if ret_fn:
+            if init is not None:
+                return fn, init
             return fn
 
+        if init is not None:
+            return fig, init
         return fig
 
     def smooth(self, data, width=64):
@@ -1542,6 +1574,42 @@ class BLConsPrim(BL3Dfile):
         else:
             plt.plot(r, (phi % tau) / phi_norm, **_popt)
 
+    def bl_width(self, rl=.25, ru=.75):
+        omega = self['mom2'].mean(axis=0) / (self['dens'].mean(axis=0) * self.rc)
+        ri = omega.argmax()
+        out = np.empty((2))
+        omax = omega.max()
+        tmp = omega.copy()
+        tmp[ri:] = 0
+        out[0] = self.sim.rc[np.abs(tmp - rl * omax).argmin()]
+        out[1] = self.sim.rc[np.abs(tmp - ru * omax).argmin()]
+        return out
+
+    def plateau(self, frac=.9):
+        omega = self['mom2'].mean(axis=0) / (self['dens'].mean(axis=0) * self.rc)
+        ri = omega.argmax()
+        out = np.empty((2))
+        omax = omega.max()
+        inner = omega.copy()
+        outer = omega.copy()
+        inner[ri:] = 0
+        outer[:ri] = 0
+        out[0] = self.sim.rc[np.abs(inner - frac * omax).argmin()]
+        out[1] = self.sim.rc[np.abs(outer - frac * omax).argmin()]
+        return out
+
+    def bl_stats(self, fn=None):
+        omega = self['mom2'].mean(axis=0) / (self['dens'].mean(axis=0) * self.rc)
+        out = dict()
+        out['bl'] = self.bl_width()
+        out['plateau'] = self.plateau()
+        ri = omega.argmax()
+        out['peak'] = self.sim.rc[ri]
+        out['omax'] = omega.max()
+        out['d1omega'] = 1 - out['omax']
+        out['dkomega'] = out['peak']**-1.5 - out['omax']
+        return out
+
 
 class BLcons(BLConsPrim):
     def _special_keys(self, key):
@@ -1699,6 +1767,74 @@ class BLFT(BLfile):
 ############################
 # End of BLfile subclasses #
 ############################
+
+class DataContainer:
+    def __init__(self, fn, sim=None, df=None, prefix='cons'):
+        self.fn = fn
+        self.data = dict()
+        self.sim = sim
+        self._df = df
+        self._prefix = prefix
+        self._file_data = self._load_own_data()
+
+    def _load_own_data(self):
+        try:
+            return np.load(self.fn)
+        except IOError:
+            self._gen_data()
+            self._save()
+
+    @property
+    def df(self):
+        if hasattr(self._df, 'sim'):
+            return self._df
+        if type(self._df) == int:
+            self._df = self.sim.loadfile(self._prefix, self._df)
+        else:
+            self._df = self.sim.loadfile(self._df)
+        return self._df
+
+    def __getitem__(self, key):
+        try:
+            return self.data[key]
+        except KeyError:
+            pass
+        try:
+            out = self._file_data[key]
+            self.data[key] = out
+            return out
+        except KeyError:
+            pass
+        func = getattr(self, str(key), getattr(self, '_' + str(key)))
+        if callable(func):
+            self.data[key] = func()
+            self._save()
+            return self.data[key]
+        try:
+            self._gen_data()
+            out = self.data[key]
+            self._save()
+            return out
+        except (NotImplementedError, KeyError):
+            pass
+        raise KeyError('Could not find or generate "{0}".'.format(key))
+
+    def _save(self):
+        np.savez(self.fn, **self.data)
+        self._file_data = self._load_own_data()
+
+    def _gen_data(self):
+        raise NotImplementedError
+
+
+class BLstats(DataContainer):
+    def __init__(self, sim, df=600, fn=None):
+        if fn is None:
+            fn = os.path.join(sim.path, 'bl_stats_{0:04d}.npz'.format(df))
+        super().__init__(fn, sim=sim, df=df)
+
+    def _gen_data(self):
+        self.data.update(self.df.bl_stats())
 
 def loadBLfile(fn, **kwargs):
     fn = _findAbsPath(fn, kwargs.get('sim_path', None))
@@ -2542,7 +2678,7 @@ class npz_wrapper(object):
 
 
 class FluxData(object):
-    def __init__(self, npz, rc, sim, ns=None, option=None, smoothing=None):
+    def __init__(self, npz, rc, sim, ns=None, option=2, smoothing=None):
         self.npz = npz
         self.rc = rc
         self.sim = sim
@@ -3132,6 +3268,31 @@ class FluxData(object):
             plt.close()
         return
 
+    def bl_width(self, rl=.25, ru=.75, o=None):
+        omega = self._vphi(o) / self.sim.rc
+        ri = omega.argmax(axis=-1)
+        out = np.empty((ri.size, 2))
+        for i in range(ri.size):
+            omax = omega[i, ri[i]]
+            tmp = omega[i].copy()
+            tmp[ri[i]:] = 0
+            out[i, 0] = self.sim.rc[np.abs(tmp - rl * omax).argmin()]
+            out[i, 1] = self.sim.rc[np.abs(tmp - ru * omax).argmin()]
+        return out
+
+    def plateau(self, frac=.9, o=None):
+        omega = self._vphi(o) / self.sim.rc
+        ri = omega.argmax(axis=-1)
+        out = np.empty((ri.size, 2))
+        for i in range(ri.size):
+            omax = omega[i, ri[i]]
+            inner = omega[i].copy()
+            outer = omega[i].copy()
+            inner[ri[i]:] = 0
+            outer[:ri[i]] = 0
+            out[i, 0] = self.sim.rc[np.abs(inner - frac * omax).argmin()]
+            out[i, 1] = self.sim.rc[np.abs(outer - frac * omax).argmin()]
+        return out
 
 class Lightcurves(object):
     def __init__(self, filenames, sim=None, path=None, detect_npz=True, auto_export=True,
@@ -3303,7 +3464,7 @@ class Lightcurves(object):
 
     def plot_ft(self, pi=None, vi=None, data=None, tloc=True, xlim=True, ylim=True, dpi=300,
                 figsize=None, nufit=10, detrend=False, fig=None, ax=None, tmin=None,
-                nu_dno=-1, save=False):
+                nu_dno=-1, save=False, omax=None, oharm=None):
         if data is None:
             if vi is None or pi is None:
                 raise ValueError('If data not specified, then pi and vi must be.')
@@ -3336,7 +3497,16 @@ class Lightcurves(object):
         else:
             ax = plt.gca()
         plt.plot(x, np.abs(y / pl - 1))
-        plt.axvline(nu_dno, zorder=-1, lw=1, ls=':', c='.5')
+        if nu_dno:
+            plt.axvline(nu_dno, zorder=-1, lw=1, ls=':', c='.5')
+        yl = plt.ylim()
+        if np.any(omax):
+            omax = np.mean(omax)
+            if oharm is None:
+                oharm = 1
+            for h in np.atleast_1d(oharm):
+                plt.axvline(omax * h, zorder=-1-h, lw=1, ls='-.', c='.5')
+        plt.ylim(*yl)
         if xlim:
             if xlim is True:
                 xlim = [0, 6.5]
@@ -3365,7 +3535,7 @@ class Lightcurves(object):
     def periodogram(self, pi=None, vi=None, data=None, tloc=True, xlim=True, ylim=True,
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
                     nu0=None, fig=None, ax=None, ylog=True, rel=False, tmin=None,
-                    nu_dno=-1, save=False):
+                    nu_dno=-1, save=False, omax=None, oharm=None):
         if data is None:
             if vi is None or pi is None:
                 raise ValueError('If data not specified, then pi and vi must be.')
@@ -3396,7 +3566,16 @@ class Lightcurves(object):
             plt.semilogy(f, Pxx_den, zorder=0)
         else:
             plt.plot(f, Pxx_den, zorder=0)
-        plt.axvline(nu_dno, zorder=-1, lw=1, ls=':', c='.5')
+        if nu_dno:
+            plt.axvline(nu_dno, zorder=-1, lw=1, ls=':', c='.5')
+        yl = plt.ylim()
+        if np.any(omax):
+            omax = np.mean(omax)
+            if oharm is None:
+                oharm = 1
+            for h in np.atleast_1d(oharm):
+                plt.axvline(omax * h, zorder=-1-h, lw=1, ls='-.', c='.5')
+        plt.ylim(*yl)
         if xlim:
             if xlim is True:
                 xlim = [0, 6.5]
@@ -3430,7 +3609,8 @@ class Lightcurves(object):
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
                     nu0=None, fig=None, ax=None, log=True, rel=False, nperseg=None,
                     tperseg=20, vmin=1e-8, vmax=True, norm=None, cmap=None, sdata=None,
-                    cb=True, cbl=True, cax=None, nu_dno=-1, save=False):
+                    cb=True, cbl=True, cax=None, nu_dno=-1, save=False, omax=None,
+                    oharm=None, ot=None, fd=None):
         if sdata is None:
             if data is None:
                 if vi is None or pi is None:
@@ -3468,7 +3648,25 @@ class Lightcurves(object):
         if vmax is True:
             vmax = Sxx[1:, 1:].max()
         im = plt.pcolormesh(t, f, Sxx, norm=norm, vmin=vmin, vmax=vmax, cmap=cmap)
-        plt.axhline(nu_dno, lw=1, ls=':', c='.5')
+        if nu_dno:
+            plt.axhline(nu_dno, lw=1, ls=':', c='.5')
+        xl = plt.xlim()
+        yl = plt.ylim()
+        if np.any(omax):
+            if omax is True or ot is True:
+                if fd is None:
+                    fd = self.sim.load_flux_data()
+                if omax is True:
+                    omax = (fd.vphi2() / self.sim.rc).max(axis=-1)
+                if ot is True:
+                    ot = fd['t'] / tau
+            if oharm is None:
+                oharm = range(1, 9)
+            print(ot, omax)
+            for h in np.atleast_1d(oharm):
+                plt.plot(ot, omax * h, lw=1, ls=':', c='w', alpha=.4)
+        plt.xlim(*xl)
+        plt.ylim(*yl)
         ax = plt.gca()
         plt.ylabel('freq. (per orbit)')
         plt.xlabel(r'$t/2\pi$')
@@ -3529,7 +3727,8 @@ class Lightcurves(object):
             plt.savefig(self.sim.name + '_zoom_lc.pdf')
             plt.close()
 
-    def several_plots(self, pi=2, vi=4, tl=275, tu=300, sdir=None, save=True, tmin=100):
+    def several_plots(self, pi=2, vi=4, tl=275, tu=300, sdir=None, save=True, tmin=100,
+                      omax=True, oharm=None):
         sim = self.sim
         if not save:
             sdir = None
@@ -3540,6 +3739,16 @@ class Lightcurves(object):
             sdir = os.path.join(_fig_base_dir, sdir, 'lc')
         if not os.path.isdir(sdir):
             os.mkdir(sdir)
+        if np.any(omax):
+            fd = self.sim.load_flux_data()
+            if omax is True:
+                omax = (fd.vphi2() / self.sim.rc).max(axis=-1)
+            oti = sim.tloc(100)
+            om = omax[oti:].mean()
+            ot = fd['t'] / tau
+            if oharm is None:
+                oharm = range(1, 9)
+        opt = dict()
         pwd = os.getcwd()
         try:
             os.chdir(sdir)
@@ -3548,9 +3757,9 @@ class Lightcurves(object):
             print('nu = {:.3g} per orbit, {:.3g} mHz'.format(nu_dno, nu_dno / self.tunit * 1e3))
             self.plot_lc(pi, vi, save=save)
             self.zoom_lc(pi, vi, tl, tu, save=save)
-            self.plot_ft(pi, vi, tmin=tmin, save=save, nu_dno=nu_dno)
-            self.periodogram(pi, vi, tmin=tmin, save=save, nu_dno=nu_dno)
-            self.spectrogram(pi, vi, save=save, nu_dno=nu_dno)
+            self.plot_ft(pi, vi, tmin=tmin, save=save, nu_dno=nu_dno, omax=om, oharm=oharm)
+            self.periodogram(pi, vi, tmin=tmin, save=save, nu_dno=nu_dno, omax=om, oharm=oharm)
+            self.spectrogram(pi, vi, save=save, nu_dno=nu_dno, omax=omax, ot=ot, oharm=oharm)
         finally:
             os.chdir(pwd)
 
@@ -3704,6 +3913,9 @@ class BLsim(object):
                 pass
         raise KeyError('Unable to parse {0:}'.format(key))
 
+    def bl_stats(self, t=600):
+        return BLstats(self, t)
+
     @property
     def lightcurve(self):
         try:
@@ -3802,7 +4014,9 @@ class BLsim(object):
     def _mk_flux_data(self, ll=True):
         return np.array(self.map_files('ffts', 'flux_data', ll=ll), 'float32')
 
-    def _get_flux_fn(self, a, b=0, c=0, check=True):
+    def _get_flux_fn(self, a, b=0, c=0, check=True, overwrite=False):
+        if overwrite == True:
+            return
         fn = 'flux_data_v{:d}.{:d}.{:d}.npz'.format(a, b, c)
         fn = os.path.join(self.path, fn)
         if check:
@@ -3813,11 +4027,14 @@ class BLsim(object):
     def load_flux_data(self, ll=True, overwrite=False, data=None):
         if self._flux_data is not None:
             return self._flux_data
-        fn = self._get_flux_fn(1, 2, 0)
+        fn = self._get_flux_fn(1, 2, 0, overwrite=overwrite)
         if fn:
             out = FluxData(fn, self.rc, self)
         else:
-            fn = self._get_flux_fn(1, 1, 0) or self._get_flux_fn(1, 0, 0)
+            if self._is_lc_sim:
+                overwrite = True
+            fn = (self._get_flux_fn(1, 1, 0, overwrite=overwrite) or
+                  self._get_flux_fn(1, 0, 0, overwrite=overwrite))
             if fn:
                 out = npz_wrapper(np.load(fn), self.rc)
             else:
@@ -7699,7 +7916,7 @@ class BLsim(object):
         if popt is None:
             popt = {}
         if var_list is None:
-            var_list = ['Rpseudo', 've']
+            var_list = ['Rpseudo', 've', 'd_vortensity']
         var_list = np.atleast_1d(var_list)
         fopt = {'dpi': 300, 'figsize': (6, 6)}
         # path = self.name + '_maps'
@@ -7764,8 +7981,12 @@ class BLsim(object):
                         os.makedirs(os.path.join(path, var))
                     sdir = os.path.join(path, var)
                     if var == 'd_vortensity':
-                        init = bf.plt_vortensity(vmax=True, save=True, init=init,
-                                                 overwrite=overwrite, sdir=sdir)
+                        out = bf.stripe_and_data(var, init=init, sdir=sdir, rho0=rho0,
+                                                     omega0=omega0, vmax=True, **opt)
+                        try:
+                            _, init = out
+                        except TypeError:
+                            init = out
                     else:
                         bf.stripe_and_data(var, sdir=sdir, rho0=rho0, omega0=omega0, **opt)
         if thumbnail:
@@ -7941,7 +8162,7 @@ class BLsim(object):
 
         return
 
-    def vortex_evo(self, times, left='Rpseudo', mid='ve', right='Rpseudo', llim=None,
+    def vortex_evo(self, times, left='Rpseudo', mid='d_vortensity', right='Rpseudo', llim=None,
                    mlim=None, rlim=None, lopt=None, mopt=None, ropt=None, fig=None,
                    fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
                    save=False, ext='png', sdir=False, overwrite=True, dropbox=False,
@@ -7980,13 +8201,13 @@ class BLsim(object):
             fopt = {}
         _fopt.update(fopt)
         _hr = [.1] + [1] * nt
-        _gsopt = dict(height_ratios=_hr, width_ratios=[1, .3, .45], top=.90 if title else .94, bottom=.04,
+        _gsopt = dict(height_ratios=_hr, width_ratios=[1, .3, .45], top=.90 if title else .94, bottom=.05,
                       left=.06, right=.95, wspace=0, hspace=0)
         if gsopt is None:
             gsopt = dict()
         _gsopt.update(gsopt)
         _lopt = dict(cb=False, title=False, lbls=False, rmax=4, lnorm=lnorm)
-        _mopt = dict(cb=False, title=False, lbls=False, rmax=1.6)
+        _mopt = dict(cb=False, title=False, lbls=False, rmax=1.6, init=True)
         _ropt = dict(cb=False, title=False, minmax=False, lnorm=lnorm)
         if llim is not None:
             _lopt['vmin'] = llim[0]
@@ -10452,9 +10673,14 @@ def mode_hist(sims=None, fn=None, save=None, data=None, ll=True, overwrite=True)
     for j in range(nsets - 1):
         cax = plt.subplot(gs[2 + j])
         t = []
+        if names[j] == 'global':
+            t = None
         if j ==  nsets - 1:
             t = np.arange(hmax+1)
         cb = plt.colorbar(ims[j], cax=cax, ticks=t)
+        if names[j] == 'global':
+            cax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+            cax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(5))
         cax.set_xlabel(names[j], fontsize=8, rotation='vertical')
 
     if fn or save:
