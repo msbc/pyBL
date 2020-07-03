@@ -1759,20 +1759,38 @@ class BLFT(BLfile):
 ############################
 
 class DataContainer:
-    def __init__(self, fn, sim=None, df=None, prefix='cons'):
+    def __init__(self, fn, sim=None, df=None, prefix='cons', allow_pickle=False,
+                 strip_objects=True):
+        self._allow_pickle = allow_pickle
         self.fn = fn
         self.data = dict()
         self.sim = sim
         self._df = df
         self._prefix = prefix
+        self._strip_objects = strip_objects
         self._file_data = self._load_own_data()
+        if self._file_data is not None:
+            for i in self._file_data:
+                self.data[i] = self._strip(self._file_data[i])
 
     def _load_own_data(self):
         try:
-            return np.load(self.fn)
+            return np.load(self.fn, allow_pickle=self._allow_pickle)
         except IOError:
-            self._gen_data()
+            self._gen_data(None)
             self._save()
+
+    def _strip(self, item):
+        if not self._strip_objects:
+            return item
+        if type(item) == np.ndarray:
+            #print('strip:', item)
+            if item.dtype == np.dtype(object):
+                #print('obj')
+                if item.shape == tuple():
+                    #print('shape = ()')
+                    return item.item()
+        return item
 
     @property
     def df(self):
@@ -1790,7 +1808,7 @@ class DataContainer:
         except KeyError:
             pass
         try:
-            out = self._file_data[key]
+            out = self._strip(self._file_data[key])
             self.data[key] = out
             return out
         except KeyError:
@@ -1801,7 +1819,7 @@ class DataContainer:
             self._save()
             return self.data[key]
         try:
-            self._gen_data()
+            self._gen_data(key)
             out = self.data[key]
             self._save()
             return out
@@ -1813,8 +1831,11 @@ class DataContainer:
         np.savez(self.fn, **self.data)
         self._file_data = self._load_own_data()
 
-    def _gen_data(self):
+    def _gen_data(self, *args):
         raise NotImplementedError
+
+    def keys(self):
+        return list(self.data.keys()) + list(self._file_data.keys())
 
 
 class BLstats(DataContainer):
@@ -1823,7 +1844,8 @@ class BLstats(DataContainer):
             fn = os.path.join(sim.path, 'bl_stats_{0:04d}.npz'.format(df))
         super().__init__(fn, sim=sim, df=df)
 
-    def _gen_data(self):
+    def _gen_data(self, *args):
+        print("_gen_data")
         self.data.update(self.df.bl_stats())
 
 def loadBLfile(fn, **kwargs):
@@ -2156,24 +2178,25 @@ class FTdataFile(object):
     def existsQ(self):
         return os.path.isfile(self.filename)
 
-    def updateQ(self):
+    def updateQ(self, check_times=False):
         if not self.existsQ():
             print('FFT ' + self.filename + ' does not exist')
             return 1
         if os.path.getsize(self.filename) == 0:
             print('FFT ' + self.filename + ' has size 0')
             return 2
-        if self.sim is not None:
-            tmp = [0]
-            files = [i for i in glob(os.path.join(self.sim.path, '*.athdf'))]
-            tmp.extend([os.path.getctime(i) for i in files])
-            if max(tmp) > os.path.getmtime(self.filename):
-                try:
-                    loc = np.array(tmp[1:]).argmax()
-                    print(loc, files[loc], tmp[loc - 1], os.path.getmtime(self.filename))
-                except:
-                    print("IDK:", sys.exc_info()[0], loc, len(files), len(tmp))
-                return False
+        if check_times:
+            if self.sim is not None:
+                tmp = [0]
+                files = [i for i in glob(os.path.join(self.sim.path, '*.athdf'))]
+                tmp.extend([os.path.getctime(i) for i in files])
+                if max(tmp) > os.path.getmtime(self.filename):
+                    try:
+                        loc = np.array(tmp[1:]).argmax()
+                        print(loc, files[loc], tmp[loc - 1], os.path.getmtime(self.filename))
+                    except:
+                        print("IDK:", sys.exc_info()[0], loc, len(files), len(tmp))
+                    return False
         return False
 
     def generate(self):
