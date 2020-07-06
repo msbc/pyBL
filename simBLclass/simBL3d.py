@@ -12,9 +12,9 @@ from glob import glob
 import sys
 import subprocess
 
-from .parmap import parmap
-from . import athena_read as ar
-from . import helpers
+from ..parmap import parmap
+from .. import athena_read as ar
+from .. import helpers
 from . import simBLclass as blc
 from .BlockByBlock import BlockByBlock
 

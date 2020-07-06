@@ -8,12 +8,9 @@ import os
 from glob import glob
 import sys
 import sympy as sp
-from . import helpers
-from .NCcmap import NCcmap
-
-_coord_lbls = {'cartesian': ['$x$', '$y$', '$z$'][::-1],
-               'spherical_polar': ['$r$', r'$\theta$', r'$\phi$'][::-1],
-               'cylindrical': [r'$\varpi$', r'$\phi$', r'$z$'][::-1]}
+from .. import helpers
+from ..NCcmap import NCcmap
+from .defaults import rc
 
 
 def _save_fig(fn, def_fn, sdir=None):
@@ -493,11 +490,11 @@ class BlockByBlock(object):
             plt.title(helpers.sanitize_lbl(title.format(**tmp)))
         if lbls:
             if use_cart:
-                plt.xlabel(_coord_lbls["cartesian"][_axes[0]] + ax_lbl_add)
-                plt.ylabel(_coord_lbls["cartesian"][_axes[1]] + ax_lbl_add)
+                plt.xlabel(rc('coord_lbls')["cartesian"][_axes[0]] + ax_lbl_add)
+                plt.ylabel(rc('coord_lbls')["cartesian"][_axes[1]] + ax_lbl_add)
             else:
-                plt.xlabel(_coord_lbls[self.coord][_axes[0]] + ax_lbl_add)
-                plt.ylabel(_coord_lbls[self.coord][_axes[1]] + ax_lbl_add)
+                plt.xlabel(rc('coord_lbls')[self.coord][_axes[0]] + ax_lbl_add)
+                plt.ylabel(rc('coord_lbls')[self.coord][_axes[1]] + ax_lbl_add)
 
         if save or fn:
             def_fn = self._prefix
