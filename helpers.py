@@ -26,6 +26,15 @@ except ImportError:
     from scipy.signal import fftconvolve
 
 
+def atleast_4d(x):
+    if x.ndim < 4:
+        y = np.expand_dims(np.atleast_3d(x), axis=3)
+    else:
+        y = x
+
+    return y
+
+
 def labeler(name):
     sub = None
     for vec in ['mom', 'vel', 'mag', 'Bcc']:

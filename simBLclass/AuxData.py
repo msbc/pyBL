@@ -31,7 +31,7 @@ from .. import athena_read as ar
 from ..delayed_read import athdf
 from .. import helpers
 from ..helpers import rolling_weighted_triangle_conv as running_mean
-from ..helpers import grad, mod_grad
+from ..helpers import grad, atleast_4d
 from ..parmap import parmap
 from ._local_helpers import *
 from .defaults import rc
@@ -1454,7 +1454,7 @@ class FluxData(object):
 
 class Lightcurves(object):
     def __init__(self, filenames, sim=None, path=None, detect_npz=True, auto_export=True,
-                 tunit=18.4, skip=50):
+                 tunit=18.4, skip=50, old=None):
         self.sim = sim
         if path is None:
             if sim is None:
@@ -1471,6 +1471,7 @@ class Lightcurves(object):
         self._auto_export = auto_export
         self.tunit = tunit
         self.skip = skip
+        self._old = old
 
     def _extract(self):
         export = self._auto_export
@@ -2178,6 +2179,10 @@ class Lightcurves(object):
                                 time = f['time'][:]
                                 self._views = f.attrs['views'][:]
                                 self._powers = f.attrs['powers'][:]
+                                try:
+                                    self._radii = f.attrs['radii'][:]
+                                except KeyError:
+                                    self._radii = self.sim.r[[0, -1]][:]
         else:
             try:
                 with np.load(os.path.join(self.path, self.filenames[0])) as f:
@@ -2185,6 +2190,10 @@ class Lightcurves(object):
                     time = f['time']
                     self._views = f['views']
                     self._powers = f['powers']
+                    try:
+                        self._radii = f['radii']
+                    except KeyError:
+                        self._radii = self.sim.r[[0, -1]][:]
                     export = False
             except OSError as e:
                 print('Issue with npz file, reverting to source files.')
@@ -2192,7 +2201,7 @@ class Lightcurves(object):
                 self.filenames = self._source_files
                 self._extract()
                 return
-        self._flux = flux
+        self._flux = atleast_4d(flux)
         self._time = time
         if export:
             self.export()
@@ -2214,6 +2223,14 @@ class Lightcurves(object):
             return self._powers
 
     @property
+    def radii(self):
+        try:
+            return self._radii
+        except AttributeError:
+            self._extract()
+            return self._radii
+
+    @property
     def flux(self):
         try:
             return self._flux
@@ -2232,7 +2249,8 @@ class Lightcurves(object):
     def export(self, fn=None):
         if fn is None:
             fn = os.path.join(self.sim.path, 'lightcurve.npz')
-        np.savez(fn, flux=self.flux, time=self.time, views=self.views, powers=self.powers)
+        np.savez(fn, flux=self.flux, time=self.time, views=self.views, powers=self.powers,
+                 radii=self.radii)
 
     def _interpolate(self):
         dtimes = np.diff(self.time)
@@ -2241,7 +2259,8 @@ class Lightcurves(object):
         if newtime[-1] > self.time[-1]:
             newtime = newtime[:-1]
         i = 0
-        remap = np.empty((newtime.size, self.views.size, self.powers.size))
+        remap = np.empty((newtime.size, self.views.size, self.powers.size,
+                          self.radii.size - 1))
         for ti, t in enumerate(newtime):
             while t > self.time[i]:
                 i += 1
@@ -2311,9 +2330,9 @@ class Lightcurves(object):
         freq = np.fft.fftfreq(n, d=self.newtime[1] / tau)
         return freq, fourier
 
-    def plot_ft(self, pi=None, vi=None, data=None, tloc=True, xlim=True, ylim=True, dpi=300,
-                figsize=None, nufit=10, detrend=False, fig=None, ax=None, tmin=None,
-                nu_dno=-1, save=False, omax=None, oharm=None):
+    def plot_ft(self, pi=None, vi=None, ri=None, data=None, tloc=True, xlim=True,
+                ylim=True, dpi=300, figsize=None, nufit=10, detrend=False, fig=None,
+                ax=None, tmin=None, nu_dno=-1, save=False, omax=None, oharm=None):
         if data is None:
             if vi is None or pi is None:
                 raise ValueError('If data not specified, then pi and vi must be.')
@@ -2321,9 +2340,12 @@ class Lightcurves(object):
                 if tmin:
                     tloc = slice(self.tloc(tmin * tau), None)
                 tloc = slice(None)
-            if tloc == True:
+            if tloc is True:
                 tloc = slice(self.tloc(self.skip), None)
-            data = self.remap[tloc, pi, vi]
+            if ri is None:
+                data = self.remap[tloc, pi, vi, None].sum(axis=-1)
+            else:
+                data = self.remap[tloc, pi, vi, ri]
         if detrend:
             d = self.detrend(data, tloc=tloc)
         else:
@@ -2380,7 +2402,7 @@ class Lightcurves(object):
             plt.savefig(self.sim.name + '_lc_ft.pdf')
             plt.close()
 
-    def periodogram(self, pi=None, vi=None, data=None, tloc=True, xlim=True, ylim=True,
+    def periodogram(self, pi=None, vi=None, ri=None, data=None, tloc=True, xlim=True, ylim=True,
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
                     nu0=None, fig=None, ax=None, ylog=True, rel=False, tmin=None,
                     nu_dno=-1, save=False, omax=None, oharm=None):
@@ -2393,7 +2415,10 @@ class Lightcurves(object):
                 tloc = slice(None)
             if tloc == True:
                 tloc = slice(self.tloc(self.skip), None)
-            data = self.remap[tloc, pi, vi]
+            if ri is None:
+                data = self.remap[tloc, pi, vi, None].sum(axis=-1)
+            else:
+                data = self.remap[tloc, pi, vi, ri]
         if detrend:
             d = self.detrend(data, tloc=tloc)
         else:
@@ -2453,7 +2478,7 @@ class Lightcurves(object):
             plt.savefig(self.sim.name + '_periodogram.pdf')
             plt.close()
 
-    def spectrogram(self, pi=None, vi=None, data=None, tloc=True, xlim=True, ylim=True,
+    def spectrogram(self, pi=None, vi=None, ri=None, data=None, tloc=True, xlim=True, ylim=True,
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
                     nu0=None, fig=None, ax=None, log=True, rel=False, nperseg=None,
                     tperseg=20, vmin=1e-8, vmax=True, norm=None, cmap=None, sdata=None,
@@ -2467,7 +2492,10 @@ class Lightcurves(object):
                     tloc = slice(None)
                 if tloc == True:
                     tloc = slice(self.tloc(self.skip), None)
-                data = self.remap[tloc, pi, vi]
+                if ri is None:
+                    data = self.remap[tloc, pi, vi, None].sum(axis=-1)
+                else:
+                    data = self.remap[tloc, pi, vi, ri]
             if detrend:
                 d = self.detrend(data, tloc=tloc)
             else:
@@ -2553,21 +2581,28 @@ class Lightcurves(object):
             plt.close()
         return f, t, Sxx, nu0, nperseg
 
-    def plot_lc(self, pi, vi, save=False, dpi=300):
+    def plot_lc(self, pi, vi, ri=None, save=False, dpi=300):
         plt.figure(dpi=dpi)
-        plt.plot(self.newtime / tau, self.remap[:,pi, vi])
+        if ri is None:
+            data = self.remap[:, pi, vi, None].sum(axis=-1)
+        else:
+            data = self.remap[:, pi, vi, ri]
+        plt.plot(self.newtime / tau, data)
         if save:
             plt.savefig(self.sim.name + '_full_lightcurve.pdf')
             plt.close()
 
-    def zoom_lc(self, pi, vi, tl, tu, save=False, dpi=300):
+    def zoom_lc(self, pi, vi, tl, tu, ri=None, save=False, dpi=300):
         plt.figure(dpi=dpi)
         il = self.tloc(tl * tau)
         iu = self.tloc(tu * tau) + 1
-        d = self.remap[:,pi, vi]
-        plt.plot(self.newtime / tau, d)
-        yl = d[il:iu].min()
-        yu = d[il:iu].max()
+        if ri is None:
+            data = self.remap[il-1:iu+1, pi, vi, None].sum(axis=-1)
+        else:
+            data = self.remap[il-1:iu+1, pi, vi, ri]
+        plt.plot(self.newtime / tau, data)
+        yl = data[il:iu].min()
+        yu = data[il:iu].max()
         dy = (yu - yl) * .025
         plt.xlim(tl, tu)
         plt.ylim(yl - dy, yu + dy)
@@ -2575,8 +2610,8 @@ class Lightcurves(object):
             plt.savefig(self.sim.name + '_zoom_lc.pdf')
             plt.close()
 
-    def several_plots(self, pi=2, vi=4, tl=275, tu=300, sdir=None, save=True, tmin=100,
-                      omax=True, oharm=None):
+    def several_plots(self, pi=2, vi=4, ri=None, tl=275, tu=300, sdir=None, save=True, tmin=100,
+                      omax=True, oharm=None, rmin_cc=1.6):
         sim = self.sim
         if not save:
             sdir = None
@@ -2601,12 +2636,14 @@ class Lightcurves(object):
         try:
             os.chdir(sdir)
             sim.compact_diag(save=save)
-            nu_dno = sim.cc_op_plots(tu, save=save, rmin=1.6)
+            nu_dno = sim.cc_op_plots(tu, save=save, rmin=rmin_cc)
             print('nu = {:.3g} per orbit, {:.3g} mHz'.format(nu_dno, nu_dno / self.tunit * 1e3))
-            self.plot_lc(pi, vi, save=save)
-            self.zoom_lc(pi, vi, tl, tu, save=save)
-            self.plot_ft(pi, vi, tmin=tmin, save=save, nu_dno=nu_dno, omax=om, oharm=oharm)
-            self.periodogram(pi, vi, tmin=tmin, save=save, nu_dno=nu_dno, omax=om, oharm=oharm)
-            self.spectrogram(pi, vi, save=save, nu_dno=nu_dno, omax=omax, ot=ot, oharm=oharm)
+            opt = dict(ri=ri, save=save)
+            self.plot_lc(pi, vi, **opt)
+            self.zoom_lc(pi, vi, tl, tu, **opt)
+            opt.update(dict(nu_dno=nu_dno, omax=om, oharm=oharm))
+            self.plot_ft(pi, vi, tmin=tmin, **opt)
+            self.periodogram(pi, vi, tmin=tmin, **opt)
+            self.spectrogram(pi, vi, ot=ot, **opt)
         finally:
             os.chdir(pwd)
