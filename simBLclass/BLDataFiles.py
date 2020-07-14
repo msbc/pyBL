@@ -944,6 +944,10 @@ class BLConsPrim(BL3Dfile):
     def vortensity(self, dvphi=False):
         return self.vorticity(dvphi=dvphi) / self['dens']
 
+    def d_vortensity(self):
+        ve = self.vortensity()
+        return ve - ve.mean(axis=0)
+
     def plt_vortensity(self, init=None, fopt=None, vmax=None, fig=None, sdir=None,
                        fn=None, save=False, overwrite=True, ext='png'):
         if save or fn:
