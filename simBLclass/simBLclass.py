@@ -4298,7 +4298,7 @@ class BLsim(object):
                     fig=None, rmax=None, norm=True, fopt=None, dpi=300, figsize=True,
                     gsopt=None, inc_time=True, fn=None, save=False, ext='png', sdir=None,
                     overwrite=True, dropbox=False, labelpad=None, title=False,
-                    lxlim=True, lrat=2./3.):
+                    lxlim=True, lrat=2./3., dv=None):
         if sdir:
             dropbox = False
         if not dropbox and sdir is None:
@@ -4365,7 +4365,7 @@ class BLsim(object):
         nt = times.size
 
         if figsize is True:
-            figsize = [3.2, 7.5]
+            figsize = [3.1, 7.5]
             if not title:
                 pass
                 # figsize[1] -= .33
@@ -4386,6 +4386,15 @@ class BLsim(object):
         _lopt = dict(cb=False, title=False, lbls=False, rmax=rmax)
         if left == 'd_vortensity':
             _lopt['cbl'] = r'$\omega/\rho-\left<\omega/\rho\right>$'
+            _lopt['zerocent'] = True
+            _lopt['cmap'] = helpers.NCcmap
+            if dv is not None:
+                left = 'vortensity '
+            if type(dv) == int:
+                _lopt['cbl'] = r'$\omega/\rho-\left<\omega/\rho\right>_{:}$'.format(dv)
+                dv = self.loadfile('cons', dv).vortensity().mean(axis=0)
+            _lopt['dv'] = dv
+            print(dv)
             if llim is None:
                 _lopt['vmax'] = '99%'
         if rlim is not None:
@@ -4524,6 +4533,9 @@ class BLsim(object):
                 l_ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
                 l_ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(.25))
             l_ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+            if i > 0:
+                yticks = l_ax.yaxis.get_major_ticks()
+                yticks[-1].label1.set_visible(False)
 
             if i == nt - 1:
                 if labelpad:

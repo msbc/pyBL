@@ -436,7 +436,8 @@ class BLfile(BLfileBase):
                ax=None, log=False, aspect=None, sdir=None, smooth=None, rmin=None, rmax=None, lbls=True,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1, dpi=300,
                figsize=None, overwrite=True, display=False, minmax=False, txt_opt=None,
-               ps=None, mode=1, phi_norm=True, rm_last=False, printvmax=False, lnorm=False):
+               ps=None, mode=1, phi_norm=True, rm_last=False, printvmax=False, lnorm=False,
+               dv=None):
         """Plot 2D sim data"""
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
@@ -511,6 +512,8 @@ class BLfile(BLfileBase):
             print('    Map of t/orb={:d}'.format(int(self.orbit + .5)))
 
         data = self._parse_data(data)
+        if dv is not None:
+            data -= dv
         if type(data) != np.ndarray:
             raise TypeError('Data has type "{:}", not ndarray.'.format(type(data)))
         data = data * 10**-lnorm
