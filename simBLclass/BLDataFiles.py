@@ -1254,15 +1254,16 @@ class BLConsPrim(BL3Dfile):
         dv = (self.vortensity() - init[np.newaxis, :]) * self.rc[np.newaxis, :] ** 2
         return dv.mean(axis=0)
 
-    def flux_est(self, i=0, p=1, phase=0, total=True):
+    def flux_est(self, i=0, p=1, phase=0, rpow=-3, total=True):
         flux = self['dens']**p
         flux *= np.diff(self.phi)[:, None] * self.rc[None, :] * np.diff(self.r)[None, :]
         x = np.cos(self.phic - phase)[:, None] * self.rc[None, :]
         y = np.sin(self.phic - phase)[:, None] * self.rc[None, :]
-        rloc = np.where(self.rc <= 1)[0].max()
+        rloc = np.where(self.rc < 1)[0].max()
         flux[:, :rloc+1] = 0
         rho = np.sqrt(1 - np.minimum(y**2, 1)) / np.cos(i)
         flux[np.logical_and(x > 0, x < rho)] = 0
+        flux *= self.rc[None, :] ** rpow
         if total:
             return flux.sum()
         return flux

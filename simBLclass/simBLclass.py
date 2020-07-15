@@ -4297,8 +4297,8 @@ class BLsim(object):
                     rlim=None, mlim=None, llim=None, ropt=True, mopt=None, lopt=None,
                     fig=None, rmax=None, norm=True, fopt=None, dpi=300, figsize=True,
                     gsopt=None, inc_time=True, fn=None, save=False, ext='png', sdir=None,
-                    overwrite=True, dropbox=False, labelpad=None, title=False,
-                    lxlim=True, lrat=2./3., dv=None):
+                    overwrite=True, dropbox=False, xlabelpad=None, title=False,
+                    lxlim=True, lrat=2./3., dv=None, ylabelpad=-6):
         if sdir:
             dropbox = False
         if not dropbox and sdir is None:
@@ -4391,7 +4391,7 @@ class BLsim(object):
             if dv is not None:
                 left = 'vortensity '
             if type(dv) == int:
-                _lopt['cbl'] = r'$\omega/\rho-\left<\omega/\rho\right>_{:}$'.format(dv)
+                _lopt['cbl'] = r'$\omega/\rho-\left<\omega/\rho\right>_{' + str(dv) + '}$'
                 dv = self.loadfile('cons', dv).vortensity().mean(axis=0)
             _lopt['dv'] = dv
             print(dv)
@@ -4491,7 +4491,7 @@ class BLsim(object):
             add_plbl(chr(ord('a') + 3 * i))
             # rax.yaxis.set_label_position('right')
             # rax.yaxis.tick_right()
-            l_ax.set_ylabel(r'$\phi/\pi$')
+            l_ax.set_ylabel(r'$\phi/\pi$', labelpad=ylabelpad)
             if llim is None:
                 llim = plt.gci().get_clim()
                 print(llim)
@@ -4506,7 +4506,7 @@ class BLsim(object):
                 l_ax.set_xticklabels([])
             else:
                 xticks = r_ax.xaxis.get_major_ticks()
-                #xticks[-1].label1.set_visible(False)
+                xticks[-1].label1.set_visible(False)
 
             r_ax.xaxis.set_ticks_position('both')
             r_ax.yaxis.set_ticks_position('both')
@@ -4523,6 +4523,7 @@ class BLsim(object):
                 m_ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
                 m_ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(.25))
             m_ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+            m_ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(.5))
 
             l_ax.xaxis.set_ticks_position('both')
             l_ax.yaxis.set_ticks_position('both')
@@ -4533,13 +4534,18 @@ class BLsim(object):
                 l_ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
                 l_ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(.25))
             l_ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
-            if i > 0:
+            l_ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(.5))
+            if i > 0 or  i == 0:
                 yticks = l_ax.yaxis.get_major_ticks()
+                yticks[0].label1.set_visible(False)
+                yticks[1].label1.set_visible(False)
+                yticks[3].label1.set_visible(False)
+                yticks[-2].label1.set_visible(False)
                 yticks[-1].label1.set_visible(False)
 
             if i == nt - 1:
-                if labelpad:
-                    l_ax.set_xlabel('$r$', labelpad=labelpad)
+                if xlabelpad:
+                    l_ax.set_xlabel('$r$', labelpad=xlabelpad)
                 else:
                     l_ax.set_xlabel('$r$')
         m_ax.set_xlabel('$r$')
