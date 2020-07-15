@@ -4467,11 +4467,13 @@ class BLsim(object):
                 _ropt['vmax'] = rlim[1]
             if inc_time:
                 lbl = r'{:.3g}$'.format(df.orbit)
-                if i >= 0:
+                if i >= 0 and False:
                     lbl = r't/2\pi=' + lbl
                 lbl = '$' + lbl
-                plt.text(1.03, .5, lbl, c='k', transform=r_ax.transAxes, va='center',
-                         rotation='vertical')
+                #plt.text(1.03, .5, lbl, c='k', transform=r_ax.transAxes, va='center',
+                #         rotation='vertical')
+                plt.text(.05, .87, lbl, c='k', transform=r_ax.transAxes,
+                         ha='left', fontsize=8)
 
             if mlim is None:
                 if right == mid:
@@ -4560,7 +4562,7 @@ class BLsim(object):
         rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
         lcax.xaxis.set_label_position('top')
         lcax.xaxis.set_ticks_position('top')
-        lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
 
 
         rcax.yaxis.set_offset_position('left')
