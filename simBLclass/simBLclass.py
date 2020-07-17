@@ -4948,9 +4948,10 @@ class BLsim(object):
             plt.close()
         return
 
-    def alt_vortensity_profiles(self, times=None, files=None, cmap=None, popt=None, fn=None,
-                            init=None, data=None, t0=None, save=False, fig=None,
-                            sdir=None, overwrite=True, ext='pdf'):
+    def alt_vortensity_profiles(self, times=None, files=None, cmap=None, popt=None,
+                                fn=None, init=None, data=None, t0=None, save=False,
+                                fig=None, sdir=None, overwrite=True, ext='pdf', cb=True,
+                                cax=None):
         if save or fn:
             save = True
             if sdir is None:
@@ -4976,6 +4977,12 @@ class BLsim(object):
             cmap = plt.get_cmap()
         elif hasattr(cmap, 'lower'):
             cmap = plt.get_cmap(cmap)
+        if cb:
+            norm = mpl.colors.Normalize(vmin=times[0], vmax=times[-1])
+            colors = cmap(norm(times))
+        else:
+            colors = cmap(np.linspace(0, 1, times.size))
+
         colors = cmap(np.linspace(0, 1, len(files)))
         if popt is None:
             popt = dict()
@@ -4987,6 +4994,13 @@ class BLsim(object):
             lbl = r'$t/2\pi={:d}$'.format(times[i])
             plt.plot(self.rc, d, c=colors[i], label=lbl, **_popt)
         # plt.legend(loc=1)
+        if cb:
+            if cax is None:
+                divider = make_axes_locatable(plt.gca())
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+            cb = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm,
+                                           orientation='vertical')
+            cb.set_label(r'$t/2\pi$')
         il = self.rloc(1.05)
         ir = self.rloc(3.5)
         ylim = data[:, il:ir].min(), data[:, il:ir].max()
@@ -4994,7 +5008,7 @@ class BLsim(object):
         plt.ylim(ylim[0] - dy, ylim[1] + dy)
         plt.xlim(self.r[0], self.r[-1])
         plt.xlabel('$r$')
-        lbl = r'$r^2\left<\omega/\rho\right>$'
+        lbl = r'$\left<\omega/\rho\right>$'
         plt.ylabel(lbl)
         plt.title(helpers.sanitize_lbl(self.name))
         if save:
