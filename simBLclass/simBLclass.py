@@ -4298,7 +4298,7 @@ class BLsim(object):
                     fig=None, rmax=None, norm=True, fopt=None, dpi=300, figsize=True,
                     gsopt=None, inc_time=True, fn=None, save=False, ext='png', sdir=None,
                     overwrite=True, dropbox=False, xlabelpad=None, title=False,
-                    lxlim=True, lrat=2./3., dv=None, ylabelpad=-6):
+                    lxlim=True, lrat=2./3., dv=0, ylabelpad=-6):
         if sdir:
             dropbox = False
         if not dropbox and sdir is None:
