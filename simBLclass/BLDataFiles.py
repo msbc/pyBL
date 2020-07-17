@@ -1246,7 +1246,7 @@ class BLConsPrim(BL3Dfile):
         return self.intr(mean ** 2) - self.intr(delta)
 
     def vortensity_prof(self):
-        return self.vortensity().mean(axis=0) * self.rc ** 2
+        return self.vortensity().mean(axis=0)
 
     def d_vortensity_prof(self, init=None):
         if init is None:

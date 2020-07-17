@@ -62,6 +62,13 @@ if __name__ == '__main__':
                         default=False,
                         help='Skip data gen (if possible)')
     args = parser.parse_args()
+
+    try:
+        import git
+        git.Repo(os.path.expanduser(os.path.split(__file__)[0])).remote().pull()
+    except:
+        print('git pull FAILED!')
+
     if args.a:
         print(vars(args))
     elif args.tbl:
