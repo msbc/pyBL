@@ -4313,7 +4313,7 @@ class BLsim(object):
             if mach < 9:
                 rmax = 3
         if lxlim is True:
-            lxlim = [.95, rmax * 2.0 / 3.0]
+            lxlim = [.95, rmax * 2.0 / 3.0 + 1.0/3.0]
         if save and fn is None:
             fn = self.name + '_maps_stripes_2.' + ext
         if save or fn:
@@ -4374,8 +4374,8 @@ class BLsim(object):
             fopt = {}
         _fopt.update(fopt)
         _hr = [.1] + [1] * nt
-        _gsopt = dict(height_ratios=_hr, width_ratios=[lrat, 1, 1], top=.85, bottom=.13,
-                      left=.07, right=.99, wspace=.02, hspace=0)
+        _gsopt = dict(height_ratios=_hr, width_ratios=[lrat, 1, 1], top=.85, bottom=.8,
+                      left=.1, right=.99, wspace=.02, hspace=0)
         if not title:
             _gsopt['top'] = .94
         if gsopt is None:
