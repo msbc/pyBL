@@ -68,11 +68,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.git:
-        try:
-            import git
-            git.Repo(os.path.expanduser(os.path.split(__file__)[0])).remote().pull()
-        except:
-            print('git pull FAILED!')
+        from .git_update import git_pull
+        git_pull()
 
     if args.a:
         print(vars(args))
