@@ -234,3 +234,15 @@ def lintrend(x, y, axis=0):
     b = (y.mean(axis=axis) * xdx - x.mean(axis=axis) * xdy)
     loc = [np.newaxis] + [slice(None)] * (x.ndim - 1)
     return m[loc], b[loc]
+
+def phi_visable(_r, i, b=1):
+    one = np.ones_like(_r * i)
+    r = one * _r[:]
+    out = np.empty_like(r)
+    a = one * b / np.sin(i)
+    out[r >= a] = tau
+    rloc = np.where(np.logical_and(r > b, r < a))
+    rsq = r[rloc]**2
+    _a = a[rloc]
+    out[rloc] = np.pi + 2 * np.arctan(_a / b * np.sqrt((rsq - b) / (_a**2 - rsq)))
+    return out

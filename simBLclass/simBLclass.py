@@ -3494,7 +3494,7 @@ class BLsim(object):
         if popt is None:
             popt = {}
         if var_list is None:
-            var_list = ['Rpseudo', 've', 'd_vortensity']
+            var_list = ['Rpseudo', 've', 'd_vortensity', 'vortensity']
         var_list = np.atleast_1d(var_list)
         fopt = {'dpi': 300, 'figsize': (6, 6)}
         # path = self.name + '_maps'
@@ -3662,7 +3662,7 @@ class BLsim(object):
         if popt is None:
             popt = {}
         if var_list is None:
-            var_list = ['Rpseudo', 've']
+            var_list = ['Rpseudo', 've', 'd_vortensity', 'vortensity']
         var_list = np.atleast_1d(var_list)
         fopt = {'dpi': 300, 'figsize': (6, 6)}
         # path = self.name + '_maps'
@@ -4851,6 +4851,7 @@ class BLsim(object):
                 if not quiet: print('    Vortensity profiles')
                 try:
                     self.vortensity_profiles(save=True, overwrite=overwrite)
+                    self.alt_vortensity_profiles(save=True, overwrite=overwrite)
                 except Exception as e:
                     print('Vortensity profiles FAILED.')
                     print(e)
@@ -4940,6 +4941,60 @@ class BLsim(object):
         plt.xlabel('$R$')
         lbl = r'$R^2\left(\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_{'
         lbl += str(t0) + r'}\right)$'
+        plt.ylabel(lbl)
+        plt.title(helpers.sanitize_lbl(self.name))
+        if save:
+            plt.savefig(fn)
+            plt.close()
+        return
+
+    def alt_vortensity_profiles(self, times=None, files=None, cmap=None, popt=None, fn=None,
+                            init=None, data=None, t0=None, save=False, fig=None,
+                            sdir=None, overwrite=True, ext='pdf'):
+        if save or fn:
+            save = True
+            if sdir is None:
+                sdir = ''
+            if fn is None:
+                fn = helpers.sanitize_lbl(self.name) + '_alt_vortensity_prof.' + ext
+                fn = os.path.join(sdir, fn)
+            if sdir:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+        if parse_not_overwrite(overwrite, fn):
+            return None
+        if files is None:
+            if times is None:
+                times = np.arange(50, 601, 50, dtype=int)
+            files = [self.files('cons')[t] for t in times]
+        if t0 is None:
+            t0 = times[0]
+        if data is None:
+            data = self.map_files(files, 'vortensity_prof')
+        data = np.array(data)
+        if cmap is None:
+            cmap = plt.get_cmap()
+        elif hasattr(cmap, 'lower'):
+            cmap = plt.get_cmap(cmap)
+        colors = cmap(np.linspace(0, 1, len(files)))
+        if popt is None:
+            popt = dict()
+        _popt = dict(lw=1, ls='-')
+        _popt.update(popt)
+
+        fig = plt.figure()
+        for i, d in enumerate(data):
+            lbl = r'$t/2\pi={:d}$'.format(times[i])
+            plt.plot(self.rc, d, c=colors[i], label=lbl, **_popt)
+        # plt.legend(loc=1)
+        il = self.rloc(1.05)
+        ir = self.rloc(3.5)
+        ylim = data[:, il:ir].min(), data[:, il:ir].max()
+        dy = (ylim[1] - ylim[0]) * .05
+        plt.ylim(ylim[0] - dy, ylim[1] + dy)
+        plt.xlim(self.r[0], self.r[-1])
+        plt.xlabel('$r$')
+        lbl = r'$r^2\left<\omega/\rho\right>$'
         plt.ylabel(lbl)
         plt.title(helpers.sanitize_lbl(self.name))
         if save:

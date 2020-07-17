@@ -11,6 +11,7 @@ from matplotlib.colors import ListedColormap
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy.stats import scoreatpercentile as percentile
 from scipy.stats import linregress
+from scipy.interpolate import CubicSpline
 import scipy.signal
 import gc
 import os
@@ -942,6 +943,9 @@ class FluxData(object):
     def vphi3(self):
         return self['vphi']
 
+    def flux_est(self, i, p, rpow=-3):
+        return phi_visable(self.rc, i) * self['dens']**p * self.rc**rpow * np.diff(self.r)
+
     def dt(self, f, ns=None):
         if not ns:
             return grad(self['t'], self.hann(f, ns=ns, dt=True), axis=0)
@@ -1488,6 +1492,10 @@ class Lightcurves(object):
                                 time = f['time'][:]
                                 self._views = f.attrs['views'][:]
                                 self._powers = f.attrs['powers'][:]
+                                try:
+                                    self._radii = f.attrs['radii'][:]
+                                except KeyError:
+                                    self._radii = np.array([1.0, self.sim.r[-1]])
         else:
             try:
                 with np.load(os.path.join(self.path, self.filenames[0])) as f:
@@ -1495,6 +1503,10 @@ class Lightcurves(object):
                     time = f['time']
                     self._views = f['views']
                     self._powers = f['powers']
+                    try:
+                        self._radii = f['radii']
+                    except KeyError:
+                        self._radii =  np.array([1.0, self.sim.r[-1]])
                     export = False
             except OSError as e:
                 print('Issue with npz file, reverting to source files.')
@@ -1522,6 +1534,14 @@ class Lightcurves(object):
         except AttributeError:
             self._extract()
             return self._powers
+
+    @property
+    def radii(self):
+        try:
+            return self._radii
+        except AttributeError:
+            self._extract()
+            return self._radii
 
     @property
     def flux(self):
@@ -1579,6 +1599,14 @@ class Lightcurves(object):
         except AttributeError:
             self._interpolate()
             return self._remap
+
+    @property
+    def fine_est(self):
+        try:
+            return self._fine_est
+        except AttributeError:
+            self._fine_est = self.interp_est()(self.newtime)
+            return self._fine_est
 
     def tloc(self, time, new=True):
         t = self.newtime if new else self.time
@@ -1874,6 +1902,30 @@ class Lightcurves(object):
         finally:
             os.chdir(pwd)
 
+    def flux_est(self, fd=None, bins=False):
+        if fd is None:
+            fd = self.sim.load_flux_data()
+        na = np.newaxis
+        rho = fd['dens'][:, na, na, :]
+        p = self.powers[na, :, na, na]
+        i = self.views[na, na, :, na]
+        r = self.sim.rc[na, na, na, :]
+        flux = rho**p * r**(2-3) * phi_visable(r, i)
+        if not bins:
+            return flux
+        out = np.empty(flux[:,:,:,0].shape + (self.radii.size - 1,))
+        for i in range(self.radii.size - 1):
+            a = np.argmin(np.abs(self.sim.r - self.radii[i]))
+            b = np.argmin(np.abs(self.sim.r - self.radii[i + 1]))
+            out[:,:,:,i] = flux[:, :, :, a:b].sum(axis=-1)
+        return out
+
+    def interp_est(self, fd=None):
+        if fd is None:
+            fd = self.sim.load_flux_data()
+        data = self.flux_est(fd=fd, bins=True)
+        interp = CubicSpline(fd['t'], data)
+
 
 class modeData(object):
     def __init__(self, data, sim=None, dw=.1, overlap=9.9, nbin=3):
@@ -2053,6 +2105,7 @@ class modeData(object):
             self._g_modes = self.filter(np.array(out))
         return self._g_modes
 
+
 class DataContainer:
     def __init__(self, fn, sim=None, df=None, prefix='cons', allow_pickle=False,
                  strip_objects=True):
@@ -2142,508 +2195,3 @@ class BLstats(DataContainer):
     def _gen_data(self, *args):
         print("_gen_data")
         self.data.update(self.df.bl_stats())
-
-
-class Lightcurves(object):
-    def __init__(self, filenames, sim=None, path=None, detect_npz=True, auto_export=True,
-                 tunit=18.4, skip=50):
-        self.sim = sim
-        if path is None:
-            if sim is None:
-                path = ''
-            else:
-                path = sim.path
-        self.path = path
-        if sim and detect_npz:
-            fn = 'lightcurve.npz'
-            if os.path.isfile(os.path.join(path, fn)):
-                self._source_files = np.atleast_1d(filenames)
-                filenames = fn
-        self.filenames = np.atleast_1d(filenames)
-        self._auto_export = auto_export
-        self.tunit = tunit
-        self.skip = skip
-
-    def _extract(self):
-        export = self._auto_export
-        if self.filenames.size > 1 or self.filenames[0].split('.')[-1] == 'hdf5':
-            for fn in self.filenames:
-                with h5py.File(os.path.join(self.path, fn)) as f:
-                    if 'time' in f:
-                        if f['time'].size:
-                            try:
-                                flux = np.concatenate([flux, f['flux'][:]], axis=0)
-                                time = np.concatenate([time, f['time'][:]], axis=0)
-                            except NameError:
-                                flux = f['flux'][:]
-                                time = f['time'][:]
-                                self._views = f.attrs['views'][:]
-                                self._powers = f.attrs['powers'][:]
-                                try:
-                                    self._radii = f.attrs['radii'][:]
-                                except KeyError:
-                                    self._radii = self.sim.r[[0, -1]][:]
-        else:
-            try:
-                with np.load(os.path.join(self.path, self.filenames[0])) as f:
-                    flux = f['flux']
-                    time = f['time']
-                    self._views = f['views']
-                    self._powers = f['powers']
-                    try:
-                        self._radii = f['radii']
-                    except KeyError:
-                        self._radii = self.sim.r[[0, -1]][:]
-                    export = False
-            except OSError as e:
-                print('Issue with npz file, reverting to source files.')
-                print(e)
-                self.filenames = self._source_files
-                self._extract()
-                return
-        self._flux = atleast_4d(flux)
-        self._time = time
-        if export:
-            self.export()
-
-    @property
-    def views(self):
-        try:
-            return self._views
-        except AttributeError:
-            self._extract()
-            return self._views
-
-    @property
-    def powers(self):
-        try:
-            return self._powers
-        except AttributeError:
-            self._extract()
-            return self._powers
-
-    @property
-    def radii(self):
-        try:
-            return self._radii
-        except AttributeError:
-            self._extract()
-            return self._radii
-
-    @property
-    def flux(self):
-        try:
-            return self._flux
-        except AttributeError:
-            self._extract()
-            return self._flux
-
-    @property
-    def time(self):
-        try:
-            return self._time
-        except AttributeError:
-            self._extract()
-            return self._time
-
-    def export(self, fn=None):
-        if fn is None:
-            fn = os.path.join(self.sim.path, 'lightcurve.npz')
-        np.savez(fn, flux=self.flux, time=self.time, views=self.views, powers=self.powers,
-                 radii=self.radii)
-
-    def _interpolate(self):
-        dtimes = np.diff(self.time)
-        dt = dtimes.min()
-        newtime = np.arange(0, self.time[-1] + dt, dt)
-        if newtime[-1] > self.time[-1]:
-            newtime = newtime[:-1]
-        i = 0
-        remap = np.empty((newtime.size, self.views.size, self.powers.size,
-                          self.radii.size - 1))
-        for ti, t in enumerate(newtime):
-            while t > self.time[i]:
-                i += 1
-            if i == dtimes.size:
-                res = (t - self.time[i]) / dtimes[i - 1]
-                i -= 1
-            else:
-                res = (t - self.time[i]) / dtimes[i]
-            remap[ti] = self.flux[i] * (1.0 - res) + self.flux[i + 1] * res
-        self._newtime = newtime
-        self._remap = remap
-
-    @property
-    def newtime(self):
-        try:
-            return self._newtime
-        except AttributeError:
-            self._interpolate()
-            return self._newtime
-
-    @property
-    def remap(self):
-        try:
-            return self._remap
-        except AttributeError:
-            self._interpolate()
-            return self._remap
-
-    def tloc(self, time, new=True):
-        t = self.newtime if new else self.time
-        return np.abs(t - time).argmin()
-
-    def detrend(self, data, t=None, tloc=None):
-        if t is None:
-            t = self.newtime
-            if tloc is not None:
-                t = t[tloc]
-        m, b = lintrend(t, data)
-        return data - m * t + b
-
-    def ft(self, t0=None, t1=None, n=None, window=None, detrend=None):
-        if t0 is not None:
-            t0 = self.tloc(t0)
-        if t1 is not None:
-            t1 = self.tloc(t1)
-        loc = slice(t0, t1)
-        if n is None:
-            n = self.newtime[loc].size
-        data = self.remap[loc]
-        if window is not None:
-            if detrend is None:
-                detrend = True
-            if hasattr(window, 'lower'):
-                window = scipy.signal.get_window(window, n)
-            tmp = tuple([slice(None)] + (data.ndim - window.ndim) * [np.newaxis])
-            window = window[tmp]
-        else:
-            window = 1
-        if detrend is True:
-            m, b = lintrend(self.newtime[loc], data)
-            detrend = m * self.newtime[loc, None, None] + b
-        if np.any(detrend):
-            data -= detrend
-        data -= data.mean(axis=0)
-        data *= window
-        fourier = np.fft.fft(data, axis=0, n=n) / (.5 * n)
-        freq = np.fft.fftfreq(n, d=self.newtime[1] / tau)
-        return freq, fourier
-
-    def plot_ft(self, pi=None, vi=None, ri=None, data=None, tloc=True, xlim=True,
-                ylim=True, dpi=300, figsize=None, nufit=10, detrend=False, fig=None,
-                ax=None, tmin=None, nu_dno=-1, save=False, omax=None, oharm=None):
-        if data is None:
-            if vi is None or pi is None:
-                raise ValueError('If data not specified, then pi and vi must be.')
-            if tloc is None:
-                if tmin:
-                    tloc = slice(self.tloc(tmin * tau), None)
-                tloc = slice(None)
-            if tloc is True:
-                tloc = slice(self.tloc(self.skip), None)
-            if ri is None:
-                data = self.remap[tloc, pi, vi, None].sum(axis=-1)
-            else:
-                data = self.remap[tloc, pi, vi, ri]
-        if detrend:
-            d = self.detrend(data, tloc=tloc)
-        else:
-            d = data
-        ft = np.fft.fft(d / d.mean() - 1)
-        nt = len(d)
-        freq = np.fft.fftfreq(nt, d=self.newtime[1] / tau)
-        x = freq[:nt//2]
-        iu = np.searchsorted(x, nufit)
-        loc = slice(1, iu)
-        y = np.abs(ft[:nt//2])
-        m, b, _, _, _ = scipy.stats.linregress(np.log(x[loc]), np.log(y[loc]))
-        pl = np.exp(m * np.log(x) + b)
-
-        if fig is None and ax is None:
-            fig = plt.figure(figsize=figsize, dpi=dpi)
-        if ax:
-            plt.sca(ax)
-        else:
-            ax = plt.gca()
-        plt.plot(x, np.abs(y / pl - 1))
-        if nu_dno:
-            plt.axvline(nu_dno, zorder=-1, lw=1, ls=':', c='.5')
-        yl = plt.ylim()
-        if np.any(omax):
-            omax = np.mean(omax)
-            if oharm is None:
-                oharm = 1
-            for h in np.atleast_1d(oharm):
-                plt.axvline(omax * h, zorder=-1-h, lw=1, ls='-.', c='.5')
-        plt.ylim(*yl)
-        if xlim:
-            if xlim is True:
-                xlim = [0, 6.5]
-            plt.xlim(*xlim)
-        if ylim:
-            if ylim is True:
-                xl, xu = np.searchsorted(x, [.1, plt.xlim()[1]])
-                ylim = [0, np.abs(y / pl - 1).max() * 1.1]
-            plt.ylim(*ylim)
-        ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(1))
-        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
-        plt.xlabel('freq. (per orbit)')
-        plt.ylabel(r'$\left|A_\nu\right|$')
-        def fwd(x):
-            return x / self.tunit
-        def bak(x):
-            return x * self.tunit
-        ax2 = ax.secondary_xaxis('top', functions=(fwd, bak))
-        ax2.set_xlim(*(np.array(ax.get_xlim()) / self.tunit))
-        ax2.set_xlabel('Est. freq. (Hz)')
-        ax2.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
-        if save:
-            plt.savefig(self.sim.name + '_lc_ft.pdf')
-            plt.close()
-
-    def periodogram(self, pi=None, vi=None, ri=None, data=None, tloc=True, xlim=True, ylim=True,
-                    dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
-                    nu0=None, fig=None, ax=None, ylog=True, rel=False, tmin=None,
-                    nu_dno=-1, save=False, omax=None, oharm=None):
-        if data is None:
-            if vi is None or pi is None:
-                raise ValueError('If data not specified, then pi and vi must be.')
-            if tloc is None:
-                if tmin:
-                    tloc = slice(self.tloc(tmin * tau), None)
-                tloc = slice(None)
-            if tloc == True:
-                tloc = slice(self.tloc(self.skip), None)
-            if ri is None:
-                data = self.remap[tloc, pi, vi, None].sum(axis=-1)
-            else:
-                data = self.remap[tloc, pi, vi, ri]
-        if detrend:
-            d = self.detrend(data, tloc=tloc)
-        else:
-            d = data
-        if rel:
-            d = d / d.mean() - 1
-        if nu0 is None:
-            nu0 = tau / (self.newtime[1])
-        f, Pxx_den = scipy.signal.periodogram(d, nu0, window, detrend='linear')
-
-        if fig is None and ax is None:
-            fig = plt.figure(figsize=figsize, dpi=dpi)
-        if ax:
-            plt.sca(ax)
-        else:
-            ax = plt.gca()
-        if ylog:
-            plt.semilogy(f, Pxx_den, zorder=0)
-        else:
-            plt.plot(f, Pxx_den, zorder=0)
-        if nu_dno:
-            plt.axvline(nu_dno, zorder=-1, lw=1, ls=':', c='.5')
-        yl = plt.ylim()
-        if np.any(omax):
-            omax = np.mean(omax)
-            if oharm is None:
-                oharm = 1
-            for h in np.atleast_1d(oharm):
-                plt.axvline(omax * h, zorder=-1-h, lw=1, ls='-.', c='.5')
-        plt.ylim(*yl)
-        if xlim:
-            if xlim is True:
-                xlim = [0, 6.5]
-            plt.xlim(*xlim)
-        if ylim:
-            if ylim is True:
-                xl, xu = np.searchsorted(f, [.1, plt.xlim()[1]])
-                ylim = [0, Pxx_den[xl:xu].max() * 2]
-                if ylog:
-                    ylim[0] = 0.5 * Pxx_den[xl:xu].min()
-            plt.ylim(*ylim)
-        ax = plt.gca()
-        ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(1))
-        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
-        plt.xlabel('freq. (per orbit)')
-        plt.ylabel(r'periodogram')
-        def fwd(x):
-            return x / self.tunit
-        def bak(x):
-            return x * self.tunit
-        ax2 = ax.secondary_xaxis('top', functions=(fwd, bak))
-        ax2.set_xlim(*(np.array(ax.get_xlim()) / self.tunit))
-        ax2.set_xlabel('Est. freq. (Hz)')
-        ax2.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
-        plt.sca(ax)
-        if save:
-            plt.savefig(self.sim.name + '_periodogram.pdf')
-            plt.close()
-
-    def spectrogram(self, pi=None, vi=None, ri=None, data=None, tloc=True, xlim=True, ylim=True,
-                    dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
-                    nu0=None, fig=None, ax=None, log=True, rel=False, nperseg=None,
-                    tperseg=20, vmin=1e-8, vmax=True, norm=None, cmap=None, sdata=None,
-                    cb=True, cbl=True, cax=None, nu_dno=-1, save=False, omax=None,
-                    oharm=None, ot=None, fd=None):
-        if sdata is None:
-            if data is None:
-                if vi is None or pi is None:
-                    raise ValueError('If data not specified, then pi and vi must be.')
-                if tloc is None:
-                    tloc = slice(None)
-                if tloc == True:
-                    tloc = slice(self.tloc(self.skip), None)
-                if ri is None:
-                    data = self.remap[tloc, pi, vi, None].sum(axis=-1)
-                else:
-                    data = self.remap[tloc, pi, vi, ri]
-            if detrend:
-                d = self.detrend(data, tloc=tloc)
-            else:
-                d = data
-            if rel:
-                d = d / d.mean() - 1
-            if nu0 is None:
-                nu0 = tau / (self.newtime[1])
-            if nperseg is None:
-                nperseg = self.tloc(tperseg * tau)
-        if norm is None and log:
-            norm = mpl.colors.LogNorm()
-        if sdata is None:
-            f, t, Sxx = scipy.signal.spectrogram(d, nu0, window, nperseg=int(nperseg),
-                                                 detrend='linear')
-        else:
-            f, t, Sxx, nu0, nperseg = sdata
-        if fig is None and ax is None:
-            fig = plt.figure(figsize=figsize, dpi=dpi)
-        elif not fig:
-             fig = plt.gcf()
-        if ax:
-            plt.sca(ax)
-        else:
-            ax = plt.gca()
-        if vmax is True:
-            vmax = Sxx[1:, 1:].max()
-        im = plt.pcolormesh(t, f, Sxx, norm=norm, vmin=vmin, vmax=vmax, cmap=cmap)
-        if nu_dno:
-            plt.axhline(nu_dno, lw=1, ls=':', c='.5')
-        xl = plt.xlim()
-        yl = plt.ylim()
-        if np.any(omax):
-            if omax is True or ot is True:
-                if fd is None:
-                    fd = self.sim.load_flux_data()
-                if omax is True:
-                    omax = (fd.vphi2() / self.sim.rc).max(axis=-1)
-                if ot is True:
-                    ot = fd['t'] / tau
-            if oharm is None:
-                oharm = range(1, 9)
-            print(ot, omax)
-            for h in np.atleast_1d(oharm):
-                plt.plot(ot, omax * h, lw=1, ls=':', c='w', alpha=.4)
-        plt.xlim(*xl)
-        plt.ylim(*yl)
-        ax = plt.gca()
-        plt.ylabel('freq. (per orbit)')
-        plt.xlabel(r'$t/2\pi$')
-        if ylim:
-            if ylim is True:
-                ylim = [0, 6.5]
-                plt.ylim(*ylim)
-        if cb:
-            offset = False
-            if cax is None:
-                divider = make_axes_locatable(ax)
-                if cax is None:
-                    cax = divider.append_axes("top", size="5%", pad=0.05)
-                    offset = True
-            cb = plt.colorbar(im, cax=cax, orientation='horizontal')
-            if offset:
-                cb.ax.xaxis.set_label_position('top')
-                cb.ax.xaxis.set_ticks_position('top')
-            if cbl:
-                if cbl is True:
-                    cbl = r'$\left|A_\nu\right|$'
-                cb.set_label(cbl)
-        #ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(1))
-        #ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
-        def fwd(x):
-            return x / self.tunit
-        def bak(x):
-            return x * self.tunit
-        ax2 = ax.secondary_yaxis('right', functions=(fwd, bak))
-        ax2.set_ylim(*(np.array(ax.get_ylim()) / self.tunit))
-        ax2.set_ylabel('Est. freq. (Hz)')
-        #ax2.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.01))
-        plt.sca(ax)
-        if save:
-            plt.savefig(self.sim.name + '_spectrogram.png')
-            plt.close()
-        return f, t, Sxx, nu0, nperseg
-
-    def plot_lc(self, pi, vi, ri=None, save=False, dpi=300):
-        plt.figure(dpi=dpi)
-        if ri is None:
-            data = self.remap[:, pi, vi, None].sum(axis=-1)
-        else:
-            data = self.remap[:, pi, vi, ri]
-        plt.plot(self.newtime / tau, data)
-        if save:
-            plt.savefig(self.sim.name + '_full_lightcurve.pdf')
-            plt.close()
-
-    def zoom_lc(self, pi, vi, tl, tu, ri=None, save=False, dpi=300):
-        plt.figure(dpi=dpi)
-        il = self.tloc(tl * tau)
-        iu = self.tloc(tu * tau) + 1
-        if ri is None:
-            data = self.remap[il-1:iu+1, pi, vi, None].sum(axis=-1)
-        else:
-            data = self.remap[il-1:iu+1, pi, vi, ri]
-        plt.plot(self.newtime / tau, data)
-        yl = data[il:iu].min()
-        yu = data[il:iu].max()
-        dy = (yu - yl) * .025
-        plt.xlim(tl, tu)
-        plt.ylim(yl - dy, yu + dy)
-        if save:
-            plt.savefig(self.sim.name + '_zoom_lc.pdf')
-            plt.close()
-
-    def several_plots(self, pi=2, vi=4, ri=None, tl=275, tu=300, sdir=None, save=True, tmin=100,
-                      omax=True, oharm=None, rmin_cc=1.6):
-        sim = self.sim
-        if not save:
-            sdir = None
-        if sdir is None:
-            sdir = ''
-        if sdir is True:
-            sdir = os.path.split(sim.path)[-1] + '_plots'
-            sdir = os.path.join(rc('fig_base_dir'), sdir, 'lc')
-        if not os.path.isdir(sdir):
-            os.mkdir(sdir)
-        if np.any(omax):
-            fd = self.sim.load_flux_data()
-            if omax is True:
-                omax = (fd.vphi2() / self.sim.rc).max(axis=-1)
-            oti = sim.tloc(100)
-            om = omax[oti:].mean()
-            ot = fd['t'] / tau
-            if oharm is None:
-                oharm = range(1, 9)
-        opt = dict()
-        pwd = os.getcwd()
-        try:
-            os.chdir(sdir)
-            sim.compact_diag(save=save)
-            nu_dno = sim.cc_op_plots(tu, save=save, rmin=rmin_cc)
-            print('nu = {:.3g} per orbit, {:.3g} mHz'.format(nu_dno, nu_dno / self.tunit * 1e3))
-            opt = dict(ri=ri, save=save)
-            self.plot_lc(pi, vi, **opt)
-            self.zoom_lc(pi, vi, tl, tu, **opt)
-            opt.update(dict(nu_dno=nu_dno, omax=om, oharm=oharm))
-            self.plot_ft(pi, vi, tmin=tmin, **opt)
-            self.periodogram(pi, vi, tmin=tmin, **opt)
-            self.spectrogram(pi, vi, ot=ot, **opt)
-        finally:
-            os.chdir(pwd)
