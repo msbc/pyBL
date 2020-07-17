@@ -61,13 +61,18 @@ if __name__ == '__main__':
                         action='store_true',
                         default=False,
                         help='Skip data gen (if possible)')
+    parser.add_argument('-g', '--git',
+                        action='store_true',
+                        default=False,
+                        help='git pull')
     args = parser.parse_args()
 
-    try:
-        import git
-        git.Repo(os.path.expanduser(os.path.split(__file__)[0])).remote().pull()
-    except:
-        print('git pull FAILED!')
+    if args.git:
+        try:
+            import git
+            git.Repo(os.path.expanduser(os.path.split(__file__)[0])).remote().pull()
+        except:
+            print('git pull FAILED!')
 
     if args.a:
         print(vars(args))
