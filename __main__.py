@@ -71,10 +71,10 @@ if __name__ == '__main__':
         from .git_update import git_pull
         git_pull()
 
-    if args.a:
-        print(vars(args))
     import matplotlib as mpl
     mpl.use('agg')
+    if args.a:
+        print(vars(args))
     elif args.tbl:
         from .simBLclass.CompileSims import mk_sim_tbl
         print(mk_sim_tbl())
