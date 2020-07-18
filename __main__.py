@@ -73,6 +73,8 @@ if __name__ == '__main__':
 
     if args.a:
         print(vars(args))
+    import matplotlib as mpl
+    mpl.use('agg')
     elif args.tbl:
         from .simBLclass.CompileSims import mk_sim_tbl
         print(mk_sim_tbl())
