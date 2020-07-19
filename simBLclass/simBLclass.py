@@ -4951,7 +4951,7 @@ class BLsim(object):
     def alt_vortensity_profiles(self, times=None, files=None, cmap=None, popt=None,
                                 fn=None, init=None, data=None, t0=None, save=False,
                                 fig=None, sdir=None, overwrite=True, ext='pdf', cb=True,
-                                cax=None):
+                                cax=None, figsize=None, dpi=300):
         if save or fn:
             save = True
             if sdir is None:
@@ -4966,7 +4966,7 @@ class BLsim(object):
             return None
         if files is None:
             if times is None:
-                times = np.arange(50, 601, 50, dtype=int)
+                times = np.arange(0, 601, 50, dtype=int)
             files = [self.files('cons')[t] for t in times]
         if t0 is None:
             t0 = times[0]
@@ -4983,22 +4983,27 @@ class BLsim(object):
         else:
             colors = cmap(np.linspace(0, 1, times.size))
 
-        colors = cmap(np.linspace(0, 1, len(files)))
         if popt is None:
             popt = dict()
         _popt = dict(lw=1, ls='-')
         _popt.update(popt)
 
-        fig = plt.figure()
+        fig = plt.figure(figsize=figsize, dpi=dpi)
+        #gs = mpl.gridspec.GridSpec(1, 1, top=.92, bottom=.12, left=.14, right=.95,
+        #                           wspace=.02, hspace=.1, width_ratios=[1, .1])
+        #ax = plt.subplot(gs[0])
+        lbls = []
+        handles = []
         for i, d in enumerate(data):
             lbl = r'$t/2\pi={:d}$'.format(times[i])
-            plt.plot(self.rc, d, c=colors[i], label=lbl, **_popt)
-        # plt.legend(loc=1)
+            lbls.append(lbl)
+            handles.append(plt.plot(self.rc, d, c=colors[i], label=lbl, **_popt))
+        plt.legend()
+        ax = plt.gca()
         if cb:
             if cax is None:
-                divider = make_axes_locatable(plt.gca())
-                cax = divider.append_axes("right", size="5%", pad=0.05)
-            cb = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm,
+                cax = plt.subplot(gs[1])
+            cb = mpl.colorbar.ColorbarBase(cax=cax, cmap=cmap, norm=norm,
                                            orientation='vertical')
             cb.set_label(r'$t/2\pi$')
         il = self.rloc(1.05)
