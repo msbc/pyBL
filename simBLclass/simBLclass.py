@@ -4950,7 +4950,7 @@ class BLsim(object):
 
     def alt_vortensity_profiles(self, times=None, files=None, cmap=None, popt=None,
                                 fn=None, init=None, data=None, t0=None, save=False,
-                                fig=None, sdir=None, overwrite=True, ext='pdf', cb=True,
+                                fig=None, sdir=None, overwrite=True, ext='pdf', cb=False,
                                 cax=None, figsize=None, dpi=300):
         if save or fn:
             save = True
@@ -5001,8 +5001,8 @@ class BLsim(object):
         plt.legend()
         ax = plt.gca()
         if cb:
-            if cax is None:
-                cax = plt.subplot(gs[1])
+            #if cax is None:
+                #cax = plt.subplot(gs[1])
             cb = mpl.colorbar.ColorbarBase(cax=cax, cmap=cmap, norm=norm,
                                            orientation='vertical')
             cb.set_label(r'$t/2\pi$')
