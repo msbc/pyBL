@@ -4298,7 +4298,7 @@ class BLsim(object):
                     fig=None, rmax=None, norm=True, fopt=None, dpi=300, figsize=True,
                     gsopt=None, inc_time=True, fn=None, save=False, ext='png', sdir=None,
                     overwrite=True, dropbox=False, xlabelpad=None, title=False,
-                    lxlim=True, lrat=2./3., dv=0, ylabelpad=-6):
+                    lxlim=True, lrat=2./3., dv=0, ylabelpad=-6, space=.1):
         if sdir:
             dropbox = False
         if not dropbox and sdir is None:
@@ -4365,7 +4365,7 @@ class BLsim(object):
         nt = times.size
 
         if figsize is True:
-            figsize = [3.2, 7.2]
+            figsize = [3.2 if nt < 12 else 7, 7.2]
             if not title:
                 pass
                 # figsize[1] -= .33
@@ -4373,8 +4373,9 @@ class BLsim(object):
         if fopt is None:
             fopt = {}
         _fopt.update(fopt)
-        _hr = [.1] + [1] * nt
-        _gsopt = dict(height_ratios=_hr, width_ratios=[lrat, 1, 1], top=.85, bottom=.05,
+        _hr = [.1] + [1] * (nt if nt < 12 else int(nt / 2 + .5))
+        _wr = [lrat, 1, 1] if nt < 12 else [lrat, 1, 1, space, lrat, 1, 1]
+        _gsopt = dict(height_ratios=_hr, width_ratios=_wr, top=.85, bottom=.05,
                       left=.1, right=.99, wspace=.02, hspace=0)
         if not title:
             _gsopt['top'] = .94
@@ -4418,7 +4419,7 @@ class BLsim(object):
 
         if not fig:
             fig = plt.figure(**_fopt)
-        gs = mpl.gridspec.GridSpec(1 + nt, 3, **_gsopt)
+        gs = mpl.gridspec.GridSpec(len(_hr), len(_wr), **_gsopt)
         if right == mid:
             rcax = plt.subplot(gs[0, 1:3])
             mcax = None
@@ -4443,9 +4444,19 @@ class BLsim(object):
             ax.text(.96, .87, '(' + lbl + ')', c='k', transform=ax.transAxes, ha='right',
                     fontsize=8)
 
+        d = 0
         for i, t in enumerate(times):
+            if i == 12:
+                d += 4
+                if right == mid:
+                    rcax = plt.subplot(gs[0, d+1:d+3])
+                    mcax = None
+                else:
+                    rcax = plt.subplot(gs[1, d+2])
+                    mcax = plt.subplot(gs[1, d+1])
+                lcax = plt.subplot(gs[1, d])
             df = t if hasattr(t, 'name') else self.loadfile('cons', t)
-            if i == nt - 1:
+            if i == nt - 1 or i == 11:
                 _ropt['cb'] = True
                 _ropt['cax'] = rcax
                 _ropt['cbopt'] = dict(orientation='horizontal')
@@ -4457,7 +4468,7 @@ class BLsim(object):
                 _lopt['cax'] = lcax
                 _lopt['cbopt'] = dict(orientation='horizontal')
 
-            r_ax = plt.subplot(gs[i + 1, 2])
+            r_ax = plt.subplot(gs[i//12 + 1, 2 + d])
             df.plot2d(right, ax=r_ax, **_ropt)
             add_plbl(chr(ord('a') + 3 * i + 2))
             #lax.set_ylabel(r'$y$')
@@ -4481,13 +4492,13 @@ class BLsim(object):
                     mlim = rlim
                     _mopt['vmin'] = mlim[0]
                     _mopt['vmax'] = mlim[1]
-            m_ax = plt.subplot(gs[i + 1, 1])
+            m_ax = plt.subplot(gs[i//12 + 1, 1+d])
             df.stripe(mid, ax=m_ax, **_mopt)
             add_plbl(chr(ord('a') + 3 * i + 1))
             #rax.yaxis.set_label_position('right')
             #rax.yaxis.tick_right()
 
-            l_ax = plt.subplot(gs[i + 1, 0])
+            l_ax = plt.subplot(gs[i//12 + 1, 0+d])
             df.stripe(left, ax=l_ax, **_lopt)
             if lxlim is not None:
                 l_ax.set_xlim(*lxlim)
@@ -4546,31 +4557,32 @@ class BLsim(object):
                 yticks[-2].label1.set_visible(False)
                 yticks[-1].label1.set_visible(False)
 
-            if i == nt - 1:
+            if i == nt - 1 or i == 11:
                 if xlabelpad:
                     l_ax.set_xlabel('$r$', labelpad=xlabelpad)
                 else:
                     l_ax.set_xlabel('$r$')
-        m_ax.set_xlabel('$r$')
-        r_ax.set_xlabel('$x$')
-        try:
-            mcax.xaxis.set_label_position('top')
-            mcax.xaxis.set_ticks_position('top')
-        except (NameError, AttributeError):
-            pass
-        rcax.xaxis.set_label_position('top')
-        rcax.xaxis.set_ticks_position('top')
-        rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
-        lcax.xaxis.set_label_position('top')
-        lcax.xaxis.set_ticks_position('top')
-        lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+                m_ax.set_xlabel('$r$')
+                r_ax.set_xlabel('$x$')
+                try:
+                    mcax.xaxis.set_label_position('top')
+                    mcax.xaxis.set_ticks_position('top')
+                except (NameError, AttributeError):
+                    pass
+                rcax.xaxis.set_label_position('top')
+                rcax.xaxis.set_ticks_position('top')
+                rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+                lcax.xaxis.set_label_position('top')
+                lcax.xaxis.set_ticks_position('top')
+                lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
 
-        xticks = lcax.xaxis.get_major_ticks()
-        xt = xticks[int(len(xticks)//2)]
-        xt.label1.set_visible(False)
-        xt.label2.set_visible(False)
+                xticks = lcax.xaxis.get_major_ticks()
+                xt = xticks[int(len(xticks) // 2)]
+                xt.label1.set_visible(False)
+                xt.label2.set_visible(False)
 
-        rcax.yaxis.set_offset_position('left')
+                rcax.yaxis.set_offset_position('left')
+
         if title:
             fig.suptitle(helpers.sanitize_lbl(self.name))
 
