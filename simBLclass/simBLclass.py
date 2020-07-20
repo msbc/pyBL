@@ -4365,7 +4365,7 @@ class BLsim(object):
         nt = times.size
 
         if figsize is True:
-            figsize = [3.0, 7.5]
+            figsize = [3.0, 7.4]
             if not title:
                 pass
                 # figsize[1] -= .33
@@ -4510,6 +4510,9 @@ class BLsim(object):
             else:
                 xticks = r_ax.xaxis.get_major_ticks()
                 xticks[-1].label1.set_visible(False)
+
+            xtick = [i for i in lcax.xaxis.get_major_ticks() if i.get_loc()[0] == 0]
+            xtick.label1.set_visible(False)
 
             r_ax.xaxis.set_ticks_position('both')
             r_ax.yaxis.set_ticks_position('both')
