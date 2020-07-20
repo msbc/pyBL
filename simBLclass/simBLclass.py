@@ -4374,7 +4374,7 @@ class BLsim(object):
             fopt = {}
         _fopt.update(fopt)
         _hr = [.1] + [1] * nt
-        _gsopt = dict(height_ratios=_hr, width_ratios=[lrat, 1, 1], top=.85, bottom=.8,
+        _gsopt = dict(height_ratios=_hr, width_ratios=[lrat, 1, 1], top=.85, bottom=.08,
                       left=.1, right=.99, wspace=.02, hspace=0)
         if not title:
             _gsopt['top'] = .94
