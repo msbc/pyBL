@@ -4511,8 +4511,8 @@ class BLsim(object):
                 xticks = r_ax.xaxis.get_major_ticks()
                 xticks[-1].label1.set_visible(False)
 
-            xtick = [i for i in lcax.xaxis.get_major_ticks() if i.get_loc() == 0][0]
-            xtick.label1.set_visible(False)
+            for xt in [i for i in lcax.xaxis.get_major_ticks() if i.get_loc() == 0]:
+                xt.label1.set_visible(False)
 
             r_ax.xaxis.set_ticks_position('both')
             r_ax.yaxis.set_ticks_position('both')
