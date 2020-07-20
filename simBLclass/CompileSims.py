@@ -1382,3 +1382,59 @@ def multi_mdot_split(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn
         plt.savefig(fn)
         plt.close()
     return
+
+
+def mulit_vortensity_prof(sims=None, save=False, figsize=None, dpi=300, fopt=None,
+                          fn=None, sdir=None, lbl=True, lnorm=True, overwrite=True,
+                          lopt=None):
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'multi_vortensity_prof.pdf'
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if parse_not_overwrite(overwrite, fn):
+        return None
+    if lopt is None:
+        lopt = dict(handlelength=1, fontsize=6, handletextpad=.4, columnspacing=.7,
+                    ncol=2, loc=7)
+    if sims is None:
+        F = False
+        sims = [
+            dict(name='M06.HR.r.lc.a', kwargs=dict(rmax=3, ylim=[0,10.5])),
+            dict(name='M09.FR.r.lc.a', kwargs=dict(rmax=1.8, ylim=[0,13.5], legend=F)),
+            dict(name='M12.FR.r.lc.a', kwargs=dict(rmax=1.8, ylim=[0,2.1], legend=F)),
+            dict(name='M15.FR.r.a', kwargs=dict(rmax=1.5, ylim=[0,3], legend=F)),
+        ]
+    nr = len(sims)
+    nc = 1
+
+    if figsize is None:
+        figsize = np.array([3, 7.5])
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt is None:
+        fopt = {}
+    _fopt.update(fopt)
+    fig = plt.figure(**_fopt)
+    gs = mpl.gridspec.GridSpec(nr, nc, top=.99, bottom=.06, left=.15, right=.97,
+                               hspace=.15)
+    ax = None
+    for ns, s in enumerate(sims):
+        ax = plt.subplot(gs[ns])
+        sim = BLsim(s['name'])
+        sim.alt_vortensity_profiles(ax=ax, **s['kwargs'], title=False, lopt=lopt)
+        ax.yaxis.set_ticks_position('both')
+        ax.xaxis.set_ticks_position('both')
+        ax.tick_params(axis='both', which='both', direction='in', zorder=10)
+        lbl = chr(ord('a') + ns) + ') ' + 'M{:d}'.format(int(np.round(sim.mach)))
+        ax.text(.85, .98, lbl, c='k', transform=ax.transAxes, ha='left', va='top',
+                fontsize=6)
+        if ns < nr - 1:
+            plt.xlabel('')
+    if fn or save:
+        plt.savefig(fn)
+        plt.close()
+    return

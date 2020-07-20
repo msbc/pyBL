@@ -4953,9 +4953,10 @@ class BLsim(object):
         return
 
     def alt_vortensity_profiles(self, times=None, files=None, cmap=None, popt=None,
-                                fn=None, init=None, data=None, t0=None, save=False,
-                                fig=None, sdir=None, overwrite=True, ext='pdf', cb=False,
-                                cax=None, figsize=None, dpi=300):
+                                fn=None, data=None, t0=None, save=False, ax=None,
+                                fig=None, sdir=None, overwrite=True, ext='pdf',
+                                legend=True, figsize=None, dpi=300, xlim=None, ylim=None,
+                                rmax=None, title=True, lopt=None):
         if save or fn:
             save = True
             if sdir is None:
@@ -4968,10 +4969,12 @@ class BLsim(object):
                     os.mkdir(sdir)
         if parse_not_overwrite(overwrite, fn):
             return None
+        if lopt is None:
+            lopt = dict()
         if files is None:
             if times is None:
                 times = np.arange(0, 601, 50, dtype=int)
-            files = [self.files('cons')[t] for t in times]
+            files = [self.files('FT')[t * 10] for t in times]
         if t0 is None:
             t0 = times[0]
         if data is None:
@@ -4981,45 +4984,43 @@ class BLsim(object):
             cmap = plt.get_cmap()
         elif hasattr(cmap, 'lower'):
             cmap = plt.get_cmap(cmap)
-        if cb:
-            norm = mpl.colors.Normalize(vmin=times[0], vmax=times[-1])
-            colors = cmap(norm(times))
-        else:
-            colors = cmap(np.linspace(0, 1, times.size))
+        colors = cmap(np.linspace(0, 1, times.size))
 
         if popt is None:
             popt = dict()
         _popt = dict(lw=1, ls='-')
         _popt.update(popt)
 
-        fig = plt.figure(figsize=figsize, dpi=dpi)
-        #gs = mpl.gridspec.GridSpec(1, 1, top=.92, bottom=.12, left=.14, right=.95,
-        #                           wspace=.02, hspace=.1, width_ratios=[1, .1])
-        #ax = plt.subplot(gs[0])
-        lbls = []
-        handles = []
+        if fig is None and ax is None:
+            fig = plt.figure(figsize=figsize, dpi=dpi)
+        if ax is not None:
+            plt.sca(ax)
+
         for i, d in enumerate(data):
             lbl = r'$t/2\pi={:d}$'.format(times[i])
-            lbls.append(lbl)
-            handles.append(plt.plot(self.rc, d, c=colors[i], label=lbl, **_popt))
-        plt.legend()
+            plt.plot(self.rc, d, c=colors[i], label=lbl, **_popt)
+        if legend:
+            plt.legend(**lopt)
         ax = plt.gca()
-        if cb:
-            #if cax is None:
-                #cax = plt.subplot(gs[1])
-            cb = mpl.colorbar.ColorbarBase(cax=cax, cmap=cmap, norm=norm,
-                                           orientation='vertical')
-            cb.set_label(r'$t/2\pi$')
         il = self.rloc(1.05)
         ir = self.rloc(3.5)
-        ylim = data[:, il:ir].min(), data[:, il:ir].max()
-        dy = (ylim[1] - ylim[0]) * .05
-        plt.ylim(ylim[0] - dy, ylim[1] + dy)
-        plt.xlim(self.r[0], self.r[-1])
+        if ylim is None:
+            ylim = data[:, il:ir].min(), data[:, il:ir].max()
+            dy = (ylim[1] - ylim[0]) * .05
+            plt.ylim(ylim[0] - dy, ylim[1] + dy)
+        else:
+            plt.ylim(*ylim)
+        if rmax is not None and xlim is None:
+            xlim = [self.r[0], rmax]
+        if xlim is None:
+            plt.xlim(self.r[0], self.r[-1])
+        else:
+            plt.xlim(*xlim)
         plt.xlabel('$r$')
         lbl = r'$\left<\omega/\rho\right>$'
         plt.ylabel(lbl)
-        plt.title(helpers.sanitize_lbl(self.name))
+        if title:
+            plt.title(helpers.sanitize_lbl(self.name))
         if save:
             plt.savefig(fn)
             plt.close()

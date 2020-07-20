@@ -1483,6 +1483,9 @@ class BLFT(BLfile):
         data[self.rc <= 1] = 0
         return self.intr(data ** 2)
 
+    def vortensity_prof(self):
+        return np.real(self['FT-vortensity-Re'][0])
+
 def _parse_file(fn, file_handle=None):
     ext = fn.split('.')[-1]
     if ext == 'athdf':
