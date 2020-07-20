@@ -4511,10 +4511,6 @@ class BLsim(object):
                 xticks = r_ax.xaxis.get_major_ticks()
                 xticks[-1].label1.set_visible(False)
 
-            for xt in [i for i in lcax.xaxis.get_major_ticks() if i.get_loc() == 0]:
-                xt.label1.set_visible(False)
-                xt.label2.set_visible(False)
-
             r_ax.xaxis.set_ticks_position('both')
             r_ax.yaxis.set_ticks_position('both')
             r_ax.tick_params(axis='both', which='both', direction='in')
@@ -4564,11 +4560,13 @@ class BLsim(object):
             pass
         rcax.xaxis.set_label_position('top')
         rcax.xaxis.set_ticks_position('top')
-        rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
         lcax.xaxis.set_label_position('top')
         lcax.xaxis.set_ticks_position('top')
         lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
-
+        for xt in [i for i in lcax.xaxis.get_major_ticks() if i.get_loc() == 0]:
+            xt.label1.set_visible(False)
+            xt.label2.set_visible(False)
 
         rcax.yaxis.set_offset_position('left')
         if title:
