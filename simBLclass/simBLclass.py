@@ -4365,7 +4365,7 @@ class BLsim(object):
         nt = times.size
 
         if figsize is True:
-            figsize = [3.2 if nt < 12 else 7, 7.2]
+            figsize = [3.2 if nt < 6 else 7, 7.2]
             if not title:
                 pass
                 # figsize[1] -= .33
@@ -4373,8 +4373,8 @@ class BLsim(object):
         if fopt is None:
             fopt = {}
         _fopt.update(fopt)
-        _hr = [.1] + [1] * (nt if nt < 12 else int(nt / 2 + .5))
-        _wr = [lrat, 1, 1] if nt < 12 else [lrat, 1, 1, space, lrat, 1, 1]
+        _hr = [.1] + [1] * (nt if nt < 6 else int(nt / 2 + .5))
+        _wr = [lrat, 1, 1] if nt < 6 else [lrat, 1, 1, space, lrat, 1, 1]
         _gsopt = dict(height_ratios=_hr, width_ratios=_wr, top=.85, bottom=.05,
                       left=.1, right=.99, wspace=.02, hspace=0)
         if not title:
@@ -4446,7 +4446,7 @@ class BLsim(object):
 
         d = 0
         for i, t in enumerate(times):
-            if i == 12:
+            if i == 6:
                 d += 4
                 if right == mid:
                     rcax = plt.subplot(gs[0, d+1:d+3])
@@ -4468,7 +4468,7 @@ class BLsim(object):
                 _lopt['cax'] = lcax
                 _lopt['cbopt'] = dict(orientation='horizontal')
 
-            r_ax = plt.subplot(gs[(i % 12) + 1, 2 + d])
+            r_ax = plt.subplot(gs[(i % 6) + 1, 2 + d])
             df.plot2d(right, ax=r_ax, **_ropt)
             add_plbl(chr(ord('a') + 3 * i + 2))
             #lax.set_ylabel(r'$y$')
@@ -4492,13 +4492,13 @@ class BLsim(object):
                     mlim = rlim
                     _mopt['vmin'] = mlim[0]
                     _mopt['vmax'] = mlim[1]
-            m_ax = plt.subplot(gs[(i % 12) + 1, 1+d])
+            m_ax = plt.subplot(gs[(i % 6) + 1, 1+d])
             df.stripe(mid, ax=m_ax, **_mopt)
             add_plbl(chr(ord('a') + 3 * i + 1))
             #rax.yaxis.set_label_position('right')
             #rax.yaxis.tick_right()
 
-            l_ax = plt.subplot(gs[(i % 12) + 1, 0+d])
+            l_ax = plt.subplot(gs[(i % 6) + 1, 0+d])
             df.stripe(left, ax=l_ax, **_lopt)
             if lxlim is not None:
                 l_ax.set_xlim(*lxlim)
