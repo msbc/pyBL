@@ -238,11 +238,14 @@ def lintrend(x, y, axis=0):
 def phi_visable(_r, i, b=1):
     one = np.ones_like(_r * i)
     r = one * _r[:]
-    out = np.empty_like(r)
+    out = np.zeros_like(r)
     a = one * b / np.sin(i)
+    nanloc = np.where(np.isnan(a))
+    a[nanloc] = np.infty
     out[r >= a] = tau
     rloc = np.where(np.logical_and(r > b, r < a))
     rsq = r[rloc]**2
     _a = a[rloc]
-    out[rloc] = np.pi + 2 * np.arctan(_a / b * np.sqrt((rsq - b) / (_a**2 - rsq)))
+    out[rloc] = np.pi + 2 * np.arctan(_a / b * np.sqrt((rsq - b**2) / (_a**2 - rsq)))
+    out[nanloc] = np.pi + 2 * np.arctan(np.sqrt(r[nanloc]**2 - b**2) / b)
     return out
