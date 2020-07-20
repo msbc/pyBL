@@ -4365,7 +4365,7 @@ class BLsim(object):
         nt = times.size
 
         if figsize is True:
-            figsize = [3.1, 7.3]
+            figsize = [3.1, 7.2]
             if not title:
                 pass
                 # figsize[1] -= .33
