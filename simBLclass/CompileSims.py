@@ -1419,7 +1419,7 @@ def mulit_vortensity_prof(sims=None, save=False, figsize=None, dpi=300, fopt=Non
         fopt = {}
     _fopt.update(fopt)
     fig = plt.figure(**_fopt)
-    gs = mpl.gridspec.GridSpec(nr, nc, top=.99, bottom=.06, left=.15, right=.97,
+    gs = mpl.gridspec.GridSpec(nr, nc, top=.99, bottom=.05, left=.16, right=.97,
                                hspace=.15)
     ax = None
     for ns, s in enumerate(sims):
