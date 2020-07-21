@@ -4484,6 +4484,7 @@ class BLsim(object):
                 #plt.text(1.03, .5, lbl, c='k', transform=r_ax.transAxes, va='center',
                 #         rotation='vertical')
                 bbox = dict(edgecolor='none', facecolor='white', pad=0.3)
+                print(lbl)
                 plt.text(.05, .87, lbl, c='k', transform=r_ax.transAxes, bbox=bbox,
                          ha='left', fontsize=8)
 
