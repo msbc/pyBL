@@ -4298,7 +4298,7 @@ class BLsim(object):
                     fig=None, rmax=None, norm=True, fopt=None, dpi=300, figsize=True,
                     gsopt=None, inc_time=True, fn=None, save=False, ext='png', sdir=None,
                     overwrite=True, dropbox=False, xlabelpad=None, title=False,
-                    lxlim=True, lrat=2./3., dv=0, ylabelpad=-6, space=.1):
+                    lxlim=True, lrat=2./3., dv=0, ylabelpad=-6, space=.3):
         if sdir:
             dropbox = False
         if not dropbox and sdir is None:
@@ -4365,7 +4365,7 @@ class BLsim(object):
         nt = times.size
 
         if figsize is True:
-            figsize = [3.2 if nt < 6 else 7, 7.2]
+            figsize = [3.2 if nt <= 6 else 7, 7.2]
             if not title:
                 pass
                 # figsize[1] -= .33
@@ -4373,8 +4373,8 @@ class BLsim(object):
         if fopt is None:
             fopt = {}
         _fopt.update(fopt)
-        _hr = [.1] + [1] * (nt if nt < 6 else int(nt / 2 + .5))
-        _wr = [lrat, 1, 1] if nt < 6 else [lrat, 1, 1, space, lrat, 1, 1]
+        _hr = [.1] + [1] * (nt if nt <= 6 else int(nt / 2 + .5))
+        _wr = [lrat, 1, 1] if nt <= 6 else [lrat, 1, 1, space, lrat, 1, 1]
         _gsopt = dict(height_ratios=_hr, width_ratios=_wr, top=.85, bottom=.05,
                       left=.1, right=.99, wspace=.02, hspace=0)
         if not title:
@@ -4428,6 +4428,13 @@ class BLsim(object):
             mcax = plt.subplot(gs[0, 1])
         lcax = plt.subplot(gs[0, 0])
 
+        rcax.xaxis.set_label_position('top')
+        rcax.xaxis.set_ticks_position('top')
+        rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+        lcax.xaxis.set_label_position('top')
+        lcax.xaxis.set_ticks_position('top')
+        lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+
         if norm is not None:
             if hasattr(right, 'lower'):
                 right += ' / ' + str(norm)
@@ -4438,7 +4445,11 @@ class BLsim(object):
             else:
                 mid /= norm
 
-        def add_plbl(lbl, ax=None):
+        def add_plbl(n, ax=None):
+            if nt <= 6:
+                lbl = chr(ord('a') + n)
+            else:
+                lbl = chr(ord('A') + n // 3) + chr(ord('a') + n % 3)
             if ax is None:
                 ax = plt.gca()
             ax.text(.96, .87, '(' + lbl + ')', c='k', transform=ax.transAxes, ha='right',
@@ -4452,11 +4463,11 @@ class BLsim(object):
                     rcax = plt.subplot(gs[0, d+1:d+3])
                     mcax = None
                 else:
-                    rcax = plt.subplot(gs[1, d+2])
-                    mcax = plt.subplot(gs[1, d+1])
-                lcax = plt.subplot(gs[1, d])
+                    rcax = plt.subplot(gs[0, d+2])
+                    mcax = plt.subplot(gs[0, d+1])
+                lcax = plt.subplot(gs[0, d])
             df = t if hasattr(t, 'name') else self.loadfile('cons', t)
-            if i == nt - 1 or i == 11:
+            if i == nt - 1 or i == 5 or 1:
                 _ropt['cb'] = True
                 _ropt['cax'] = rcax
                 _ropt['cbopt'] = dict(orientation='horizontal')
@@ -4467,10 +4478,16 @@ class BLsim(object):
                 _lopt['cb'] = True
                 _lopt['cax'] = lcax
                 _lopt['cbopt'] = dict(orientation='horizontal')
+            rcax.xaxis.set_label_position('top')
+            rcax.xaxis.set_ticks_position('top')
+            rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+            lcax.xaxis.set_label_position('top')
+            lcax.xaxis.set_ticks_position('top')
+            lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
 
             r_ax = plt.subplot(gs[(i % 6) + 1, 2 + d])
             df.plot2d(right, ax=r_ax, **_ropt)
-            add_plbl(chr(ord('a') + 3 * i + 2))
+            add_plbl(3 * i + 2)
             #lax.set_ylabel(r'$y$')
             if rlim is None:
                 rlim = plt.gci().get_clim()
@@ -4484,7 +4501,6 @@ class BLsim(object):
                 #plt.text(1.03, .5, lbl, c='k', transform=r_ax.transAxes, va='center',
                 #         rotation='vertical')
                 bbox = dict(edgecolor='none', facecolor='white', pad=0.3)
-                print(lbl)
                 plt.text(.05, .87, lbl, c='k', transform=r_ax.transAxes, bbox=bbox,
                          ha='left', fontsize=8)
 
@@ -4495,7 +4511,7 @@ class BLsim(object):
                     _mopt['vmax'] = mlim[1]
             m_ax = plt.subplot(gs[(i % 6) + 1, 1+d])
             df.stripe(mid, ax=m_ax, **_mopt)
-            add_plbl(chr(ord('a') + 3 * i + 1))
+            add_plbl(3 * i + 1)
             #rax.yaxis.set_label_position('right')
             #rax.yaxis.tick_right()
 
@@ -4503,7 +4519,7 @@ class BLsim(object):
             df.stripe(left, ax=l_ax, **_lopt)
             if lxlim is not None:
                 l_ax.set_xlim(*lxlim)
-            add_plbl(chr(ord('a') + 3 * i))
+            add_plbl(3 * i)
             # rax.yaxis.set_label_position('right')
             # rax.yaxis.tick_right()
             l_ax.set_ylabel(r'$\phi/\pi$', labelpad=ylabelpad)
@@ -4515,13 +4531,20 @@ class BLsim(object):
 
             r_ax.set_yticklabels([])
             m_ax.set_yticklabels([])
-            if i < nt - 1:
+            if i < nt - 1 and i != 5:
                 r_ax.set_xticklabels([])
                 m_ax.set_xticklabels([])
                 l_ax.set_xticklabels([])
             else:
                 xticks = r_ax.xaxis.get_major_ticks()
                 xticks[-1].label1.set_visible(False)
+
+            rcax.xaxis.set_label_position('top')
+            rcax.xaxis.set_ticks_position('top')
+            rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+            lcax.xaxis.set_label_position('top')
+            lcax.xaxis.set_ticks_position('top')
+            lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
 
             r_ax.xaxis.set_ticks_position('both')
             r_ax.yaxis.set_ticks_position('both')
@@ -4550,7 +4573,7 @@ class BLsim(object):
                 l_ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(.25))
             l_ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
             l_ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(.5))
-            if i > 0 or  i == 0:
+            if i > 0 or i == 0:
                 yticks = l_ax.yaxis.get_major_ticks()
                 yticks[0].label1.set_visible(False)
                 yticks[1].label1.set_visible(False)
@@ -4558,7 +4581,14 @@ class BLsim(object):
                 yticks[-2].label1.set_visible(False)
                 yticks[-1].label1.set_visible(False)
 
-            if i == nt - 1 or i == 11:
+            rcax.xaxis.set_label_position('top')
+            rcax.xaxis.set_ticks_position('top')
+            rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+            lcax.xaxis.set_label_position('top')
+            lcax.xaxis.set_ticks_position('top')
+            lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+
+            if i == nt - 1 or i == 5:
                 if xlabelpad:
                     l_ax.set_xlabel('$r$', labelpad=xlabelpad)
                 else:
@@ -4570,12 +4600,6 @@ class BLsim(object):
                     mcax.xaxis.set_ticks_position('top')
                 except (NameError, AttributeError):
                     pass
-                rcax.xaxis.set_label_position('top')
-                rcax.xaxis.set_ticks_position('top')
-                rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
-                lcax.xaxis.set_label_position('top')
-                lcax.xaxis.set_ticks_position('top')
-                lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
 
                 xticks = lcax.xaxis.get_major_ticks()
                 xt = xticks[int(len(xticks) // 2)]
