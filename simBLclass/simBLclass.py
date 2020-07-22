@@ -4461,7 +4461,7 @@ class BLsim(object):
                 d += 4
                 if right == mid:
                     rcax = plt.subplot(gs[0, d+1:d+3])
-                    mcax = None
+                    mcax = rcax
                 else:
                     rcax = plt.subplot(gs[0, d+2])
                     mcax = plt.subplot(gs[0, d+1])
@@ -4475,6 +4475,8 @@ class BLsim(object):
                     _mopt['cb'] = True
                     _mopt['cax'] = mcax
                     _mopt['cbopt'] = dict(orientation='horizontal')
+                else:
+                    _mopt['cb'] = False
                 _lopt['cb'] = True
                 _lopt['cax'] = lcax
                 _lopt['cbopt'] = dict(orientation='horizontal')
@@ -4484,6 +4486,7 @@ class BLsim(object):
             lcax.xaxis.set_label_position('top')
             lcax.xaxis.set_ticks_position('top')
             lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+
 
             r_ax = plt.subplot(gs[(i % 6) + 1, 2 + d])
             df.plot2d(right, ax=r_ax, **_ropt)
