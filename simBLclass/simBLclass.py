@@ -4513,6 +4513,7 @@ class BLsim(object):
                     _mopt['vmin'] = mlim[0]
                     _mopt['vmax'] = mlim[1]
             m_ax = plt.subplot(gs[(i % 6) + 1, 1+d])
+            _mopt['cb'] = False
             df.stripe(mid, ax=m_ax, **_mopt)
             add_plbl(3 * i + 1)
             #rax.yaxis.set_label_position('right')
