@@ -4548,7 +4548,9 @@ class BLsim(object):
             rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
             lcax.xaxis.set_label_position('top')
             lcax.xaxis.set_ticks_position('top')
-            lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+            lcax.xaxis.set_minor_locator(
+                mpl.ticker.MultipleLocator(.5 if llim[1] < 4 else 1))
+
 
             r_ax.xaxis.set_ticks_position('both')
             r_ax.yaxis.set_ticks_position('both')
