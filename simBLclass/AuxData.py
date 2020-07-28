@@ -1658,19 +1658,19 @@ class Lightcurves(object):
         freq = np.fft.fftfreq(n, d=self.newtime[1] / tau)
         return freq, fourier
 
-    def plot_ft(self, pi=None, vi=None, data=None, tloc=True, xlim=True, ylim=True, dpi=300,
+    def plot_ft(self, vi=None, pi=None, data=None, tloc=True, xlim=True, ylim=True, dpi=300,
                 figsize=None, nufit=10, detrend=False, fig=None, ax=None, tmin=None,
                 nu_dno=-1, save=False):
         if data is None:
-            if vi is None or pi is None:
-                raise ValueError('If data not specified, then pi and vi must be.')
+            if pi is None or vi is None:
+                raise ValueError('If data not specified, then vi and pi must be.')
             if tloc is None:
                 if tmin:
                     tloc = slice(self.tloc(tmin * tau), None)
                 tloc = slice(None)
             if tloc == True:
                 tloc = slice(self.tloc(self.skip), None)
-            data = self.remap[tloc, pi, vi]
+            data = self.remap[tloc, vi, pi]
         if detrend:
             d = self.detrend(data, tloc=tloc)
         else:
@@ -1719,20 +1719,20 @@ class Lightcurves(object):
             plt.savefig(self.sim.name + '_lc_ft.pdf')
             plt.close()
 
-    def periodogram(self, pi=None, vi=None, data=None, tloc=True, xlim=True, ylim=True,
+    def periodogram(self, vi=None, pi=None, data=None, tloc=True, xlim=True, ylim=True,
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
                     nu0=None, fig=None, ax=None, ylog=True, rel=False, tmin=None,
                     nu_dno=-1, save=False):
         if data is None:
-            if vi is None or pi is None:
-                raise ValueError('If data not specified, then pi and vi must be.')
+            if pi is None or vi is None:
+                raise ValueError('If data not specified, then vi and pi must be.')
             if tloc is None:
                 if tmin:
                     tloc = slice(self.tloc(tmin * tau), None)
                 tloc = slice(None)
             if tloc == True:
                 tloc = slice(self.tloc(self.skip), None)
-            data = self.remap[tloc, pi, vi]
+            data = self.remap[tloc, vi, pi]
         if detrend:
             d = self.detrend(data, tloc=tloc)
         else:
@@ -1783,20 +1783,20 @@ class Lightcurves(object):
             plt.savefig(self.sim.name + '_periodogram.pdf')
             plt.close()
 
-    def spectrogram(self, pi=None, vi=None, data=None, tloc=True, xlim=True, ylim=True,
+    def spectrogram(self, vi=None, pi=None, data=None, tloc=True, xlim=True, ylim=True,
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
                     nu0=None, fig=None, ax=None, log=True, rel=False, nperseg=None,
                     tperseg=20, vmin=1e-8, vmax=True, norm=None, cmap=None, sdata=None,
                     cb=True, cbl=True, cax=None, nu_dno=-1, save=False):
         if sdata is None:
             if data is None:
-                if vi is None or pi is None:
-                    raise ValueError('If data not specified, then pi and vi must be.')
+                if pi is None or vi is None:
+                    raise ValueError('If data not specified, then vi and pi must be.')
                 if tloc is None:
                     tloc = slice(None)
                 if tloc == True:
                     tloc = slice(self.tloc(self.skip), None)
-                data = self.remap[tloc, pi, vi]
+                data = self.remap[tloc, vi, pi]
             if detrend:
                 d = self.detrend(data, tloc=tloc)
             else:
@@ -1864,18 +1864,18 @@ class Lightcurves(object):
             plt.close()
         return f, t, Sxx, nu0, nperseg
 
-    def plot_lc(self, pi, vi, save=False, dpi=300):
+    def plot_lc(self, vi, pi, save=False, dpi=300):
         plt.figure(dpi=dpi)
-        plt.plot(self.newtime / tau, self.remap[:,pi, vi])
+        plt.plot(self.newtime / tau, self.remap[:,vi, pi])
         if save:
             plt.savefig(self.sim.name + '_full_lightcurve.pdf')
             plt.close()
 
-    def zoom_lc(self, pi, vi, tl, tu, save=False, dpi=300):
+    def zoom_lc(self, vi, pi, tl, tu, save=False, dpi=300):
         plt.figure(dpi=dpi)
         il = self.tloc(tl * tau)
         iu = self.tloc(tu * tau) + 1
-        d = self.remap[:,pi, vi]
+        d = self.remap[:,vi, pi]
         plt.plot(self.newtime / tau, d)
         yl = d[il:iu].min()
         yu = d[il:iu].max()
@@ -1886,7 +1886,7 @@ class Lightcurves(object):
             plt.savefig(self.sim.name + '_zoom_lc.pdf')
             plt.close()
 
-    def several_plots(self, pi=2, vi=4, tl=275, tu=300, sdir=None, save=True, tmin=100):
+    def several_plots(self, vi=2, pi=4, tl=275, tu=300, sdir=None, save=True, tmin=100):
         sim = self.sim
         if not save:
             sdir = None
@@ -1903,11 +1903,11 @@ class Lightcurves(object):
             sim.compact_diag(save=save)
             nu_dno = sim.cc_op_plots(tu, save=save, rmin=1.6)
             print('nu = {:.3g} per orbit, {:.3g} mHz'.format(nu_dno, nu_dno / self.tunit * 1e3))
-            self.plot_lc(pi, vi, save=save)
-            self.zoom_lc(pi, vi, tl, tu, save=save)
-            self.plot_ft(pi, vi, tmin=tmin, save=save, nu_dno=nu_dno)
-            self.periodogram(pi, vi, tmin=tmin, save=save, nu_dno=nu_dno)
-            self.spectrogram(pi, vi, save=save, nu_dno=nu_dno)
+            self.plot_lc(vi, pi, save=save)
+            self.zoom_lc(vi, pi, tl, tu, save=save)
+            self.plot_ft(vi, pi, tmin=tmin, save=save, nu_dno=nu_dno)
+            self.periodogram(vi, pi, tmin=tmin, save=save, nu_dno=nu_dno)
+            self.spectrogram(vi, pi, save=save, nu_dno=nu_dno)
         finally:
             os.chdir(pwd)
 
@@ -1916,8 +1916,8 @@ class Lightcurves(object):
             fd = self.sim.load_flux_data()
         na = np.newaxis
         rho = fd['dens'][:, na, na, :]
-        p = self.powers[na, :, na, na]
-        i = self.views[na, na, :, na]
+        i = self.views[na, :, na, na]
+        p = self.powers[na, na, :, na]
         r = self.sim.rc[na, na, na, :]
         flux = rho**p * r**(2-3) * phi_visable(r, i)
         if not bins:
