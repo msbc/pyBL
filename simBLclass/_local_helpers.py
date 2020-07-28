@@ -240,7 +240,7 @@ def phi_visable(_r, i, b=1):
     r = one * _r[:]
     out = np.zeros_like(r)
     a = one * b / np.sin(i)
-    nanloc = np.where(np.isnan(a))
+    nanloc = np.where(one * i == 0)
     a[nanloc] = np.infty
     out[r >= a] = tau
     rloc = np.where(np.logical_and(r > b, r < a))

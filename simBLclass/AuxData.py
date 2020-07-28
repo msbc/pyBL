@@ -1571,7 +1571,8 @@ class Lightcurves(object):
         if newtime[-1] > self.time[-1]:
             newtime = newtime[:-1]
         i = 0
-        remap = np.empty((newtime.size, self.views.size, self.powers.size))
+        remap = np.empty((newtime.size, self.views.size, self.powers.size,
+                          self.radii.size - 1))
         for ti, t in enumerate(newtime):
             while t > self.time[i]:
                 i += 1
@@ -1605,8 +1606,16 @@ class Lightcurves(object):
         try:
             return self._fine_est
         except AttributeError:
-            self._fine_est = self.interp_est()(self.newtime)
+            self._fine_est = self.interp_est(self.newtime)
             return self._fine_est
+
+    @property
+    def coarse_est(self):
+        try:
+            return self._coarse_est
+        except AttributeError:
+            self._coarse_est = self.interp_est(self.newtime)
+            return self._coarse_est
 
     def tloc(self, time, new=True):
         t = self.newtime if new else self.time
@@ -1914,17 +1923,21 @@ class Lightcurves(object):
         if not bins:
             return flux
         out = np.empty(flux[:,:,:,0].shape + (self.radii.size - 1,))
-        for i in range(self.radii.size - 1):
-            a = np.argmin(np.abs(self.sim.r - self.radii[i]))
-            b = np.argmin(np.abs(self.sim.r - self.radii[i + 1]))
-            out[:,:,:,i] = flux[:, :, :, a:b].sum(axis=-1)
+        for ri in range(self.radii.size - 1):
+            a = np.argmin(np.abs(self.sim.r - self.radii[ri]))
+            b = np.argmin(np.abs(self.sim.r - self.radii[ri + 1]))
+            out[:,:,:,ri] = flux[:, :, :, a:b].sum(axis=-1)
         return out
 
-    def interp_est(self, fd=None):
-        if fd is None:
+    @property
+    def interp_est(self):
+        try:
+            return self._interp_est
+        except AttributeError:
             fd = self.sim.load_flux_data()
-        data = self.flux_est(fd=fd, bins=True)
-        interp = CubicSpline(fd['t'], data)
+            data = self.flux_est(fd=fd, bins=True)
+            self._interp_est = CubicSpline(fd['t'], data)
+            return self._interp_est
 
 
 class modeData(object):
