@@ -1953,7 +1953,7 @@ class Lightcurves(object):
             if rsum is None:
                 rsum = True
         loc = slice(None), vi, pi, ri
-        out = self.remap[loc] / self.flux_est[loc]
+        out = self.remap[loc] / self.fine_est[loc]
         if rsum:
             out = out.sum(axis=3)
         return out
