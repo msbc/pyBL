@@ -1953,10 +1953,12 @@ class Lightcurves(object):
             if rsum is None:
                 rsum = True
         loc = slice(None), vi, pi, ri
-        out = self.remap[loc] / self.fine_est[loc]
+        top = self.remap[loc]
+        bot = self.fine_est[loc]
         if rsum:
-            out = out.sum(axis=-1)
-        return out
+            top = top.sum(axis=-1)
+            bot = bot.sum(axis=-1)
+        return top / bot
 
 
 class modeData(object):
