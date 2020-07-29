@@ -1660,7 +1660,7 @@ class Lightcurves(object):
 
     def plot_ft(self, vi=None, pi=None, ri=None, data=None, tloc=True, xlim=True, ylim=True, dpi=300,
                 figsize=None, nufit=10, detrend=False, fig=None, ax=None, tmin=None,
-                nu_dno=-1, save=False):
+                nu_dno=None, save=False, omax=None, oharm=None):
         if data is None:
             if pi is None or vi is None:
                 raise ValueError('If data not specified, then vi and pi must be.')
@@ -1701,7 +1701,15 @@ class Lightcurves(object):
         else:
             ax = plt.gca()
         plt.plot(x, np.abs(y / pl - 1))
-        plt.axvline(nu_dno, zorder=-1, lw=1, ls=':', c='.5')
+        if nu_dno:
+            plt.axvline(nu_dno, zorder=-1, lw=1, ls=':', c='.5')
+        yl = plt.ylim()
+        if np.any(omax):
+            omax = np.mean(omax)
+            if oharm is None:
+                oharm = 1
+            for h in np.atleast_1d(oharm):
+                plt.axvline(omax * h, zorder=-1 - h, lw=1, ls='-.', c='.5')
         if xlim:
             if xlim is True:
                 xlim = [0, 6.5]
@@ -1730,7 +1738,7 @@ class Lightcurves(object):
     def periodogram(self, vi=None, pi=None,ri=None, data=None, tloc=True, xlim=True, ylim=True,
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
                     nu0=None, fig=None, ax=None, ylog=True, rel=False, tmin=None,
-                    nu_dno=-1, save=False):
+                    nu_dno=None, save=False, omax=None, oharm=None):
         if data is None:
             if pi is None or vi is None:
                 raise ValueError('If data not specified, then vi and pi must be.')
@@ -1769,7 +1777,14 @@ class Lightcurves(object):
             plt.semilogy(f, Pxx_den, zorder=0)
         else:
             plt.plot(f, Pxx_den, zorder=0)
-        plt.axvline(nu_dno, zorder=-1, lw=1, ls=':', c='.5')
+        if nu_dno:
+            plt.axvline(nu_dno, zorder=-1, lw=1, ls=':', c='.5')
+        if np.any(omax):
+            omax = np.mean(omax)
+            if oharm is None:
+                oharm = 1
+            for h in np.atleast_1d(oharm):
+                plt.axvline(omax * h, zorder=-1 - h, lw=1, ls='-.', c='.5')
         if xlim:
             if xlim is True:
                 xlim = [0, 6.5]
@@ -1803,7 +1818,8 @@ class Lightcurves(object):
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
                     nu0=None, fig=None, ax=None, log=True, rel=False, nperseg=None,
                     tperseg=20, vmin=1e-8, vmax=True, norm=None, cmap=None, sdata=None,
-                    cb=True, cbl=True, cax=None, nu_dno=-1, save=False):
+                    cb=True, cbl=True, cax=None, nu_dno=None, save=False, omax=None,
+                    oharm=None, ot=None, fd=None):
         if sdata is None:
             if data is None:
                 if pi is None or vi is None:
@@ -1841,7 +1857,25 @@ class Lightcurves(object):
         if vmax is True:
             vmax = Sxx[1:, 1:].max()
         im = plt.pcolormesh(t, f, Sxx, norm=norm, vmin=vmin, vmax=vmax, cmap=cmap)
-        plt.axhline(nu_dno, lw=1, ls=':', c='.5')
+        if nu_dno:
+            plt.axhline(nu_dno, lw=1, ls=':', c='.5')
+        xl = plt.xlim()
+        yl = plt.ylim()
+        if np.any(omax):
+            if omax is True or ot is True:
+                if fd is None:
+                    fd = self.sim.load_flux_data()
+                if omax is True:
+                    omax = (fd.vphi2() / self.sim.rc).max(axis=-1)
+                if ot is True:
+                    ot = fd['t'] / tau
+            if oharm is None:
+                oharm = range(1, 9)
+            print(ot, omax)
+            for h in np.atleast_1d(oharm):
+                plt.plot(ot, omax * h, lw=1, ls=':', c='w', alpha=.4)
+        plt.xlim(*xl)
+        plt.ylim(*yl)
         ax = plt.gca()
         plt.ylabel('freq. (per orbit)')
         plt.xlabel(r'$t/2\pi$')
