@@ -1940,7 +1940,7 @@ class Lightcurves(object):
             self._interp_est = CubicSpline(fd['t'], data)
             return self._interp_est
 
-    def fine_normalised(self, vi=None, pi=None, ri=None, rsum=None):
+    def fine_normalized(self, vi=None, pi=None, ri=None, rsum=None):
         if vi is None:
             vi = slice(None)
             if rsum is None:
