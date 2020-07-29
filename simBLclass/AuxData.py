@@ -1727,7 +1727,7 @@ class Lightcurves(object):
             plt.savefig(self.sim.name + '_lc_ft.pdf')
             plt.close()
 
-    def periodogram(self, vi=None, pi=None, data=None, tloc=True, xlim=True, ylim=True,
+    def periodogram(self, vi=None, pi=None,ri=None, data=None, tloc=True, xlim=True, ylim=True,
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
                     nu0=None, fig=None, ax=None, ylog=True, rel=False, tmin=None,
                     nu_dno=-1, save=False):
@@ -1740,13 +1740,21 @@ class Lightcurves(object):
                 tloc = slice(None)
             if tloc == True:
                 tloc = slice(self.tloc(self.skip), None)
-            data = self.remap[tloc, vi, pi]
+            data = self.remap[tloc, vi, pi, ri]
+            if ri is None:
+                data = data.sum(axis=-1)
         if detrend:
             d = self.detrend(data, tloc=tloc)
         else:
             d = data
         if rel:
             d = d / d.mean() - 1
+        while d.ndim > 1:
+            if d.shape[-1] == 1:
+                loc = tuple((d.ndim-1) * [slice(None)] + [0])
+                d = d[loc]
+            else:
+                raise ValueError("Data must be 1D.")
         if nu0 is None:
             nu0 = tau / (self.newtime[1])
         f, Pxx_den = scipy.signal.periodogram(d, nu0, window, detrend='linear')
