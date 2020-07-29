@@ -1658,7 +1658,7 @@ class Lightcurves(object):
         freq = np.fft.fftfreq(n, d=self.newtime[1] / tau)
         return freq, fourier
 
-    def plot_ft(self, vi=None, pi=None, data=None, tloc=True, xlim=True, ylim=True, dpi=300,
+    def plot_ft(self, vi=None, pi=None, ri=None, data=None, tloc=True, xlim=True, ylim=True, dpi=300,
                 figsize=None, nufit=10, detrend=False, fig=None, ax=None, tmin=None,
                 nu_dno=-1, save=False):
         if data is None:
@@ -1670,7 +1670,9 @@ class Lightcurves(object):
                 tloc = slice(None)
             if tloc == True:
                 tloc = slice(self.tloc(self.skip), None)
-            data = self.remap[tloc, vi, pi]
+            data = self.remap[tloc, vi, pi, ri]
+            if ri is None:
+                data = data.sum(axis=-1)
         if detrend:
             d = self.detrend(data, tloc=tloc)
         else:
