@@ -1709,6 +1709,7 @@ class Lightcurves(object):
             if oharm is None:
                 oharm = 1
             for h in np.atleast_1d(oharm):
+                print(omax * h, h)
                 plt.axvline(omax * h, zorder=-1 - h, lw=1, ls='-.', c='.5')
         if xlim:
             if xlim is True:
@@ -1814,7 +1815,7 @@ class Lightcurves(object):
             plt.savefig(self.sim.name + '_periodogram.pdf')
             plt.close()
 
-    def spectrogram(self, vi=None, pi=None, data=None, tloc=True, xlim=True, ylim=True,
+    def spectrogram(self, vi=None, pi=None, ri=None, data=None, tloc=True, xlim=True, ylim=True,
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
                     nu0=None, fig=None, ax=None, log=True, rel=False, nperseg=None,
                     tperseg=20, vmin=1e-8, vmax=True, norm=None, cmap=None, sdata=None,
@@ -1826,15 +1827,21 @@ class Lightcurves(object):
                     raise ValueError('If data not specified, then vi and pi must be.')
                 if tloc is None:
                     tloc = slice(None)
-                if tloc == True:
+                if tloc is True:
                     tloc = slice(self.tloc(self.skip), None)
-                data = self.remap[tloc, vi, pi]
+                data = self.remap[tloc, vi, pi, ri]
             if detrend:
                 d = self.detrend(data, tloc=tloc)
             else:
                 d = data
             if rel:
                 d = d / d.mean() - 1
+            while d.ndim > 1:
+                if d.shape[-1] == 1:
+                    loc = tuple((d.ndim - 1) * [slice(None)] + [0])
+                    d = d[loc]
+                else:
+                    raise ValueError("Data must be 1D.")
             if nu0 is None:
                 nu0 = tau / (self.newtime[1])
             if nperseg is None:
