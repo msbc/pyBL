@@ -1955,7 +1955,7 @@ class Lightcurves(object):
         loc = slice(None), vi, pi, ri
         out = self.remap[loc] / self.fine_est[loc]
         if rsum:
-            out = out.sum(axis=3)
+            out = out.sum(axis=-1)
         return out
 
 
