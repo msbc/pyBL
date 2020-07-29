@@ -1919,7 +1919,8 @@ class Lightcurves(object):
         i = self.views[na, :, na, na]
         p = self.powers[na, na, :, na]
         r = self.sim.rc[na, na, na, :]
-        flux = rho**p * r**(2-3) * phi_visable(r, i)
+        dr = np.diff(self.sim.r)[na, na, na, :]
+        flux = rho**p * r**(2-3) * phi_visable(r, i) * dr
         if not bins:
             return flux
         out = np.empty(flux[:,:,:,0].shape + (self.radii.size - 1,))
@@ -1938,6 +1939,24 @@ class Lightcurves(object):
             data = self.flux_est(fd=fd, bins=True)
             self._interp_est = CubicSpline(fd['t'], data)
             return self._interp_est
+
+    def fine_normalised(self, vi=None, pi=None, ri=None, rsum=None):
+        if vi is None:
+            vi = slice(None)
+            if rsum is None:
+                rsum = False
+        if pi is None:
+            if rsum is None:
+                rsum = False
+        if ri is None:
+            ri = slice(None)
+            if rsum is None:
+                rsum = True
+        loc = slice(None), vi, pi, ri
+        out = self.remap[loc] / self.flux_est[loc]
+        if rsum:
+            out = out.sum(axis=3)
+        return out
 
 
 class modeData(object):
