@@ -1830,6 +1830,8 @@ class Lightcurves(object):
                 if tloc is True:
                     tloc = slice(self.tloc(self.skip), None)
                 data = self.remap[tloc, vi, pi, ri]
+                if ri is None:
+                    data = data.sum(axis=-1)
             if detrend:
                 d = self.detrend(data, tloc=tloc)
             else:
