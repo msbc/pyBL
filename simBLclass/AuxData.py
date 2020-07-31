@@ -1514,7 +1514,7 @@ class Lightcurves(object):
                 self.filenames = self._source_files
                 self._extract()
                 return
-        self._flux = flux
+        self._flux = atleast_4d(flux)
         self._time = time
         if export:
             self.export()
