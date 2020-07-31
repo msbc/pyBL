@@ -239,8 +239,8 @@ def phi_visible(_r, i, b=1):
     one = np.ones_like(_r * i)
     r = one * _r[:]
     out = np.zeros_like(r)
-    a = one * b / np.sin(i)
-    nanloc = np.where(one * i == 0)
+    a = one * b / np.cos(i)
+    nanloc = np.where(one * i == .5 * np.pi)
     a[nanloc] = np.infty
     out[r >= a] = tau
     rloc = np.where(np.logical_and(r > b, r < a))
