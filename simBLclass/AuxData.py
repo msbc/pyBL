@@ -1970,7 +1970,7 @@ class Lightcurves(object):
         finally:
             os.chdir(pwd)
 
-    def flux_est(self, fd=None, bins=False):
+    def flux_est(self, fd=None, bins=False, ro=1):
         if fd is None:
             fd = self.sim.load_flux_data()
         na = np.newaxis
@@ -1979,7 +1979,7 @@ class Lightcurves(object):
         p = self.powers[na, na, :, na]
         r = self.sim.rc[na, na, na, :]
         dr = np.diff(self.sim.r)[na, na, na, :]
-        flux = rho**p * r**(2-3) * phi_visable(r, i) * dr
+        flux = rho**p * r**(ro-3) * phi_visable(r, i) * dr
         if not bins:
             return flux
         out = np.empty(flux[:,:,:,0].shape + (self.radii.size - 1,))
