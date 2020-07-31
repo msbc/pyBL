@@ -944,7 +944,7 @@ class FluxData(object):
         return self['vphi']
 
     def flux_est(self, i, p, rpow=-3):
-        return phi_visable(self.rc, i) * self['dens']**p * self.rc**rpow * np.diff(self.r)
+        return phi_visible(self.rc, i) * self['dens'] ** p * self.rc ** rpow * np.diff(self.r)
 
     def dt(self, f, ns=None):
         if not ns:
@@ -1979,7 +1979,7 @@ class Lightcurves(object):
         p = self.powers[na, na, :, na]
         r = self.sim.rc[na, na, na, :]
         dr = np.diff(self.sim.r)[na, na, na, :]
-        flux = rho**p * r**(ro-3) * phi_visable(r, i) * dr
+        flux = rho ** p * r ** (ro-3) * phi_visible(r, i) * dr
         flux[:, :, :, :self.sim.rloc(1)] = 0
         if not bins:
             return flux

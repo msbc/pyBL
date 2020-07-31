@@ -235,7 +235,7 @@ def lintrend(x, y, axis=0):
     loc = [np.newaxis] + [slice(None)] * (x.ndim - 1)
     return m[loc], b[loc]
 
-def phi_visable(_r, i, b=1):
+def phi_visible(_r, i, b=1):
     one = np.ones_like(_r * i)
     r = one * _r[:]
     out = np.zeros_like(r)
