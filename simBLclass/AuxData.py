@@ -1980,6 +1980,7 @@ class Lightcurves(object):
         r = self.sim.rc[na, na, na, :]
         dr = np.diff(self.sim.r)[na, na, na, :]
         flux = rho**p * r**(ro-3) * phi_visable(r, i) * dr
+        flux[r < 1] = 0
         if not bins:
             return flux
         out = np.empty(flux[:,:,:,0].shape + (self.radii.size - 1,))
