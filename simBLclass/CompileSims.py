@@ -595,13 +595,13 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
         if nr is None and nc is None:
             nr = 2
             nc = 1
-            cb_side = 'left'
+            cb_side = 'right'
     golden = (1 + 5 ** 0.5) / 2
     nplots = len(plots)
     if cb_side is None:
         cb_side = 'top'
     cb_side = cb_side.lower()
-    assert cb_side in ['top', 'left']
+    assert cb_side in ['top', 'right']
     if nr is None:
         nr = int(np.round(np.sqrt(nplots / golden)))
     if nc is None:
@@ -613,7 +613,10 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
     if figsize is None:
         margin = .25
         s0 = 2
-        figsize = (nc * s0 + margin, nr * s0 + margin)
+        width, height = nc * s0 + margin, nr * s0 + margin
+        if cb_side in ['right']:
+            width += margin
+        figsize = width, height
     _fopt = dict(dpi=dpi, figsize=figsize)
     if fopt is None:
         fopt = {}
@@ -637,7 +640,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
         gs_opt['height_ratios'] = [.1, 1] * nr
         gs = mpl.gridspec.GridSpec(nr * 2, nc, **gs_opt)
         orientation = 'horizontal'
-    elif cb_side == 'left':
+    elif cb_side == 'right':
         gs_opt.update(dict(top=.92, bottom=.08, left=.15, right=.85))
         gs_opt['width_ratios'] = [1, .1] * nc
         gs = mpl.gridspec.GridSpec(nr, nc * 2, **gs_opt)
@@ -658,7 +661,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                 if cb_side == 'top':
                     ax = plt.subplot(gs[2 * r + 1, c], **opt)
                     cax = plt.subplot(gs[2 * r, c])
-                elif cb_side == 'left':
+                elif cb_side == 'right':
                     ax = plt.subplot(gs[r, 2 * c], **opt)
                     axs[r][c] = ax
                     cax = plt.subplot(gs[r, 2 * c + 1])
