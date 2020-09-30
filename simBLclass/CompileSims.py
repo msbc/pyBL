@@ -632,12 +632,14 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
 
     fig = plt.figure(**_fopt)
     hr = [.1, 1] * nr
-    gs_opt = dict(top=.9, bottom=.15, left=.07, right=.93, wspace=0, hspace=0,
-                  height_ratios=hr)
+    gs_opt = dict(top=.9, bottom=.15, left=.07, right=.93, wspace=0, hspace=0)
     if cb_side == 'top':
+        gs_opt['height_ratios'] = [.1, 1] * nr
         gs = mpl.gridspec.GridSpec(nr * 2, nc, **gs_opt)
         orientation = 'horizontal'
     elif cb_side == 'left':
+        gs_opt.update(dict(top=.92, bottom=.08, left=.15, right=.85))
+        gs_opt['width_ratios'] = [1, .1] * nc
         gs = mpl.gridspec.GridSpec(nr, nc * 2, **gs_opt)
         orientation = 'vertical'
     axs = [[None] * nc] * nr
@@ -658,6 +660,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                     cax = plt.subplot(gs[2 * r, c])
                 elif cb_side == 'left':
                     ax = plt.subplot(gs[r, 2 * c], **opt)
+                    axs[r][c] = ax
                     cax = plt.subplot(gs[r, 2 * c + 1])
                 sname = plots[i]['sim']
                 if getattr(sim, 'name', None) != sname:
