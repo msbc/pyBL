@@ -588,6 +588,13 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                  dict(sim='M09.FR.r.lc.a', t=175, ps=.316, mode=19, rm_last=True),
                  dict(sim='M13.FR.r.a', t=375),
                  ]
+        plots = [dict(sim='M06.HR.r.a', t=25),
+                 dict(sim='M09.FR.r.lc.a', t=175, ps=.316, mode=19, rm_last=True),
+                 #dict(sim='M13.FR.r.a', t=375),
+                 ]
+        if nr is None and nc is None:
+            nr = 2
+            nc = 1
     golden = (1 + 5 ** 0.5) / 2
     nplots = len(plots)
     if nr is None:
