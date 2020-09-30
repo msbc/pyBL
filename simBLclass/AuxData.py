@@ -869,7 +869,10 @@ class FluxData(object):
             print('Generating flux data')
             tmp = self.sim.loadfile('FT', 0).flux_variables()
             fn = self.sim._get_flux_fn(1, 2, 0, check=False)
-            data = self.sim._mk_flux_data(ll=True)
+            try:
+                data = self.sim._mk_flux_data(ll=False)
+            except MemoryError:
+                data = self.sim._mk_flux_data(ll=False)
             out = dict(zip(tmp, np.swapaxes(data, 0, 1)))
             gc.collect()
             try:
