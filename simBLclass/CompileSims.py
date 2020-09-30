@@ -582,7 +582,7 @@ def multi_map(map_dict=None, var=None, save=False, figsize=None, dpi=300, fopt=N
 
 def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=None,
               fn=None, sdir=None, nc=None, nr=None, file='cons', txt=True, lbl=True,
-              lnorm=-2, overwrite=True):
+              lnorm=-2, overwrite=True, cb_side=None):
     if plots is None:
         plots = [dict(sim='M07.FR.r.a', t=450),
                  dict(sim='M09.FR.r.lc.a', t=175, ps=.316, mode=19, rm_last=True),
@@ -595,8 +595,13 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
         if nr is None and nc is None:
             nr = 2
             nc = 1
+            cb_side = 'left'
     golden = (1 + 5 ** 0.5) / 2
     nplots = len(plots)
+    if cb_side is None:
+        cb_side = 'top'
+    cb_side = cb_side.lower()
+    assert cb_side in ['top', 'left']
     if nr is None:
         nr = int(np.round(np.sqrt(nplots / golden)))
     if nc is None:
@@ -627,9 +632,15 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
 
     fig = plt.figure(**_fopt)
     hr = [.1, 1] * nr
-    gs = mpl.gridspec.GridSpec(nr * 2, nc, top=.9, bottom=.15, left=.07, right=.93,
-                               wspace=0, hspace=0, height_ratios=hr)
-    axs = [[None] * nc * 2] * nr
+    gs_opt = dict(top=.9, bottom=.15, left=.07, right=.93, wspace=0, hspace=0,
+                  height_ratios=hr)
+    if cb_side == 'top':
+        gs = mpl.gridspec.GridSpec(nr * 2, nc, **gs_opt)
+        orientation = 'horizontal'
+    elif cb_side == 'left':
+        gs = mpl.gridspec.GridSpec(nr, nc * 2, **gs_opt)
+        orientation = 'vertical'
+    axs = [[None] * nc] * nr
     sim = None
 
     fmt = oomfmt(lnorm)
@@ -642,13 +653,17 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                     opt['sharey'] = axs[r][0]
                 if r > 0:
                     opt['sharex'] = axs[0][c]
-                ax = plt.subplot(gs[2 * r + 1, c], **opt)
-                cax = plt.subplot(gs[2 * r, c])
+                if cb_side == 'top':
+                    ax = plt.subplot(gs[2 * r + 1, c], **opt)
+                    cax = plt.subplot(gs[2 * r, c])
+                elif cb_side == 'left':
+                    ax = plt.subplot(gs[r, 2 * c], **opt)
+                    cax = plt.subplot(gs[r, 2 * c + 1])
                 sname = plots[i]['sim']
                 if getattr(sim, 'name', None) != sname:
                     sim = BLsim(sname)
                 with sim.loadfile(file, plots[i]['t']) as df:
-                    cbopt = dict(orientation='horizontal', format=fmt)
+                    cbopt = dict(orientation=orientation, format=fmt)
                     sopt = dict(ax=ax, cax=cax, title=False, lbls=False, cbopt=cbopt,
                                 cbl=False)
                     for key in plots[i].keys():
