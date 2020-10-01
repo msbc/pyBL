@@ -5151,7 +5151,16 @@ class BLsim(object):
         data = np.array(data)
         #print(data.shape)
         if cmap is None:
-            cmap = plt.get_cmap()
+            #cmap = plt.get_cmap()
+            # sample the colormaps that you want to use. Use 128 from each so we get 256
+            # colors in total
+            n0 = int(np.ceil(51. / 600 * 256))
+            colors1 = plt.cm.cividis(np.linspace(0., 1, n0))
+            colors2 = plt.cm.viridis_r(np.linspace(0, .7, 256 - n0))
+
+            # combine them and build a new colormap
+            colors = np.vstack((colors1, colors2))
+            cmap = mpl.colors.LinearSegmentedColormap.from_list('my_colormap', colors)
         elif hasattr(cmap, 'lower'):
             cmap = plt.get_cmap(cmap)
         if cb:
@@ -5174,23 +5183,26 @@ class BLsim(object):
         fig = plt.figure(dpi=dpi, figsize=figsize)
         nvar = len(var_list)
         nrow = nvar
-        hr = []
+        ncol = 1
+        wr = [1]
         if cb:
-            nrow += 1
-            hr += [.1]
-        hr += [1] * nvar
-        gs = mpl.gridspec.GridSpec(nrow, 1, height_ratios=hr,
-                                   top=.92, bottom=.12, left=.14, right=.95, wspace=.01,
-                                   hspace=.1)
-        axs = [plt.subplot(i) for i in gs]
+            ncol += 1
+            wr += [.1]
+        gs = mpl.gridspec.GridSpec(nrow, ncol, width_ratios=wr,
+                                   top=.92, bottom=.12, left=.14, right=.95, wspace=0,
+                                   hspace=0)
+        axs = [plt.subplot(gs[i, 0]) for i in range(nvar)]
 
         if cb:
-            cb = mpl.colorbar.ColorbarBase(axs[0], cmap=cmap, norm=norm, orientation='horizontal')
-            axs.pop(0).xaxis.set_ticks_position('top')
-            plt.title(r'$t/2\pi$')
+            cax = plt.subplot(gs[:, 1])
+            cb = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm,
+                                           orientation='vertical')
+            cax.xaxis.set_ticks_position('top')
+            cb.set_label(r'$t/2\pi$')
 
         for n, var in enumerate(var_list):
-            plt.sca(axs[n])
+            ax = axs[n]
+            plt.sca(ax)
             for i, d in enumerate(data[:, n]):
                 lbl = r'${:d}$'.format(times[i])
                 plt.plot(self.rc, d, c=colors[i], label=lbl, **_popt)
@@ -5208,10 +5220,11 @@ class BLsim(object):
             plt.xlim(self.r[0], rmax)
             plt.ylabel(lbls[var])
             if n < nvar - 1:
-                axs[n].set_xticklabels([])
+                ax.set_xticklabels([])
             if var == 'omega':
                 _, ymax = plt.ylim()
                 plt.ylim(None, max(ymax, 1))
+            ax.tick_params(axis='both', which='both', direction='in')
         if not cb:
             if lopt is None:
                 lopt = dict(handlelength=1, fontsize=8, handletextpad=.4,
