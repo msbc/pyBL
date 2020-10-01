@@ -5113,7 +5113,7 @@ class BLsim(object):
     def evo_prof(self, times=None, files=None, cmap=None, popt=None, fn=None, cb=False,
                  init=None, data=None, t0=0, save=False, fig=None, var_list=None,
                  sdir=None, overwrite=True, ext='pdf', rmax=None, dpi=300, figsize=None,
-                 lopt=None):
+                 lopt=None, use_maps=None):
         if save or fn:
             save = True
             if sdir is None:
@@ -5132,23 +5132,35 @@ class BLsim(object):
             rmax = self.r[-1]
         if var_list is None:
             var_list = ['omega', 'dens', 'vortensity']
-        if files is None:
-            if times is None:
-                times = np.array([0, 20, 25, 30, 40, 50] +
-                                 list(range(100, int(self.fft_time[-1] / tau) + 2, 100)))
+
+        if times is None:
+            times = np.array([0, 20, 25, 30, 40, 50] +
+                             list(range(100, int(self.fft_time[-1] / tau) + 2, 100)))
                 #times = np.arange(t0, 601, 50, dtype=int)
-            files = [self.files('cons')[t] for t in times]
         if t0 is None:
             t0 = times[0]
-        if init is None:
-            df0 = self.loadfile('cons', t0)
-            init = {i: df0[i].mean(axis=0) for i in var_list}
-        if data is None:
-            def grabber(df):
-                return [df[i].mean(axis=0) for i in var_list]
+        if use_maps is None:
+            try:
+                fd = self.flux_data
+            except:
+                use_maps = True
+        if use_maps:
+            if files is None:
+                files = [self.files('cons')[t] for t in times]
+            if init is None:
+                df0 = self.loadfile('cons', t0)
+                init = {i: df0[i].mean(axis=0) for i in var_list}
+            if data is None:
+                def grabber(df):
+                    return [df[i].mean(axis=0) for i in var_list]
 
-            data = self.map_files(files, grabber)
-        data = np.array(data)
+                data = self.map_files(files, grabber)
+                data = np.array(data)
+        else:
+            tlist = np.array([fd.tloc(t) for t in times * tau])
+            if data is None:
+                data = np.array([fd[var][tlist] for var in var_list]).T
+                print(data.shape)
         #print(data.shape)
         if cmap is None:
             #cmap = plt.get_cmap()
