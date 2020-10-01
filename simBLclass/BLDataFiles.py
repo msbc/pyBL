@@ -437,7 +437,7 @@ class BLfile(BLfileBase):
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1, dpi=300,
                figsize=None, overwrite=True, display=False, minmax=False, txt_opt=None,
                ps=None, mode=1, phi_norm=True, rm_last=False, printvmax=False, lnorm=False,
-               dv=None, op=None, rp=1.1, phi0=0):
+               dv=None, op=None, rp=None, phi0=0, draw_opt=None):
         """Plot 2D sim data"""
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
@@ -627,7 +627,10 @@ class BLfile(BLfileBase):
         if op is not None:
             if op is True:
                 raise NotImplementedError # TODO
-            self.sim.draw_upper_curve(op, mode, rp=rp, phi0=phi0, norm=np.pi)
+            if draw_opt is None:
+                draw_opt = dict()
+            self.sim.draw_upper_curve(op, mode, rp=rp, phi0=phi0, norm=np.pi, zorder=10,
+                                      **draw_opt)
         if title:
             plt.title(helpers.sanitize_lbl(title.format(**self.__dict__)))
         if cb:

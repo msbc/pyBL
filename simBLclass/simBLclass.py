@@ -948,29 +948,35 @@ class BLsim(object):
         phi = spiral(r, rp, 1. / self.mach) + phi0
         plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
 
-    def upper_curve(self, op, m, t0=2000, tf=None):
+    def kr_sqr(self, op, m, t0=None, tf=None):
+        if t0 is None:
+            t0 = 2000
         omega = self.flux_data['vphi'][t0:tf].mean(axis=0) / self.rc
-        kr = np.sqrt(m**2 * (omega - op)**2 - omega**2) * self.mach
-        return -np.cumsum(kr / m)
+        return (m**2 * (omega - op)**2 - omega**2) * self.mach ** 2
 
-    def draw_upper_curve(self, op, m, rp=None, phi0=0, opt=None, norm=1, polar=False):
+    def draw_upper_curve(self, op, m, rp=None, phi0=0, opt=None, norm=1, polar=False,
+                         t0=None, tf=None, zorder=None):
         if opt is None:
             opt = {}
         if 'ls' not in opt:
-            opt['ls'] = ':'
+            opt['ls'] = '--'
         if 'lw' not in opt:
             opt['lw'] = 1
         if 'c' not in opt:
             opt['c'] = '1'
         r = self.rc
+        kr2 = self.kr_sqr(op, m, t0=t0, tf=tf)
         if rp is None:
-            rp = r[0]
-            ri = 0
+            ri = len(r) - 1
+            while kr2[ri] > 0 and ri > 0:
+                ri -= 1
+            ri += 1
+            rp = r[ri]
         else:
             ri = self.rloc(rp)
-        phi = self.upper_curve(op, m)
-        phi += phi0 - phi[ri]
-        phi[:ri] = np.nan
+        phi = - np.cumsum(np.sqrt(kr2[ri:]) / m * np.diff(self.r)[ri:])
+        phi += phi0 - phi[0]
+        r = r[ri:]
         if polar:
             plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
         else:
@@ -979,15 +985,15 @@ class BLsim(object):
             x = []
             y = []
             for i in range(phi.size - 1):
-                if np.abs(dphi) > np.pi:
-                    x.append(np.nan)
-                    y.append(np.nan)
                 x.append(r[i])
                 y.append(phi[i])
+                if np.abs(dphi[i]) > np.pi:
+                    x.append(np.nan)
+                    y.append(np.nan)
             x.append(r[-1])
             y.append(phi[-1])
             y = np.array(y) / norm
-            plt.plot(x, y, **opt)
+            plt.plot(x, y, zorder=zorder, **opt)
 
     def __repr__(self):
         return '<BLsim "{0:}">'.format(self.name)
