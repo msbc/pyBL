@@ -948,6 +948,47 @@ class BLsim(object):
         phi = spiral(r, rp, 1. / self.mach) + phi0
         plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
 
+    def upper_curve(self, op, m, t0=2000, tf=None):
+        omega = self.flux_data['vphi'][t0:tf].mean(axis=0) / self.rc
+        kr = np.sqrt(m**2 * (omega - op)**2 - omega**2) * self.mach
+        return -np.cumsum(kr / m)
+
+    def draw_upper_curve(self, op, m, rp=None, phi0=0, opt=None, norm=1, polar=False):
+        if opt is None:
+            opt = {}
+        if 'ls' not in opt:
+            opt['ls'] = ':'
+        if 'lw' not in opt:
+            opt['lw'] = 1
+        if 'c' not in opt:
+            opt['c'] = '1'
+        r = self.rc
+        if rp is None:
+            rp = r[0]
+            ri = 0
+        else:
+            ri = self.rloc(rp)
+        phi = self.upper_curve(op, m)
+        phi += phi0 - phi[ri]
+        phi[:ri] = np.nan
+        if polar:
+            plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
+        else:
+            phi = phi % tau
+            dphi = np.diff(phi)
+            x = []
+            y = []
+            for i in range(phi.size - 1):
+                if np.abs(dphi) > np.pi:
+                    x.append(np.nan)
+                    y.append(np.nan)
+                x.append(r[i])
+                y.append(phi[i])
+            x.append(r[-1])
+            y.append(phi[-1])
+            y = np.array(y) / norm
+            plt.plot(x, y, **opt)
+
     def __repr__(self):
         return '<BLsim "{0:}">'.format(self.name)
 
