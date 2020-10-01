@@ -615,7 +615,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
         s0 = 2
         width, height = nc * s0 + margin, nr * s0 + margin
         if cb_side in ['right']:
-            width += margin
+            width += margin * 3
         figsize = width, height
     _fopt = dict(dpi=dpi, figsize=figsize)
     if fopt is None:
@@ -641,7 +641,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
         gs = mpl.gridspec.GridSpec(nr * 2, nc, **gs_opt)
         orientation = 'horizontal'
     elif cb_side == 'right':
-        gs_opt.update(dict(top=.92, bottom=.08, left=.15, right=.85))
+        gs_opt.update(dict(top=.92, bottom=.1, left=.15, right=.85))
         gs_opt['width_ratios'] = [1, .1] * nc
         gs = mpl.gridspec.GridSpec(nr, nc * 2, **gs_opt)
         orientation = 'vertical'
@@ -683,14 +683,16 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                     ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
                     ax.xaxis.set_ticks_position('both')
                     ax.tick_params(axis='both', which='both', direction='in')
+
                     cax.xaxis.set_ticks_position('top')
                     cax.xaxis.set_label_position('top')
-                    cax.tick_params(axis='x', which='both', direction='in')
+                    cax.tick_params(axis='both', which='both', direction='in')
                     cax.xaxis.get_offset_text().set_visible(False)
+                    cax.yaxis.get_offset_text().set_visible(False)
                     if txt:
                         t = int(df.t / tau + .5)
                         txt = sim.name + "\n" + r"$t/2\pi={:d}$".format(t)
-                        ax.text(.96, .97, txt, c='k', transform=ax.transAxes, ha='right',
+                        ax.text(.96, .96, txt, c='k', transform=ax.transAxes, ha='right',
                                 va='top', fontsize=6)
                 if lbl:
                     add_plbl(chr(ord('a') + i))
@@ -702,9 +704,16 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                     plt.xlabel(r'$r$')
                 else:
                     plt.setp(ax.get_xticklabels(), visible=False)
-                if r == 0 and c == nc - 1:
-                    cax.text(1.01, 1.13, r'$\times 10^{{{}}}$'.format(lnorm),
-                             transform=ax.transAxes, ha='left', va='bottom')#, fontsize=6)
+                if cb_side == 'top':
+                    if r == 0 and c == nc - 1:
+                        cax.text(1.01, 1.13, r'$\times 10^{{{}}}$'.format(lnorm),
+                                 transform=ax.transAxes, ha='left', va='bottom')#, fontsize=6)
+                elif r == 0:
+                    plt.title(r'$r v_r \sqrt{{\Sigma}}/10^{{{}}}$'.format(lnorm))
+                else:
+                    yticks = ax.yaxis.get_major_ticks()
+                    yticks[-1].label1.set_visible(False)
+                    yticks[-2].label1.set_visible(False)
                 gc.collect()
     plt.draw()
     if save or fn:
