@@ -629,8 +629,8 @@ class BLfile(BLfileBase):
                 raise NotImplementedError # TODO
             if draw_opt is None:
                 draw_opt = dict()
-            self.sim.draw_upper_curve(op, mode, rp=rp, phi0=phi0, norm=np.pi, zorder=10,
-                                      **draw_opt)
+            self.sim.draw_mode_curve(op, mode, rp=rp, phi0=phi0, norm=np.pi, zorder=10,
+                                     **draw_opt)
         if title:
             plt.title(helpers.sanitize_lbl(title.format(**self.__dict__)))
         if cb:

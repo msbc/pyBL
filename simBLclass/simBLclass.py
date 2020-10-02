@@ -954,8 +954,8 @@ class BLsim(object):
         omega = self.flux_data['vphi'][t0:tf].mean(axis=0) / self.rc
         return (m**2 * (omega - op)**2 - omega**2) * self.mach ** 2
 
-    def draw_upper_curve(self, op, m, rp=None, phi0=0, opt=None, norm=1, polar=False,
-                         t0=None, tf=None, zorder=None):
+    def draw_mode_curve(self, op, m, rl=None, ru=None, phi0=0, opt=None, norm=1, polar=False,
+                        t0=None, tf=None, zorder=None):
         if opt is None:
             opt = {}
         if 'ls' not in opt:
@@ -966,17 +966,26 @@ class BLsim(object):
             opt['c'] = '1'
         r = self.rc
         kr2 = self.kr_sqr(op, m, t0=t0, tf=tf)
-        if rp is None:
-            ri = len(r) - 1
-            while kr2[ri] > 0 and ri > 0:
-                ri -= 1
-            ri += 1
-            rp = r[ri]
+        if ru is None:
+            ru = r[-1]
+            rui = r.size - 1
         else:
-            ri = self.rloc(rp)
-        phi = - np.cumsum(np.sqrt(kr2[ri:]) / m * np.diff(self.r)[ri:])
+            rui = self.rloc(ru)
+            while rui < r.size - 1 and kr2[rui] > 0:
+                rui += 1
+            rui -= 1
+            ru = r
+        if rl is None:
+            rli = rui
+            while kr2[rli] > 0 and rli > 0:
+                rli -= 1
+            rli += 1
+            rp = r[rli]
+        else:
+            rli = self.rloc(rl)
+        phi = - np.cumsum(np.sqrt(kr2[rli:]) / m * np.diff(self.r)[rli:])
         phi += phi0 - phi[0]
-        r = r[ri:]
+        r = r[rli:rui + 1]
         if polar:
             plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
         else:
@@ -994,6 +1003,8 @@ class BLsim(object):
             y.append(phi[-1])
             y = np.array(y) / norm
             plt.plot(x, y, zorder=zorder, **opt)
+            if rui == self.rc.size - 1:
+                plt.plot([1, rp], [y[0], y[0]], **opt)
 
     def __repr__(self):
         return '<BLsim "{0:}">'.format(self.name)
