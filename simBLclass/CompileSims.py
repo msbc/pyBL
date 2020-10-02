@@ -589,7 +589,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                  dict(sim='M13.FR.r.a', t=375),
                  ]
         plots = [dict(sim='M06.HR.r.lc.a', t=25, op=0.75755, mode=7, phi0=1.2 * np.pi),
-                 dict(sim='M09.FR.r.a', t=175, ps=.316, mode=19, ru=1.5),
+                 dict(sim='M09.FR.r.a', t=175, ps=.315, mode=19, op=.315, ru=1.5),
                  #dict(sim='M13.FR.r.a', t=375),
                  ]
         if nr is None and nc is None:
