@@ -5221,7 +5221,7 @@ class BLsim(object):
             ncol += 1
             wr += [.05]
         gs = mpl.gridspec.GridSpec(nrow, ncol, width_ratios=wr,
-                                   top=.92, bottom=.12, left=.14, right=.95, wspace=0,
+                                   top=.95, bottom=.07, left=.12, right=.9, wspace=0,
                                    hspace=0)
         axs = [plt.subplot(gs[i, 0]) for i in range(nvar)]
 
