@@ -902,6 +902,8 @@ class FluxData(object):
             return self.CA(3)
         if item == 'dd':
             return self['dens**2'] / self['dens'] - 1.0
+        if item == 'omega':
+            return self.omega()
         raise KeyError("FluxData does not contain {:}.".format(item))
 
     @property
@@ -936,6 +938,9 @@ class FluxData(object):
         #print(kern)
         return scipy.signal.fftconvolve(np.real(f), kern, mode='same', axes=0)
         #return scipy.signal.oaconvolve(np.real(f), kern, mode='same', axes=0)
+
+    def tloc(self, t):
+        return np.argmin(np.abs(self['t'] - t))
 
     def vphi1(self):
         return self.sim.rc ** -.5
@@ -990,6 +995,9 @@ class FluxData(object):
         except TypeError:
             pass
         return vphi
+
+    def omega(self, vphi=None):
+        return self._vphi(vphi) / self.rc
 
     def _dm2(self, vphi=None):
         if np.all(vphi == 2):

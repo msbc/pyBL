@@ -5116,7 +5116,7 @@ class BLsim(object):
             plt.close()
         return
 
-    def evo_prof(self, times=None, files=None, cmap=None, popt=None, fn=None, cb=False,
+    def evo_prof(self, times=None, files=None, cmap=None, popt=None, fn=None, cb=True,
                  init=None, data=None, t0=0, save=False, fig=None, var_list=None,
                  sdir=None, overwrite=True, ext='pdf', rmax=None, dpi=300, figsize=None,
                  lopt=None, use_maps=None):
@@ -5163,11 +5163,11 @@ class BLsim(object):
                 data = self.map_files(files, grabber)
                 data = np.array(data)
         else:
-            tlist = np.array([fd.tloc(t) for t in times * tau])
+            tlist = np.array([fd.tloc(t * tau) for t in times])
             if data is None:
-                data = np.array([fd[var][tlist] for var in var_list]).T
+                data = np.array([fd[var][tlist] for var in var_list])
+                data = np.rollaxis(data, 0, -1)
                 print(data.shape)
-        #print(data.shape)
         if cmap is None:
             #cmap = plt.get_cmap()
             # sample the colormaps that you want to use. Use 128 from each so we get 256
@@ -5194,10 +5194,12 @@ class BLsim(object):
 
         _v = r'$R^2\left(\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_{'
         _v += str(t0) + r'}\right)$'
-        lbls = {'dens': r'$\rho$',
+        lbls = {'dens': r'$\Sigma$',
                 'vortensity': _v,
                 'omega': r'$\Omega$'}
 
+        if figsize is None:
+            figsize = 3.5, 6
         fig = plt.figure(dpi=dpi, figsize=figsize)
         nvar = len(var_list)
         nrow = nvar
@@ -5205,7 +5207,7 @@ class BLsim(object):
         wr = [1]
         if cb:
             ncol += 1
-            wr += [.1]
+            wr += [.05]
         gs = mpl.gridspec.GridSpec(nrow, ncol, width_ratios=wr,
                                    top=.92, bottom=.12, left=.14, right=.95, wspace=0,
                                    hspace=0)
@@ -5242,7 +5244,14 @@ class BLsim(object):
             if var == 'omega':
                 _, ymax = plt.ylim()
                 plt.ylim(None, max(ymax, 1))
+            ax.yaxis.set_ticks_position('both')
+            ax.xaxis.set_ticks_position('both')
             ax.tick_params(axis='both', which='both', direction='in')
+            if n > 0:
+                yticks = ax.yaxis.get_major_ticks()
+                yticks[-1].label1.set_visible(False)
+                yticks[-2].label1.set_visible(False)
+
         if not cb:
             if lopt is None:
                 lopt = dict(handlelength=1, fontsize=8, handletextpad=.4,
