@@ -983,9 +983,10 @@ class BLsim(object):
             rp = r[rli]
         else:
             rli = self.rloc(rl)
-        phi = - np.cumsum(np.sqrt(kr2[rli:]) / m * np.diff(self.r)[rli:])
+        loc = slice(rli, rui + 1)
+        phi = - np.cumsum(np.sqrt(kr2[loc]) / m * np.diff(self.r)[loc])
         phi += phi0 - phi[0]
-        r = r[rli:rui + 1]
+        r = r[loc]
         if polar:
             plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
         else:
