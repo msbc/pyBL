@@ -17,6 +17,7 @@ from .. import athena_read as ar
 from .. import helpers
 from . import simBLclass as blc
 from .BlockByBlock import BlockByBlock
+from .defaults import rc
 
 tau = 2 * np.pi
 #hpi = .5 * np.pi
@@ -924,7 +925,7 @@ def _window(x, x0, s=5.):
 class BL3dSim(object):
     def __init__(self, path, athinput=None, x2_face=None, fmts=None, defvar='Rpseudo'):
         if fmts is None:
-            fmts = blc._file_fmts
+            fmts = rc.file_fmts
         self.name = os.path.split(os.path.abspath(path))[-1]
         path = os.path.expanduser(path)
         if path == self.name and not os.path.isdir(path):
