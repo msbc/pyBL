@@ -955,7 +955,7 @@ class BLsim(object):
         return (m**2 * (omega - op)**2 - omega**2) * self.mach ** 2
 
     def draw_mode_curve(self, op, m, rl=None, ru=None, phi0=0, opt=None, norm=1, polar=False,
-                        t0=None, tf=None, zorder=None):
+                        t0=None, tf=None, reflect=None, zorder=None):
         if opt is None:
             opt = {}
         if 'ls' not in opt:
@@ -987,6 +987,13 @@ class BLsim(object):
         phi = - np.cumsum(np.sqrt(kr2[loc]) / m * np.diff(self.r)[loc])
         phi += phi0 - phi[0]
         r = r[loc]
+        if reflect is None:
+            if rui < self.rc.size - 1:
+                reflect = True
+        if reflect:
+            tmp = 2 * phi[-1] - phi[::-1]
+            phi = np.hstack([phi, tmp])
+            r = np.hstack([r, r[::-1]])
         if polar:
             plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
         else:
