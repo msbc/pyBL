@@ -1060,7 +1060,7 @@ class BL3dSim(object):
             for out in outs:
                 files = []
                 b = self.inputs[out].get('id', 'out' + out[6:])
-                searches = ['.'.join([a, b, c, ext]) for ext in blc._ext]
+                searches = ['.'.join([a, b, c, ext]) for ext in rc('ext')]
                 for search in searches:
                     files += [os.path.split(i)[-1] for i in glob(os.path.join(path, search))]
                 self.fileDict[out] = sorted(files)
