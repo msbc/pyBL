@@ -114,6 +114,53 @@ def plot_mesh(fn='mesh_structure.dat', data=None, save=False, fig_fn=None):
 
     return ax0_phi, ax0_r, ax1_th, ax1_r
 
+
+class BlockByBlock3D(BlockByBlock):
+    def plot2(self, data=None, phi=None, fn=None, save=False, title=None, name=None,
+              ext='png', popt=None, cb=True, cbl=None, zerocent=None, vmin=None,
+              vmax=None, cmap=None, cbopt=None, fig=None, fopt=None, log=False, aspect=1,
+              sdir=None, r_cut=None, ret_fn=False):
+        data, opt = self._data_opt_parser(data=data, vmax=vmax, vmin=vmin, zerocent=zerocent, cbl=cbl, name=name,
+                                          r_cut=r_cut)
+        i = np.argmax(self.thetac[self.thetac < .5 * np.pi])
+        data_slice = np.vstack([data.mean(axis=0), data[:,i:i+2,:].mean(axis=1)])
+        opt = self._opt_parser(data=data_slice, log=log, popt=popt, cbopt=cbopt, cmap=cmap, title=title,
+                               **opt)
+        if fopt is None:
+            fopt = {'figsize': (8,6), 'dpi': 300}
+        if fig is None:
+            fig = plt.figure(**fopt)
+        _gsopt = dict(right=.9, width_ratios=[1,.5, .05], top=.95, left=.05, bottom=.08, wspace=.15, hspace=.25)
+        gs = mpl.gridspec.GridSpec(1, 3, **_gsopt)
+        ax = plt.subplot(gs[0])
+        _opt = {}
+        _opt.update(opt)
+        _opt['cb'] = False
+        a0 = self.r_phi_plot(data, ax=ax, **_opt)
+
+
+        ax = plt.subplot(gs[1])
+        cax = plt.subplot(gs[2])
+        _opt = {}
+        _opt.update(opt)
+        _opt['cbopt']['cax'] = cax
+        _opt['name'] = None
+        _opt['title'] = False
+        a1 = self.r_theta_plot(data, ax=ax, phi=phi, **_opt)
+        ax.set_xlim(0, None)
+
+        vmin, vmax = a0.get_clim()
+        tmp = a1.get_clim()
+        vmin = min(vmin, tmp[0])
+        vmax = max(vmax, tmp[1])
+
+        a0.set_clim(vmin, vmax)
+        a1.set_clim(vmin, vmax)
+
+        if save or fn:
+            fn = self._save_fig(fn, self._prefix + '_map_plot.' + ext, sdir=sdir)
+
+
 class BLfile(blc.BLfileBase):
     def __init__(self, fn, sim_path=None, t=None, data=None, defvar=None, ai_data=None, sim=None,
                  file_handle=None, x2_face=None, num_ghost=0):
