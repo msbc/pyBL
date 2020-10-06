@@ -582,7 +582,7 @@ def multi_map(map_dict=None, var=None, save=False, figsize=None, dpi=300, fopt=N
 
 def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=None,
               fn=None, sdir=None, nc=None, nr=None, file='cons', txt=True, lbl=True,
-              lnorm=-2, overwrite=True, cb_side=None):
+              lnorm=-2, overwrite=True, cb_side=None, tsz=10):
     if plots is None:
         plots = [dict(sim='M07.FR.r.a', t=450),
                  dict(sim='M09.FR.r.lc.a', t=175, ps=.316, mode=19, rm_last=True),
@@ -590,7 +590,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                  ]
         plots = [dict(sim='M06.HR.r.lc.a', t=25, op=0.75755, mode=7, phi0=1.2 * np.pi),
                  dict(sim='M09.FR.r.a', t=175, ps=.315, mode=19, op=.315, ru=1.5,
-                      phi0=1.1 * np.pi),
+                      phi0=1.63 * np.pi),
                  #dict(sim='M13.FR.r.a', t=375),
                  ]
         if nr is None and nc is None:
@@ -613,7 +613,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
             nc = int(np.round(np.sqrt(nplots * golden)))
     if figsize is None:
         margin = .25
-        s0 = 2
+        s0 = 2.5
         width, height = nc * s0 + margin, nr * s0 + margin
         if cb_side in ['right']:
             width += margin * 3
@@ -632,7 +632,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
         if ax is None:
             ax = plt.gca()
         ax.text(.01, .97, '(' + lbl + ')', c='k', transform=ax.transAxes, ha='left',
-                va='top', fontsize=8)
+                va='top', fontsize=tsz)
 
     fig = plt.figure(**_fopt)
     hr = [.1, 1] * nr
@@ -642,8 +642,8 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
         gs = mpl.gridspec.GridSpec(nr * 2, nc, **gs_opt)
         orientation = 'horizontal'
     elif cb_side == 'right':
-        gs_opt.update(dict(top=.92, bottom=.1, left=.15, right=.85))
-        gs_opt['width_ratios'] = [1, .1] * nc
+        gs_opt.update(dict(top=.93, bottom=.08, left=.15, right=.87))
+        gs_opt['width_ratios'] = [1, .05] * nc
         gs = mpl.gridspec.GridSpec(nr, nc * 2, **gs_opt)
         orientation = 'vertical'
     axs = [[None] * nc] * nr
@@ -694,7 +694,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                         t = int(df.t / tau + .5)
                         txt = sim.name + "\n" + r"$t/2\pi={:d}$".format(t)
                         ax.text(.96, .96, txt, c='k', transform=ax.transAxes, ha='right',
-                                va='top', fontsize=6)
+                                va='top', fontsize=tsz)
                 if lbl:
                     add_plbl(chr(ord('a') + i))
                 if c:
@@ -710,7 +710,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                         cax.text(1.01, 1.13, r'$\times 10^{{{}}}$'.format(lnorm),
                                  transform=ax.transAxes, ha='left', va='bottom')#, fontsize=6)
                 elif r == 0:
-                    plt.title(r'$r v_r \sqrt{{\Sigma}}/10^{{{}}}$'.format(lnorm))
+                    plt.title(r'$r v_r \sqrt{{\Sigma}}/10^{{{}}}$'.format(lnorm), fontsize=tsz)
                 else:
                     yticks = ax.yaxis.get_major_ticks()
                     yticks[-1].label1.set_visible(False)

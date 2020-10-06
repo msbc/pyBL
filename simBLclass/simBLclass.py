@@ -5217,10 +5217,13 @@ class BLsim(object):
                 'vortensity': _v,
                 'omega': r'$\Omega$'}
 
-        if figsize is None:
-            figsize = 3.5, 6
-        fig = plt.figure(dpi=dpi, figsize=figsize)
         nvar = len(var_list)
+        if figsize is None:
+            if nvar >= 3:
+                figsize = 3.5, 6
+            else:
+                figsize = 3.5, 5
+        fig = plt.figure(dpi=dpi, figsize=figsize)
         nrow = nvar
         ncol = 1
         wr = [1]
