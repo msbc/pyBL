@@ -631,7 +631,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
     def add_plbl(lbl, ax=None):
         if ax is None:
             ax = plt.gca()
-        ax.text(.01, .97, '(' + lbl + ')', c='k', transform=ax.transAxes, ha='left',
+        ax.text(.01, .97, '(' + lbl + ')', c='w', transform=ax.transAxes, ha='left',
                 va='top', fontsize=tsz)
 
     fig = plt.figure(**_fopt)

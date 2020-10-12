@@ -5222,7 +5222,7 @@ class BLsim(object):
             if nvar >= 3:
                 figsize = 3.5, 6
             else:
-                figsize = 3.5, 5
+                figsize = 3.5, 4
         fig = plt.figure(dpi=dpi, figsize=figsize)
         nrow = nvar
         ncol = 1
@@ -5231,7 +5231,7 @@ class BLsim(object):
             ncol += 1
             wr += [.05]
         gs = mpl.gridspec.GridSpec(nrow, ncol, width_ratios=wr,
-                                   top=.95, bottom=.07, left=.12, right=.9, wspace=0,
+                                   top=.94, bottom=.1, left=.12, right=.85, wspace=0,
                                    hspace=0)
         axs = [plt.subplot(gs[i, 0]) for i in range(nvar)]
 
@@ -5241,6 +5241,12 @@ class BLsim(object):
                                            orientation='vertical')
             cax.xaxis.set_ticks_position('top')
             cb.set_label(r'$t/2\pi$')
+
+        def add_plbl(lbl, ax=None):
+            if ax is None:
+                ax = plt.gca()
+            ax.text(.97, .97, '(' + lbl + ')', c='k', transform=ax.transAxes, ha='right',
+                    va='top', fontsize=10)
 
         for n, var in enumerate(var_list):
             ax = axs[n]
@@ -5269,6 +5275,7 @@ class BLsim(object):
             ax.yaxis.set_ticks_position('both')
             ax.xaxis.set_ticks_position('both')
             ax.tick_params(axis='both', which='both', direction='in')
+            add_plbl(chr(ord('a') + n), ax)
             if n > 0:
                 yticks = ax.yaxis.get_major_ticks()
                 yticks[-1].label1.set_visible(False)
