@@ -159,7 +159,7 @@ class BLfileBase(dict):
     def _parse_self(self, key):
         try:
             out = self._special_keys(key)
-            if not out is None:
+            if out is not None:
                 return out
         except NotImplementedError:
             pass
@@ -441,7 +441,8 @@ class BLfile(BLfileBase):
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1, dpi=300,
                figsize=None, overwrite=True, display=False, minmax=False, txt_opt=None,
                ps=None, mode=1, phi_norm=True, rm_last=False, printvmax=False, lnorm=False,
-               dv=None, op=None, rl=None, ru=None, phi0=0, draw_opt=None):
+               dv=None, op=None, rl=None, ru=None, phi0=0, draw_opt=None, rp=None,
+               xminor=True):
         """Plot 2D sim data"""
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
@@ -590,7 +591,8 @@ class BLfile(BLfileBase):
             if 'vmax' in _popt:
                 print(_popt['vmax'])
         pcm = plt.pcolormesh(self.r, self.phi / phi_norm, data, **_popt)
-        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+        if xminor:
+            ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
         ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
         plt.xlim(rmin, rmax)
         plt.ylim(0, self.phi[-1] / phi_norm)
@@ -634,6 +636,8 @@ class BLfile(BLfileBase):
             if draw_opt is None:
                 draw_opt = dict()
             self.sim.draw_mode_curve(op, mode, rl=rl, ru=ru, phi0=phi0, norm=np.pi, zorder=10, **draw_opt)
+        if rp is not None:
+            self.draw_spiral(rp, phi0=phi0, cart=False, opt=draw_opt)
         if title:
             plt.title(helpers.sanitize_lbl(title.format(**self.__dict__)))
         if cb:
@@ -918,22 +922,17 @@ class BL3Dfile(BLfile):
         y *= self.rc[np.newaxis, :]
         return (grad(self.rc, y, axis=1) - self.ddphi(x)) / self.rc[np.newaxis, :]
 
-    def draw_spiral(self, rp, phi0=0, opt=None):
-        if opt is None:
-            opt = {}
-        if 'ls' not in opt:
-            opt['ls'] = ':'
-        if 'lw' not in opt:
-            opt['lw'] = 1
-        if 'c' not in opt:
-            opt['c'] = '1'
-        r = np.array([i for i in self.rc if i >= rp])
-        phi = spiral(r, rp, 1. / self.mach) + phi0
-        print(phi)
-        plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
+    def draw_spiral(self, rp, phi0=0, cart=True, opt=None):
+        self.sim.draw_spiral(rp, phi0=phi0, cart=cart, opt=opt)
 
 
 class BLConsPrim(BL3Dfile):
+    def __getitem__(self, key):
+        if key.startswith('d_vortensity_'):
+            t0 = int(key.split('d_vortensity_')[-1])
+            return self.d_vortensity(t0)
+        return super(BLConsPrim, self).__getitem__(key)
+
     def rhobar(self):
         return self['dens'].mean(axis=0)
 
@@ -957,9 +956,15 @@ class BLConsPrim(BL3Dfile):
     def vortensity(self, dvphi=False):
         return self.vorticity(dvphi=dvphi) / self['dens']
 
-    def d_vortensity(self):
+    def d_vortensity(self, t0=None):
         ve = self.vortensity()
-        return ve - ve.mean(axis=0)
+        if t0 is None:
+            mean = ve.mean(axis=0)
+        else:
+            if type(t0) == int:
+                t0 = self.sim.loadfile('cons', t0)
+            mean = t0.vortensity().mean(axis=0)
+        return ve - mean
 
     def plt_vortensity(self, init=None, fopt=None, vmax=None, fig=None, sdir=None,
                        fn=None, save=False, overwrite=True, ext='png'):

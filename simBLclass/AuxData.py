@@ -1573,7 +1573,8 @@ class Lightcurves(object):
     def export(self, fn=None):
         if fn is None:
             fn = os.path.join(self.sim.path, 'lightcurve.npz')
-        np.savez(fn, flux=self.flux, time=self.time, views=self.views, powers=self.powers)
+        np.savez(fn, flux=self.flux, time=self.time, views=self.views, powers=self.powers,
+                 radii=self.radii)
 
     def _interpolate(self):
         dtimes = np.diff(self.time)

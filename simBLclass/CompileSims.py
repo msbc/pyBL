@@ -491,7 +491,7 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
     return
 
 def multi_map(map_dict=None, var=None, save=False, figsize=None, dpi=300, fopt=None,
-              fn=None, sdir=None, nc=None, nr=None, file='cons', txt=True, lbl=True,
+              fn=None, sdir=None, nc=None, nr=None, kind='cons', txt=True, lbl=True,
               skeys=None):
     if map_dict is None:
         map_dict = {'M05.FR.r.a': [200],
@@ -542,7 +542,7 @@ def multi_map(map_dict=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                     sim = None
                 if sim is None:
                     sim = BLsim(skeys[0])
-                with sim.loadfile(file, map_dict[skeys[0]].pop(0)) as df:
+                with sim.loadfile(kind, map_dict[skeys[0]].pop(0)) as df:
                     df.plot2d(var, ax=ax, cb=False, title=False, minmax=False)
                     ax.yaxis.set_ticks_position('both')
                     ax.xaxis.set_ticks_position('both')
@@ -581,7 +581,7 @@ def multi_map(map_dict=None, var=None, save=False, figsize=None, dpi=300, fopt=N
     return
 
 def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=None,
-              fn=None, sdir=None, nc=None, nr=None, file='cons', txt=True, lbl=True,
+              fn=None, sdir=None, nc=None, nr=None, kind='cons', txt=True, lbl=True,
               lnorm=-2, overwrite=True, cb_side=None, tsz=10):
     if plots is None:
         plots = [dict(sim='M07.FR.r.a', t=450),
@@ -669,7 +669,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                 sname = plots[i]['sim']
                 if getattr(sim, 'name', None) != sname:
                     sim = BLsim(sname)
-                with sim.loadfile(file, plots[i]['t']) as df:
+                with sim.loadfile(kind, plots[i]['t']) as df:
                     cbopt = dict(orientation=orientation, format=fmt)
                     sopt = dict(ax=ax, cax=cax, title=False, lbls=False, cbopt=cbopt,
                                 cbl=False)
@@ -700,7 +700,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                 if c:
                     plt.setp(ax.get_yticklabels(), visible=False)
                 else:
-                    plt.ylabel(r'$\phi/2\pi$')
+                    plt.ylabel(r'$\phi/\pi$')
                 if r == nr -1:
                     plt.xlabel(r'$r$')
                 else:
@@ -716,6 +716,159 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                     yticks[-1].label1.set_visible(False)
                     yticks[-2].label1.set_visible(False)
                 gc.collect()
+    plt.draw()
+    if save or fn:
+        save = True
+        if sdir is True:
+            sdir = os.path.split(sim.path)[0]
+            sdir = os.path.join(os.path.split(sdir, 'figs'))
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
+
+def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi=300, fopt=None,
+                 fn=None, sdir=None, kind='cons', txt=True, lbl=True,
+                 overwrite=True, cb_side=None, tsz=10):
+    if plots is None:
+        rmin, rmax = .98, 2.0
+        _ropt = dict(cbl=None, xminor=False, lnorm=-2)
+        ropt = dict(rmax=1*rmax)
+        ropt.update(_ropt)
+        _lopt = dict(rmin=rmin, vmax='98%', cbl=r'$\omega/\rho-\left.\left<\omega/\rho\right>\right|_{t=0}$', xminor=False)
+        rmax = rmin + (rmax - rmin) / 3
+        lopt = dict(rmax=1*rmax)
+        lopt.update(_lopt)
+        plots = [dict(sim='M11.FR.r.a', t=173, lopt=lopt, ropt=ropt, rp=1.1, phi0=.68*np.pi)]
+
+        rmin, rmax = .98, 3.5
+        ropt = dict(rmax=1*rmax)
+        rmax = rmin + (rmax - rmin) / 3
+        lopt = dict(rmax=1*rmax)
+        lopt.update(_lopt)
+        lopt['cbl'] = False
+        ropt['cbl'] = False
+        plots.append(dict(sim='M07.FR.r.a', t=450, lopt=lopt, ropt=ropt, op=.538, mode=4, phi0=1.45*np.pi))
+    if lvar is None:
+        lvar = 'd_vortensity_0'
+    if rvar is None:
+        rvar = 'Rpseudo'
+    nr = len(plots)
+    nc = 2
+    if cb_side is None:
+        cb_side = 'top'
+    cb_side = cb_side.lower()
+    assert cb_side in ['top', 'side']
+    if figsize is None:
+        figsize = 3, 7
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt is None:
+        fopt = {}
+    _fopt.update(fopt)
+
+    if save and not fn:
+        fn = 'vortex_types.png'
+    if parse_not_overwrite(overwrite, fn):
+        return None
+
+    def add_plbl(lbl, ax=None, side=0):
+        if ax is None:
+            ax = plt.gca()
+        x = .02 if side else .06
+        bbox = dict(facecolor='w', alpha=0.5, edgecolor='none', clip_on=True)
+        ax.text(.01, .97, '(' + lbl + ')', c='k', transform=ax.transAxes, ha='left',
+                    va='top', fontsize=tsz, bbox=bbox, clip_on=True)
+
+    fig = plt.figure(**_fopt)
+    hr = [.1, 1] * nr
+    gs_opt = dict(top=.9, bottom=.15, left=.07, right=.93, wspace=0, hspace=0)
+    if cb_side == 'top':
+        gs_opt['height_ratios'] = [.05, 1, .3] * nr
+        gs_opt['width_ratios'] = [1/3.0, 1]
+        gs = mpl.gridspec.GridSpec(nr * 3, nc, **gs_opt)
+        orientation = 'horizontal'
+        _nx, _ny = 2, 3
+        _dx, _dy = 0, 1
+    elif cb_side == 'side':
+        gs_opt.update(dict(top=.93, bottom=.08, left=.15, right=.87))
+        gs_opt['width_ratios'] = [.05, 1/3.0, 1, .05]
+        gs = mpl.gridspec.GridSpec(nr, nc * 2, **gs_opt)
+        orientation = 'vertical'
+        _nx, _ny = 4, 1
+        _dx, _dy = 1, 0
+    sim = None
+    axs = [None, None]
+
+    for r in range(nr):
+        sname = plots[r]['sim']
+        if getattr(sim, 'name', None) != sname:
+            sim = BLsim(sname)
+        with sim.loadfile(kind, plots[r]['t']) as df:
+            for c in range(nc):
+                i = c + r * nc
+                opt = dict()
+                if c > 0:
+                    opt['sharey'] = axs[0]
+                if r > 0:
+                    opt['sharex'] = None  # axs[c]
+                ax = plt.subplot(gs[r * _ny + _dy, c + _dx], **opt)
+                if cb_side == 'top':
+                    cax = plt.subplot(gs[r * _ny, c])
+                elif cb_side == 'side':
+                    cax = plt.subplot(gs[r * _ny, -1 if c else 0])
+                axs[c] = ax
+                cbopt = dict(orientation=orientation)
+                sopt = dict(ax=ax, cax=cax, title=False, lbls=False, cbopt=cbopt,
+                            cbl=False)
+                for key in plots[r].keys():
+                    if key not in ['sim', 't', 'lopt', 'ropt']:
+                        sopt[key] = plots[r][key]
+                if ['lopt', 'ropt'][c] in plots[r]:
+                    sopt.update(plots[r][['lopt', 'ropt'][c]])
+                #print(sname, sopt)
+                df.stripe([lvar, rvar][c], **sopt)
+                ax.yaxis.set_ticks_position('both')
+                # ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+                ax.xaxis.set_ticks_position('both')
+                ax.tick_params(axis='both', which='both', direction='in')
+
+                cax.xaxis.set_ticks_position('top')
+                cax.xaxis.set_label_position('top')
+                cax.tick_params(axis='both', which='both', direction='in')
+                cax.xaxis.get_offset_text().set_visible(False)
+                cax.yaxis.get_offset_text().set_visible(False)
+                if txt and c == 1:
+                    t = int(df.t / tau + .5)
+                    txt = sim.name + "\n" + r"$t/2\pi={:d}$".format(t)
+                    ax.text(.96, .96, txt, c='k', transform=ax.transAxes, ha='right',
+                            va='top', fontsize=tsz)
+                if lbl:
+                    add_plbl(chr(ord('a') + i), side=c)
+                if c:
+                    plt.setp(ax.get_yticklabels(), visible=False)
+                else:
+                    plt.ylabel(r'$\phi/\pi$')
+                if r == nr -1:
+                    plt.xlabel(r'$r$')
+                else:
+                    # plt.setp(ax.get_xticklabels(), visible=False)
+                    pass
+                #if cb_side == 'top':
+                #    if r == 0 and c == nc - 1:
+                #        cax.text(1.01, 1.13, r'$\times 10^{{{}}}$'.format(lnorm),
+                #                 transform=ax.transAxes, ha='left', va='bottom')#, fontsize=6)
+                #elif r == 0:
+                #    plt.title(r'$r v_r \sqrt{{\Sigma}}/10^{{{}}}$'.format(lnorm), fontsize=tsz)
+                #else:
+                #    yticks = ax.yaxis.get_major_ticks()
+                #    yticks[-1].label1.set_visible(False)
+                #    yticks[-2].label1.set_visible(False)
+        gc.collect()
     plt.draw()
     if save or fn:
         save = True

@@ -935,18 +935,34 @@ class BLsim(object):
             except AttributeError:
                 self.loadfile('cons', args[0]).drho_plot()
 
-    def draw_spiral(self, rp, phi0=0, opt=None):
+    def draw_spiral(self, rp, phi0=0, cart=True, norm=np.pi, opt=None):
         if opt is None:
             opt = {}
         if 'ls' not in opt:
-            opt['ls'] = ':'
+            opt['ls'] = ':' if cart else '--'
         if 'lw' not in opt:
             opt['lw'] = 1
         if 'c' not in opt:
             opt['c'] = '1'
         r = np.array([i for i in self.rc if i >= rp])
         phi = spiral(r, rp, 1. / self.mach) + phi0
-        plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
+        if cart:
+            plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
+        else:
+            phi = phi % tau
+            dphi = np.diff(phi)
+            x = []
+            y = []
+            for i in range(phi.size - 1):
+                x.append(r[i])
+                y.append(phi[i])
+                if np.abs(dphi[i]) > np.pi:
+                    x.append(np.nan)
+                    y.append(np.nan)
+            x.append(r[-1])
+            y.append(phi[-1])
+            y = np.array(y) / norm
+            plt.plot(x, y, **opt)
 
     def kr_sqr(self, op, m, t0=None, tf=None):
         if t0 is None:
