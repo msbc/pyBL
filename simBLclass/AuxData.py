@@ -1684,7 +1684,7 @@ class Lightcurves(object):
                 tloc = slice(self.tloc(self.skip), None)
             data = self.remap[tloc, vi, pi, ri]
             if ri is None:
-                data = data.sum(axis=-1)
+                data = data.mean(axis=-1)
         if detrend:
             d = self.detrend(data, tloc=tloc)
         else:
@@ -1763,7 +1763,7 @@ class Lightcurves(object):
                 tloc = slice(self.tloc(self.skip), None)
             data = self.remap[tloc, vi, pi, ri]
             if ri is None:
-                data = data.sum(axis=-1)
+                data = data.mean(axis=-1)
         if detrend:
             d = self.detrend(data, tloc=tloc)
         else:
@@ -1843,7 +1843,7 @@ class Lightcurves(object):
                     tloc = slice(self.tloc(self.skip), None)
                 data = self.remap[tloc, vi, pi, ri]
                 if ri is None:
-                    data = data.sum(axis=-1)
+                    data = data.mean(axis=-1)
             if detrend:
                 d = self.detrend(data, tloc=tloc)
             else:
@@ -1999,7 +1999,7 @@ class Lightcurves(object):
         for ri in range(self.radii.size - 1):
             a = np.argmin(np.abs(self.sim.r - self.radii[ri]))
             b = np.argmin(np.abs(self.sim.r - self.radii[ri + 1]))
-            out[:,:,:,ri] = flux[:, :, :, a:b].sum(axis=-1)
+            out[:,:,:,ri] = flux[:, :, :, a:b].mean(axis=-1)
         return out
 
     @property
