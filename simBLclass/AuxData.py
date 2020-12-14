@@ -1639,7 +1639,7 @@ class Lightcurves(object):
             if tloc is not None:
                 t = t[tloc]
         m, b = lintrend(t, data)
-        return data - m * t + b
+        return data - m * t - b
 
     def ft(self, t0=None, t1=None, n=None, window=None, detrend=None):
         if t0 is not None:
@@ -1672,7 +1672,7 @@ class Lightcurves(object):
 
     def plot_ft(self, vi=None, pi=None, ri=None, data=None, tloc=True, xlim=True, ylim=True, dpi=300,
                 figsize=None, nufit=10, detrend=False, fig=None, ax=None, tmin=None,
-                nu_dno=None, save=False, omax=None, oharm=None, norm=True):
+                nu_dno=None, save=False, omax=None, oharm=None, norm=True, rel=False):
         if data is None:
             if pi is None or vi is None:
                 raise ValueError('If data not specified, then vi and pi must be.')
@@ -1698,7 +1698,9 @@ class Lightcurves(object):
                 d = d[loc]
             else:
                 raise ValueError("Data must be 1D.")
-        ft = np.fft.fft(d / d.mean() - 1)
+        if rel:
+            d = d / d.mean() - 1
+        ft = np.fft.fft(d)
         nt = len(d)
         freq = np.fft.fftfreq(nt, d=self.newtime[1] / tau)
         x = freq[:nt//2]
