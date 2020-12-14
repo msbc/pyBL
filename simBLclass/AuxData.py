@@ -1672,7 +1672,7 @@ class Lightcurves(object):
 
     def plot_ft(self, vi=None, pi=None, ri=None, data=None, tloc=True, xlim=True, ylim=True, dpi=300,
                 figsize=None, nufit=10, detrend=False, fig=None, ax=None, tmin=None,
-                nu_dno=None, save=False, omax=None, oharm=None):
+                nu_dno=None, save=False, omax=None, oharm=None, norm=True):
         if data is None:
             if pi is None or vi is None:
                 raise ValueError('If data not specified, then vi and pi must be.')
@@ -1682,11 +1682,12 @@ class Lightcurves(object):
                 tloc = slice(None)
             if tloc == True:
                 tloc = slice(self.tloc(self.skip), None)
-            data = self.remap[tloc, vi, pi, ri]
-            if ri is None:
-                data = data.mean(axis=-1)
-            elif data.ndim == 2:
-                data = data.mean(axis=-1)
+            if norm:
+                data = self.fine_normalized(vi, pi, ri)
+            else:
+                data = self.remap[tloc, vi, pi, ri]
+            if data.ndim == 2:
+                data = data.sum(axis=-1)
         if detrend:
             d = self.detrend(data, tloc=tloc)
         else:
@@ -1753,7 +1754,7 @@ class Lightcurves(object):
     def periodogram(self, vi=None, pi=None,ri=None, data=None, tloc=True, xlim=True, ylim=True,
                     dpi=300, figsize=None, nufit=20, window='hann', detrend=False,
                     nu0=None, fig=None, ax=None, ylog=True, rel=False, tmin=None,
-                    nu_dno=None, save=False, omax=None, oharm=None):
+                    nu_dno=None, save=False, omax=None, oharm=None, norm=True):
         if data is None:
             if pi is None or vi is None:
                 raise ValueError('If data not specified, then vi and pi must be.')
@@ -1763,10 +1764,11 @@ class Lightcurves(object):
                 tloc = slice(None)
             if tloc == True:
                 tloc = slice(self.tloc(self.skip), None)
-            data = self.remap[tloc, vi, pi, ri]
-            if ri is None:
-                data = data.mean(axis=-1)
-            elif data.ndim == 2:
+            if norm:
+                data = self.fine_normalized(vi, pi, ri)
+            else:
+                data = self.remap[tloc, vi, pi, ri]
+            if data.ndim == 2:
                 data = data.mean(axis=-1)
         if detrend:
             d = self.detrend(data, tloc=tloc)
@@ -1836,7 +1838,7 @@ class Lightcurves(object):
                     nu0=None, fig=None, ax=None, log=True, rel=False, nperseg=None,
                     tperseg=20, vmin=1e-8, vmax=True, norm=None, cmap=None, sdata=None,
                     cb=True, cbl=True, cax=None, nu_dno=None, save=False, omax=None,
-                    oharm=None, ot=None, fd=None):
+                    oharm=None, ot=None, fd=None, normalize=True):
         if sdata is None:
             if data is None:
                 if pi is None or vi is None:
@@ -1845,10 +1847,11 @@ class Lightcurves(object):
                     tloc = slice(None)
                 if tloc is True:
                     tloc = slice(self.tloc(self.skip), None)
-                data = self.remap[tloc, vi, pi, ri]
-                if ri is None:
-                    data = data.mean(axis=-1)
-                elif data.ndim == 2:
+                if normalize:
+                    data = self.fine_normalized(vi, pi, ri)
+                else:
+                    data = self.remap[tloc, vi, pi, ri]
+                if data.ndim == 2:
                     data = data.mean(axis=-1)
             if detrend:
                 d = self.detrend(data, tloc=tloc)
@@ -2005,7 +2008,7 @@ class Lightcurves(object):
         for ri in range(self.radii.size - 1):
             a = np.argmin(np.abs(self.sim.r - self.radii[ri]))
             b = np.argmin(np.abs(self.sim.r - self.radii[ri + 1]))
-            out[:,:,:,ri] = flux[:, :, :, a:b].mean(axis=-1)
+            out[:,:,:,ri] = flux[:, :, :, a:b].sum(axis=-1)
         return out
 
     @property
@@ -2033,6 +2036,8 @@ class Lightcurves(object):
         loc = slice(None), vi, pi, ri
         top = self.remap[loc]
         bot = self.fine_est[loc]
+        if top.ndim > 1 and rsum is None:
+            rsum = True
         if rsum:
             top = top.sum(axis=-1)
             bot = bot.sum(axis=-1)

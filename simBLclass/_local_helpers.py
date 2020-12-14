@@ -249,3 +249,4 @@ def phi_visible(_r, i, b=1):
     out[rloc] = np.pi + 2 * np.arctan(_a / b * np.sqrt((rsq - b**2) / (_a**2 - rsq)))
     out[nanloc] = np.pi + 2 * np.arctan(np.sqrt(r[nanloc]**2 - b**2) / b)
     return out
+
