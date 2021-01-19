@@ -627,9 +627,9 @@ class BLfile(BLfileBase):
             if ps is True:
                 raise NotImplementedError # TODO
             tmp = lindblad_loc(ps, mode)
-            plt.axvline(tmp[0], lw=1, color='1', ls='--')
+            plt.axvline(tmp[0], lw=1, color='1', ls='-.')
             plt.axvline(tmp[1], lw=1, color='1', ls='-')
-            plt.axvline(tmp[2], lw=1, color='1', ls='--')
+            plt.axvline(tmp[2], lw=1, color='1', ls='-.')
         if op is not None:
             if op is True:
                 raise NotImplementedError # TODO
