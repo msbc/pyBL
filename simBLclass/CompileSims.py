@@ -740,7 +740,7 @@ def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi
         _ropt = dict(cbl=None, xminor=False, lnorm=-2)
         ropt = dict(rmax=1*rmax)
         ropt.update(_ropt)
-        _lopt = dict(rmin=rmin, vmax='98%', cbl=r'$\omega/\rho-\left.\left<\omega/\rho\right>\right|_{t=0}$', xminor=False)
+        _lopt = dict(rmin=rmin, vmax='98%', cbl=r'$\omega/\Sigma-\left.\left<\omega/\Sigma\right>\right|_{t=0}$', xminor=False)
         rmax = rmin + (rmax - rmin) / 3
         lopt = dict(rmax=1*rmax)
         lopt.update(_lopt)

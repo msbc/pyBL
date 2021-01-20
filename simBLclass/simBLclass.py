@@ -577,12 +577,12 @@ class BLsim(object):
                 data = (data - data[0][None, :]) / data[0][None, :]
             return data
 
-        cbl = r'$\rho$'
+        cbl = r'$\Sigma$'
         name = 'dens'
         if not 'vmax' in kwargs:
             kwargs['vmax'] = 1
         if delta:
-            cbl = r'$\Delta \rho/\rho_0$'
+            cbl = r'$\Delta \Sigma/\Sigma_0$'
             name = 'delta_dens'
             if not 'zerocent' in kwargs:
                 kwargs['zerocent'] = True
@@ -1948,7 +1948,7 @@ class BLsim(object):
         drho = data['dens'] - self.rho_ref
         yu = [drho[ri:-5].max(), omega[ri:-5].max()]
         yl = [drho[ri:-5].min(), omega[ri:-5].min()]
-        handles.append(plt.plot(self.rc, drho, label=r'$\delta\rho$', zorder=0))
+        handles.append(plt.plot(self.rc, drho, label=r'$\delta\Sigma$', zorder=0))
         handles.append(plt.plot(self.rc, omega, label=r'$\Omega$', zorder=1))
         op = self.rc ** -3
         op += self.mach ** -2 * grad(self.rc, data['dens']) / (data['dens'] * self.rc)
@@ -2047,10 +2047,10 @@ class BLsim(object):
             info.append(r'$\dot{M}(R_{\rm max})=$' + '{0:.3g}'.format(mdot[-8:-2].mean()))
             integrand = data['drho'] * self.rc * self.dr
             info.append(
-                r'$2\pi\int r\delta\rho dr=$' + '{0:.3g}'.format(tau * np.sum(integrand)))
+                r'$2\pi\int r\delta\Sigma dr=$' + '{0:.3g}'.format(tau * np.sum(integrand)))
             tmp = self.rc[self.rc < 1][np.argmin(np.abs(data['drho'][self.rc < 1]))]
             tmp = r'$2\pi\int_{' + '{:.2g}'.format(
-                tmp) + r'}^4 r\delta\rho dr=$' + '{0:.3g}'.format(
+                tmp) + r'}^4 r\delta\Sigma dr=$' + '{0:.3g}'.format(
                 tau * np.sum(integrand[self.rloc(tmp):]))
             info.append(tmp)
             ncol = 2
@@ -3096,7 +3096,7 @@ class BLsim(object):
             ax = plt.subplot(gs[0, nr])
             f = self.loadfile(self.files('cons')[-1])
             txt_opt = dict(x=.99 * xmax, y=1.01 * xmax, va='bottom', ha='right')
-            f.plot2d('Rpseudo', ax=ax, vmin='smart', cbl=r'$rv_r\sqrt{\rho}$',
+            f.plot2d('Rpseudo', ax=ax, vmin='smart', cbl=r'$rv_r\sqrt{\Sigma}$',
                      subsample=subsample, title=r'$t/2\pi={:.2f}$'.format(f.t / tau),
                      txt_opt=txt_opt)
             plt.xlim(-xmax, xmax)
@@ -3392,7 +3392,7 @@ class BLsim(object):
     def tVort(self, data, t, save=False):
         plt.plot(self.rc, data['dvortensity'][t])
         plt.plot(self.rc, data['dvorticity'][t])
-        plt.legend([r'$\delta\omega_z/\rho$', r'$\delta\omega_z$'])
+        plt.legend([r'$\delta\omega_z/\Sigma$', r'$\delta\omega_z$'])
         plt.xlabel('$r$')
         plt.title(r'$t/2\pi={0:d}$'.format(t))
         plt.axes().xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
@@ -4215,7 +4215,7 @@ class BLsim(object):
                     lnorm = "10^{" + str(int(lnorm)) + '}'
                 else:
                     lnorm = helpers.eformat(float(norm), prec=2, math=False)
-            _cbl = r'$rv_r\sqrt{\rho}$'
+            _cbl = r'$rv_r\sqrt{\Sigma}$'
             if lnorm:
                 _cbl = _cbl.rstrip('$') + ' / ' + lnorm + '$'
             _vmax = '95%'
@@ -4430,7 +4430,7 @@ class BLsim(object):
                     tnorm = "10^{" + str(int(tnorm)) + '}'
                 else:
                     tnorm = helpers.eformat(float(norm), prec=2, math=False)
-            _cbl = r'$rv_r\sqrt{\rho}$'
+            _cbl = r'$rv_r\sqrt{\Sigma}$'
             if tnorm:
                 _cbl = _cbl.rstrip('$') + ' / ' + tnorm + '$'
             _vmax = '95%'
@@ -4468,13 +4468,13 @@ class BLsim(object):
         _mopt = dict(cb=False, title=False, lbls=False, rmax=rmax)
         _lopt = dict(cb=False, title=False, lbls=False, rmax=rmax)
         if left == 'd_vortensity':
-            _lopt['cbl'] = r'$\omega/\rho-\left<\omega/\rho\right>$'
+            _lopt['cbl'] = r'$\omega/\Sigma-\left<\omega/\Sigma\right>$'
             _lopt['zerocent'] = True
             _lopt['cmap'] = helpers.NCcmap
             if dv is not None:
                 left = 'vortensity '
             if type(dv) == int:
-                _lopt['cbl'] = r'$\omega/\rho-\left<\omega/\rho\right>_{' + str(dv) + '}$'
+                _lopt['cbl'] = r'$\omega/\Sigma-\left<\omega/\Sigma\right>_{' + str(dv) + '}$'
                 dv = self.loadfile('cons', dv).vortensity().mean(axis=0)
             _lopt['dv'] = dv
             print(dv)
@@ -5068,7 +5068,7 @@ class BLsim(object):
         plt.ylim(ylim[0] - dy, ylim[1] + dy)
         plt.xlim(self.r[0], self.r[-1])
         plt.xlabel('$R$')
-        lbl = r'$R^2\left(\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_{'
+        lbl = r'$R^2\left(\omega/\Sigma-\left.\left<\omega/\Sigma\right>_\phi\right|_{'
         lbl += str(t0) + r'}\right)$'
         plt.ylabel(lbl)
         plt.title(helpers.sanitize_lbl(self.name))
@@ -5142,7 +5142,7 @@ class BLsim(object):
         else:
             plt.xlim(*xlim)
         plt.xlabel('$r$')
-        lbl = r'$\left<\omega/\rho\right>$'
+        lbl = r'$\left<\omega/\Sigma\right>$'
         plt.ylabel(lbl)
         if title:
             plt.title(helpers.sanitize_lbl(self.name))
@@ -5227,7 +5227,7 @@ class BLsim(object):
         _popt = dict(lw=1, ls='-')
         _popt.update(popt)
 
-        _v = r'$R^2\left(\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_{'
+        _v = r'$R^2\left(\omega/\Sigma-\left.\left<\omega/\Sigma\right>_\phi\right|_{'
         _v += str(t0) + r'}\right)$'
         lbls = {'dens': r'$\Sigma$',
                 'vortensity': _v,

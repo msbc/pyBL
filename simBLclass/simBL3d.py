@@ -878,7 +878,7 @@ class BLfile(blc.BLfileBase):
         if data is None:
             data = self.mom_r(pre, post)
         _data = [i.copy() for i in data]
-        lbl = [r'$\partial_t v_r$', r'$(v\cdot\nabla v)_r$', r'$c_s^2\partial_r \rho/\rho$', r'$g_r$']
+        lbl = [r'$\partial_t v_r$', r'$(v\cdot\nabla v)_r$', r'$c_s^2\partial_r \Sigma/\Sigma$', r'$g_r$']
         if data[0].ndim == 3:
             for i in range(3):
                 _data[i] = self.midplane(_data[i]).mean(axis=0)
@@ -912,9 +912,9 @@ class BLfile(blc.BLfileBase):
             os.chdir(path)
             self.zoom_plot(data[0], cbl=r'$\partial_t v_r$', fn='figure_1.png')
             self.zoom_plot(data[1], cbl=r'$(v\cdot\nabla v)_r$', fn='figure_2.png')
-            self.zoom_plot(data[2], cbl=r'$c_s^2\partial_r \rho/\rho$', fn='figure_3.png')
+            self.zoom_plot(data[2], cbl=r'$c_s^2\partial_r \Sigma/\Sigma$', fn='figure_3.png')
             self.zoom_plot(data[3], cbl=r'$|g_r|$', fn='figure_4.png')
-            self.zoom_plot(tot    , cbl=r'$(v\cdot\nabla v)_r+c_s^2\partial_r \rho/\rho-g_r$', fn='figure_5.png')
+            self.zoom_plot(tot    , cbl=r'$(v\cdot\nabla v)_r+c_s^2\partial_r \Sigma/\Sigma-g_r$', fn='figure_5.png')
             os.chdir(pwd)
             path = 'meridional'
             if not os.path.isdir(path):
@@ -923,9 +923,9 @@ class BLfile(blc.BLfileBase):
             opt = dict(vmax=1, phi=0, lim=1.2,)
             self.r_theta_plot(data[0], cbl=r'$\partial_t v_r$', fn='figure_1.png', **opt)
             self.r_theta_plot(data[1], cbl=r'$(v\cdot\nabla v)_r$', fn='figure_2.png', **opt)
-            self.r_theta_plot(data[2], cbl=r'$c_s^2\partial_r \rho/\rho$', fn='figure_3.png', **opt)
+            self.r_theta_plot(data[2], cbl=r'$c_s^2\partial_r \Sigma/\Sigma$', fn='figure_3.png', **opt)
             self.r_theta_plot(data[3], cbl=r'$|g_r|$', fn='figure_4.png', **opt)
-            self.r_theta_plot(tot, cbl=r'$(v\cdot\nabla v)_r+c_s^2\partial_r \rho/\rho-g_r$', fn='figure_5.png', **opt)
+            self.r_theta_plot(tot, cbl=r'$(v\cdot\nabla v)_r+c_s^2\partial_r \Sigma/\Sigma-g_r$', fn='figure_5.png', **opt)
         finally:
             os.chdir(pwd)
 
@@ -1239,7 +1239,7 @@ class BL3dSim(object):
         out = self.swp(overwrite=overwrite)
         plt.semilogy(*out)
         plt.xlabel('$r$')
-        plt.ylabel(r'$\int v_r^2\rho dr$')
+        plt.ylabel(r'$\int v_r^2\Sigma dr$')
         plt.title(name)
         plt.savefig(os.path.join(self.path, 'power_time.pdf'))
         plt.close()
@@ -1247,7 +1247,7 @@ class BL3dSim(object):
         bf = self.loadfile('out1', -1)
         plt.plot(bf.rc, bf['pseudo'].mean(axis=(0,1)))
         plt.xlabel('$r$')
-        plt.ylabel(r'$v_r\sqrt{\rho}$')
+        plt.ylabel(r'$v_r\sqrt{\Sigma}$')
         plt.title(name)
         plt.savefig(os.path.join(self.path, 'pseudo.pdf'))
         plt.close()

@@ -735,8 +735,8 @@ class BLfile(BLfileBase):
         plt.plot(self.rc, dens, 'k')
         if rho0 is not None:
             plt.plot(self.rc, rho0, lw=1, c='.5', ls=':')
-            #plt.legend([r'$\rho$', r'$\rho_0$'])
-        plt.ylabel(r'$\rho$')
+            #plt.legend([r'$\Sigma$', r'$\Sigma_0$'])
+        plt.ylabel(r'$\Sigma$')
         plt.xlabel(r'$r$')
         plt.ylim(0, 3)
         ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
@@ -774,7 +774,7 @@ class BLfile(BLfileBase):
         drho = self.rhobar() - ref
         plt.plot(self.rc, drho)
         plt.xlabel('$r$')
-        plt.ylabel(r'$\left<\rho({:.1f}\times 2\pi)\right>-\left<\rho(0)\right>$'.format(
+        plt.ylabel(r'$\left<\Sigma({:.1f}\times 2\pi)\right>-\left<\Sigma(0)\right>$'.format(
             self.t / tau))
 
 
@@ -1003,7 +1003,7 @@ class BLConsPrim(BL3Dfile):
         pcm = self.plot2d(dv, fig=fig, ax=ax0, vmax=vmax, cb=False, name=True,
                           zerocent=True)
         cb = plt.colorbar(pcm, ax=ax0, cax=cax)
-        lbl = r'$R^2\left(\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_0\right)$'
+        lbl = r'$R^2\left(\omega/\Sigma-\left.\left<\omega/\Sigma\right>_\phi\right|_0\right)$'
         cb.set_label(lbl)
         pos0 = np.array(ax0.get_position())
         posc = np.array(cax.get_position())
