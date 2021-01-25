@@ -2607,7 +2607,7 @@ class BLsim(object):
     def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None, std_plot=False,
                          ret_m=None, smooth=False, sw=20, std=None, rsmooth=None, fn=None,
                          save=None, ext='pdf', cout=None, add_max=None, title=True,
-                         xlbl=True, legend=True, log=False, set_ylim=False):
+                         xlbl=True, legend=True, log=False, set_ylim=False, title_y=None):
         ir = self.rloc(r)
         rslice = ir
         r = self.rc[ir]
@@ -2701,7 +2701,7 @@ class BLsim(object):
                 print("ylim error with:", yl, yu)
             #print(i0, yl, self.fft_time[i0] / tau, self.fft_time.shape)
         if title:
-            plt.title('$r={0:.2f}$'.format(r))
+            plt.title('$r={0:.2f}$'.format(r), y=title_y)
         plt.xlim(np.floor(self.fft_time[0] / tau), np.ceil(self.fft_time[-1] / tau))
         if cout:
             return cd
@@ -2988,7 +2988,7 @@ class BLsim(object):
     def diagnostic(self, rs=None, save=False, fn=None, ext=None, figsize=None,
                    sdir=None, subsample=None, sz=3.5, xmax=2.5, dpi=300, modes=None,
                    add_modes=None, tmark=None, add_max=None, overwrite=True, log=True,
-                   map=True, gsopt=None, compact=False):
+                   map=True, gsopt=None, compact=False, title_y=None):
         if ext is None:
             if map:
                 ext = 'png'
@@ -3039,7 +3039,8 @@ class BLsim(object):
         _gsopt.update(gsopt)
         gs = mpl.gridspec.GridSpec(ny, nx, **_gsopt)
 
-        ropt = dict(modes=modes, add_modes=add_modes, add_max=add_max, fig=False)
+        ropt = dict(modes=modes, add_modes=add_modes, add_max=add_max, fig=False,
+                    title_y=title_y)
         ylim = [1e9, -1]
         for i, r in enumerate(rs):
             ylbl = not i
