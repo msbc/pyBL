@@ -2988,7 +2988,7 @@ class BLsim(object):
     def diagnostic(self, rs=None, save=False, fn=None, ext=None, figsize=None,
                    sdir=None, subsample=None, sz=3.5, xmax=2.5, dpi=300, modes=None,
                    add_modes=None, tmark=None, add_max=None, overwrite=True, log=True,
-                   map=True, gsopt=None, compact=False, title_y=None):
+                   map=True, gsopt=None, compact=False, title_y=None, suptitle=None):
         if ext is None:
             if map:
                 ext = 'png'
@@ -3141,7 +3141,10 @@ class BLsim(object):
                 ax.text(.00 + .4 * (j % ncol), 1. - .5 * .12 * (j // ncol + 3), txt)
                 j += 1
 
-        fig.suptitle('Diagnostic for ' + helpers.sanitize_lbl(self.name))
+        if suptitle is None:
+            suptitle = 'Diagnostic for ' + helpers.sanitize_lbl(self.name)
+        if suptitle:
+            fig.suptitle(suptitle)
 
         if save:
             plt.savefig(fn)
