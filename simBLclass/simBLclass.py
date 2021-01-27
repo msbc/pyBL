@@ -2976,7 +2976,10 @@ class BLsim(object):
         return .5 + .5 * self.r[0]
 
     def compact_diag(self, save=False, **kwargs):
-        gsopt = dict(wspace=0, hspace=0, left=.11, right=.99, bottom=.07, top=.88)
+        gsopt = dict(wspace=0, hspace=0, left=.11, right=.99, bottom=.07, top=.99)
+        if 'gsopt' in kwargs:
+            gsopt.update(kwargs['gsopt'])
+            kwargs['gsopt'] = gsopt
         fn = None
         if save:
             fn = self.name + '_compact_diag.pdf'
