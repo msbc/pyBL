@@ -2156,12 +2156,12 @@ class modeData(object):
                     _x = np.linspace(0, 64, 720)
                 M = int(self.sim.mach + .1)
                 yl = np.sqrt(M ** -2 + (M / (2 * rc('rl')[M] * _x)) ** 2) / rc('rl')[M]
-                plt.plot(_x, yl, c='.5', ls='-.', lw=1, zorder=-1)
+                plt.plot(_x, yl, c='xkcd:crimson', ls='-.', lw=1, zorder=-1)
                 plt.plot(2 * _x, yl, c='.6', ls='-.', lw=1, zorder=-1)
                 plt.plot(3 * _x, yl, c='.7', ls='-.', lw=1, zorder=-1)
                 if M in rc('ru'):
                     yu = self.sim.upper_omega(_x, r=rc('ru')[M])
-                    plt.plot(_x, yu, c='.5', ls=':', lw=1, zorder=-1)
+                    plt.plot(_x, yu, c='xkcd:crimson', ls=':', lw=1, zorder=-1)
                     plt.plot(2 * _x, yu, c='.6', ls=':', lw=1, zorder=-1)
                     plt.plot(3 * _x, yu, c='.7', ls=':', lw=1, zorder=-1)
                 plt.xlim(*xlim)

@@ -732,9 +732,9 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
         plt.close()
     return
 
-def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi=300, fopt=None,
-                 fn=None, sdir=None, kind='cons', txt=True, lbl=True,
-                 overwrite=True, cb_side=None, tsz=10):
+def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi=300,
+                 fopt=None, fn=None, sdir=None, kind='cons', txt=True, lbl=True,
+                 overwrite=True, cb_side=None, tsz=10, hspace=.01):
     if plots is None:
         rmin, rmax = .98, 2.0
         _ropt = dict(cbl=None, xminor=False, lnorm=-2)
@@ -786,7 +786,7 @@ def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi
 
     fig = plt.figure(**_fopt)
     hr = [.1, 1] * nr
-    gs_opt = dict(top=.9, bottom=.15, left=.07, right=.93, wspace=0, hspace=0)
+    gs_opt = dict(top=.9, bottom=.15, left=.07, right=.93, wspace=0, hspace=hspace)
     if cb_side == 'top':
         gs_opt['height_ratios'] = [.05, 1, .3] * nr
         gs_opt['width_ratios'] = [1/3.0, 1]
