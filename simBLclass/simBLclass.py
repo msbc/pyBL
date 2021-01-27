@@ -3062,6 +3062,8 @@ class BLsim(object):
                 lbool = (i == 0)
             self.r_amp(r, xlbl=False, ylbl=ylbl, log=True, legend=lbool, set_ylim=True,
                        **ropt)
+            lbl = '(' + chr(ord('a') + i) + ')'
+            ax.text(.96, .8, lbl, c='k', transform=ax.transAxes, ha='right', fontsize=8)
             tmp = plt.ylim()
             ylim = [min(ylim[0], tmp[0]), max(ylim[1], tmp[1])]
             if compact:
@@ -3085,6 +3087,8 @@ class BLsim(object):
             if compact:
                 lbool = (i == 0)
             self.r_speed(r, ylbl=ylbl, tmark=tmark, title=False, legend=lbool, **ropt)
+            lbl = '(' + chr(ord('a') + i + ny) + ')'
+            ax.text(.96, .8, lbl, c='k', transform=ax.transAxes, ha='right', fontsize=8)
             ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
             if compact:
                 ax.xaxis.set_ticks_position('both')
@@ -4467,7 +4471,7 @@ class BLsim(object):
         _hr = [.1] + [1] * (nt if nt <= 6 else int(nt / 2 + .5))
         _wr = [lrat, 1, 1] if nt <= 6 else [lrat, 1, 1, space, lrat, 1, 1]
         _gsopt = dict(height_ratios=_hr, width_ratios=_wr, top=.85, bottom=.05,
-                      left=.1 if nt < 7 else .05, right=.99, wspace=.02, hspace=0)
+                      left=.1 if nt < 7 else .05, right=.99, wspace=0, hspace=0.02)
         if not title:
             _gsopt['top'] = .94
         if gsopt is None:
