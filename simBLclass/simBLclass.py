@@ -3034,6 +3034,8 @@ class BLsim(object):
         fsx, fsy = figsize
         _gsopt = dict(top=1 - .75 / fsy, bottom=.5 / fsy, left=.75 / fsx,
                       right=1 - .75 / fsx, hspace=.1, wspace=.15)
+        if compact:
+            _gsopt['hspace'], _gsopt['wspace'] = 0, 0
         if gsopt is None:
             gsopt = dict()
         _gsopt.update(gsopt)
