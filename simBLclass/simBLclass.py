@@ -3063,7 +3063,7 @@ class BLsim(object):
             self.r_amp(r, xlbl=False, ylbl=ylbl, log=True, legend=lbool, set_ylim=True,
                        **ropt)
             lbl = '(' + chr(ord('a') + i) + ')'
-            ax.text(.96, .8, lbl, c='k', transform=ax.transAxes, ha='right', fontsize=8)
+            ax.text(.96, .96, lbl, c='k', transform=ax.transAxes, ha='right', fontsize=8)
             tmp = plt.ylim()
             ylim = [min(ylim[0], tmp[0]), max(ylim[1], tmp[1])]
             if compact:
@@ -3088,7 +3088,7 @@ class BLsim(object):
                 lbool = (i == 0)
             self.r_speed(r, ylbl=ylbl, tmark=tmark, title=False, legend=lbool, **ropt)
             lbl = '(' + chr(ord('a') + i + ny) + ')'
-            ax.text(.96, .8, lbl, c='k', transform=ax.transAxes, ha='right', fontsize=8)
+            ax.text(.96, .96, lbl, c='k', transform=ax.transAxes, ha='right', fontsize=8)
             ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
             if compact:
                 ax.xaxis.set_ticks_position('both')
