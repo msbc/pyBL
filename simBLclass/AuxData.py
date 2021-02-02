@@ -2115,7 +2115,8 @@ class modeData(object):
         return
 
     def plot(self, save=False, fn=None, ext='pdf', inc_global=True, show_pl=True,
-             mklbls=True, legend=True, ymax=-1, use_ymax=False, cap=1, lopt=None):
+             mklbls=True, legend=True, ymax=-1, use_ymax=False, cap=1, lopt=None,
+             mu=True):
         markers = 'o', '+', 'x', '.'
         if lopt is None:
             lopt=dict()
@@ -2164,6 +2165,10 @@ class modeData(object):
                     plt.plot(_x, yu, c='xkcd:crimson', ls=':', lw=1, zorder=-1)
                     plt.plot(2 * _x, yu, c='.6', ls=':', lw=1, zorder=-1)
                     plt.plot(3 * _x, yu, c='.7', ls=':', lw=1, zorder=-1)
+                    if mu:
+                        _y = np.linspace(ylim[0], ylim[1], 100)
+                        _mu = self.sim.upper_m(_y, r=rc('ru')[M])
+                        plt.plot(_mu, _y, c='B', ls='-.', lw=1, zorder=0)
                 plt.xlim(*xlim)
                 plt.ylim(*ylim)
                 sim = self.sim

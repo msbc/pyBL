@@ -240,6 +240,24 @@ class BLsim(object):
         tmp = 2 * np.sqrt(c1) * np.cos(ang / 3) / (3 * m ** 2 * r ** 2)
         return kep - tmp
 
+    def upper_m(self, op, n=0, r=1.1, t0=2000, tf=None):
+        vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
+        omega = vphi / self.rc
+        if r is None:
+            ir = omega.argmax()
+            r = self.rc[ir]
+            print(r)
+        else:
+            ir = self.rloc(r)
+        #kappa = np.sqrt(2 * omega * (grad(self.rc, self.rc * vphi)))
+        kappa = 2 * omega
+        kappa = kappa[ir]
+        kep = r ** -1.5
+        M = self.mach
+        s = 1. / M
+        do = omega - op
+        return (do * kappa**2 * r**2 - 2 * s**2 * omega) / (do**3 * r**2 - s**2 * do)
+
     def info_row(self):
         M, res, seed, suffix = self.name.split('.')
         seed = rc('seed_type').get(seed, seed)
