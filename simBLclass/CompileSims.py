@@ -472,6 +472,8 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
                 ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
                 ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(5))
                 lbl = chr(ord('a') + i) + ') ' + sim.name
+                if sim.name == 'M09.HR.r.a':
+                    plt.ylim(.1, None)
                 ax.text(.96, .94, lbl, c='k', transform=ax.transAxes, ha='right',
                         fontsize=6)
                 if c:
@@ -786,7 +788,7 @@ def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi
 
     fig = plt.figure(**_fopt)
     hr = [.1, 1] * nr
-    gs_opt = dict(top=.9, bottom=.15, left=.07, right=.93, wspace=0, hspace=hspace)
+    gs_opt = dict(top=.9, bottom=.15, left=.10, right=.93, wspace=0, hspace=hspace)
     if cb_side == 'top':
         gs_opt['height_ratios'] = [.05, 1, .3] * nr
         gs_opt['width_ratios'] = [1/3.0, 1]
@@ -845,7 +847,7 @@ def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi
                 if txt and c == 1:
                     t = int(df.t / tau + .5)
                     txt = sim.name + "\n" + r"$t/2\pi={:d}$".format(t)
-                    ax.text(.96, .96, txt, c='k', transform=ax.transAxes, ha='right',
+                    ax.text(.9, .96, txt, c='k', transform=ax.transAxes, ha='right',
                             va='top', fontsize=tsz)
                 if lbl:
                     add_plbl(chr(ord('a') + i), side=c)
@@ -1590,7 +1592,7 @@ def mulit_vortensity_prof(sims=None, save=False, figsize=None, dpi=300, fopt=Non
     if parse_not_overwrite(overwrite, fn):
         return None
     if lopt is None:
-        lopt = dict(handlelength=1, fontsize=6, handletextpad=.4, columnspacing=.7,
+        lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7,
                     ncol=2, loc=7)
     if sims is None:
         F = False
@@ -1622,7 +1624,7 @@ def mulit_vortensity_prof(sims=None, save=False, figsize=None, dpi=300, fopt=Non
         ax.tick_params(axis='both', which='both', direction='in', zorder=10)
         lbl = chr(ord('a') + ns) + ') ' + 'M{:d}'.format(int(np.round(sim.mach)))
         ax.text(.85, .98, lbl, c='k', transform=ax.transAxes, ha='left', va='top',
-                fontsize=6)
+                fontsize=8)
         if ns < nr - 1:
             plt.xlabel('')
     if fn or save:
