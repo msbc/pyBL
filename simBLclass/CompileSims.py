@@ -415,18 +415,24 @@ def gen_dispersion_data(sims=None, fn=None, overwrite=False):
                 'M09.FR.r.lc.a',
                 'M09.HR.r.a', 'M10.FR.r.a', 'M11.FR.r.a', 'M12.FR.r.lc.a', 'M13.FR.r.a',
                 'M14.FR.r.a', 'M15.FR.r.a']
-    if not overwrite:
-        if os.path.isfile(fn):
-            print('Datafile "{:}" already exists. Exiting data generation.'.format(fn))
-            return fn
     with h5py.File(fn, 'a') as f:
         for s in sims:
-            print('==> Generating dispersion data for ' + s)
             sim = BLsim(s)
-            grp = f.create_group(sim.name)
+            if not overwrite:
+                if sim.name in f and sim.name + '/mach' in f:
+                    print('~~~ Skipping {:}, data already exists.'.format(s))
+                    continue
+            print('==> Generating dispersion data for ' + s)
             data = sim.mode_detect().plot_data()
+            if not sim.name in f:
+                grp = f.create_group(sim.name)
+            else:
+                grp = f[sim.name]
             for i in data:
-                grp.create_dataset(i, data=data[i])
+                if i not in grp:
+                    grp.create_dataset(i, data=data[i])
+                else:
+                    grp[i][:] = data[i]
             del(data, sim)
             gc.collect()
     print('Finished data generation')
