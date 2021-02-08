@@ -1728,7 +1728,7 @@ def multi_mdot_split(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn
     return
 
 
-def mulit_vortensity_prof(sims=None, save=False, figsize=None, dpi=300, fopt=None,
+def multi_vortensity_prof(sims=None, save=False, figsize=None, dpi=300, fopt=None,
                           fn=None, sdir=None, lbl=True, lnorm=True, overwrite=True,
                           lopt=None):
     if save or fn:
@@ -1743,7 +1743,7 @@ def mulit_vortensity_prof(sims=None, save=False, figsize=None, dpi=300, fopt=Non
     if parse_not_overwrite(overwrite, fn):
         return None
     if lopt is None:
-        lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7,
+        lopt = dict(handlelength=1, fontsize=7, handletextpad=.4, columnspacing=.7,
                     ncol=2, loc=7)
     if sims is None:
         F = False
@@ -1774,7 +1774,7 @@ def mulit_vortensity_prof(sims=None, save=False, figsize=None, dpi=300, fopt=Non
         ax.xaxis.set_ticks_position('both')
         ax.tick_params(axis='both', which='both', direction='in', zorder=10)
         lbl = chr(ord('a') + ns) + ') ' + 'M{:d}'.format(int(np.round(sim.mach)))
-        ax.text(.85, .98, lbl, c='k', transform=ax.transAxes, ha='left', va='top',
+        ax.text(.83, .97, lbl, c='k', transform=ax.transAxes, ha='left', va='top',
                 fontsize=8)
         if ns < nr - 1:
             plt.xlabel('')

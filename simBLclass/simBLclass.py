@@ -219,7 +219,7 @@ class BLsim(object):
             self._lightcurve = Lightcurves(self.files('flux'), sim=self)
         return self._lightcurve
 
-    def upper_omega(self, m, n=0, r=1.1, t0=2000, tf=None):
+    def _old_upper_omega(self, m, n=0, r=1.1, t0=2000, tf=None):
         vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
         omega = vphi / self.rc
         if r is None:
@@ -228,6 +228,7 @@ class BLsim(object):
             print(r)
         else:
             ir = self.rloc(r)
+            r = self.rc[ir]
         #kappa = np.sqrt(2 * omega * (grad(self.rc, self.rc * vphi)))
         kappa = 2 * omega
         kappa = kappa[ir]
@@ -240,7 +241,7 @@ class BLsim(object):
         tmp = 2 * np.sqrt(c1) * np.cos(ang / 3) / (3 * m ** 2 * r ** 2)
         return kep - tmp
 
-    def upper_m(self, op, n=0, r=1.1, t0=2000, tf=None):
+    def upper_omega(self, m, n=0, r=1.1, t0=2000, tf=None):
         vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
         omega = vphi / self.rc
         if r is None:
@@ -249,14 +250,64 @@ class BLsim(object):
             print(r)
         else:
             ir = self.rloc(r)
+            r = self.rc[ir]
+        omega = omega[ir]
         #kappa = np.sqrt(2 * omega * (grad(self.rc, self.rc * vphi)))
         kappa = 2 * omega
-        kappa = kappa[ir]
+        kep = r ** -1.5
+        M = self.mach
+        s = 1. / M
+        a = -(m*omega*r*s**2) + np.sqrt(m**2*omega**2*r**2*s**4 - (kappa**2*r**2 + m**2*s**2)**3/27.)
+        a = a**(1./3.)
+        return omega - (3*a**2 + kappa**2*r**2 + m**2*s**2)/(3.*a*m*r)
+
+    def _old_upper_m(self, op, n=0, r=1.1, t0=2000, tf=None):
+        vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
+        omega = vphi / self.rc
+        if op is None:
+            op = np.linspace(0, omega.max(), 100)
+        if r is None:
+            ir = omega.argmax()
+            r = self.rc[ir]
+            print(r)
+        else:
+            ir = self.rloc(r)
+            r = self.rc[ir]
+        #kappa = np.sqrt(2 * omega * (grad(self.rc, self.rc * vphi)))
+        omega = omega[ir]
+        kappa = 2 * omega
         kep = r ** -1.5
         M = self.mach
         s = 1. / M
         do = omega - op
-        return (do * kappa**2 * r**2 - 2 * s**2 * omega) / (do**3 * r**2 - s**2 * do)
+        return np.sqrt((do * kappa**2 * r**2 - 2 * s**2 * omega) / (do**3 * r**2 - s**2 * do))
+
+    def upper_m(self, op=None, n=0, r=None, t0=2000, tf=None):
+        vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
+        omega = vphi / self.rc
+        if r is None:
+            ir = np.abs(self.rc**-1.5-omega).argmin()
+            r = self.rc[ir]
+        if r is None:
+            ir = omega.argmax()
+            r = self.rc[ir]
+            #ir = self.rloc(np.sqrt(r))
+            #r = self.rc[ir]
+            print(r)
+        else:
+            ir = self.rloc(r)
+            r = self.rc[ir]
+        #kappa = np.sqrt(2 * omega * (grad(self.rc, self.rc * vphi)))
+        omega = omega[ir]
+        kep = r ** -1.5
+        omega = kep
+        if op is None:
+            op = np.linspace(0, 0.95 * omega, 400)
+        kappa = 2 * omega
+        M = self.mach
+        s = 1. / M
+        do = omega - op
+        return np.sqrt((do * kappa**2 * r**2 - 2 * s**2 * omega) / (do**3 * r**2 - s**2 * do)), op
 
     def info_row(self):
         M, res, seed, suffix = self.name.split('.')

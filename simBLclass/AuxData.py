@@ -2178,15 +2178,20 @@ class modeData(object):
                 plt.plot(_x, yl, c='xkcd:crimson', ls='-.', lw=1, zorder=-1)
                 plt.plot(2 * _x, yl, c='.6', ls='-.', lw=1, zorder=-1)
                 plt.plot(3 * _x, yl, c='.7', ls='-.', lw=1, zorder=-1)
-                if M in rc('ru'):
+                if M in rc('ru') and not mu:
                     yu = self.sim.upper_omega(_x, r=rc('ru')[M])
                     plt.plot(_x, yu, c='xkcd:crimson', ls=':', lw=1, zorder=-1)
                     plt.plot(2 * _x, yu, c='.6', ls=':', lw=1, zorder=-1)
                     plt.plot(3 * _x, yu, c='.7', ls=':', lw=1, zorder=-1)
-                    if mu:
-                        _y = np.linspace(ylim[0], ylim[1], 100)
-                        _mu = self.sim.upper_m(_y, r=rc('ru')[M])
-                        plt.plot(_mu, _y, c='B', ls='-.', lw=1, zorder=0)
+                if mu:
+                    r = 1.03
+                    if M > 12:
+                        r = 1.03
+                    r = None
+                    x, y = self.sim.upper_m(r=r)
+                    plt.plot(x, y, c='xkcd:crimson', ls=':', lw=1, zorder=-1)
+                    plt.plot(2 * x, y, c='.6', ls=':', lw=1, zorder=-1)
+                    plt.plot(3 * x, y, c='.7', ls=':', lw=1, zorder=-1)
                 plt.xlim(*xlim)
                 plt.ylim(*ylim)
                 sim = self.sim
