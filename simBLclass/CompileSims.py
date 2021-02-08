@@ -407,9 +407,11 @@ def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
         fig.savefig(fn)
         plt.close()
 
-def gen_dispersion_data(sims=None, fn=None, overwrite=False):
+def gen_dispersion_data(sims=None, fn=None, overwrite=False, skip_gen=False):
     if fn is None:
         fn = 'dispersion_data.hdf5'
+    if skip_gen and os.path.isfile(fn):
+        return fn
     if sims is None:
         sims = ['M05.FR.r.a', 'M06.HR.r.lc.a', 'M07.FR.r.a', 'M08.FR.r.a',
                 'M09.FR.r.lc.a',
@@ -438,7 +440,7 @@ def gen_dispersion_data(sims=None, fn=None, overwrite=False):
     print('Finished data generation')
     return fn
 
-def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300,
+def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300, skip_gen=False,
                          fopt=None, lopt=None, fn=None, sdir=None, overwrite=True):
     if save or fn:
         save = True
@@ -447,7 +449,7 @@ def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300,
     if parse_not_overwrite(overwrite, fn):
         return None
     if data is None:
-        data = gen_dispersion_data()
+        data = gen_dispersion_data(skip_gen=skip_gen)
     file_used = False
     if hasattr(data, "lower"):
         data = h5py.File(data, 'r')
@@ -467,7 +469,7 @@ def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300,
         if op is None:
             op = np.linspace(0, 0.95 * omega, 400)
         kappa = 2 * omega
-        s = 1. / param('mach')
+        s = 1. / param['mach'][()]
         do = omega - op
         m2 = (do * kappa ** 2 * r ** 2 - 2 * s ** 2 * omega) / (
                 do ** 3 * r ** 2 - s ** 2 * do)
@@ -476,7 +478,7 @@ def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300,
     def lower_mode(param):
         mach = int(np.round(param['mach']))
         x = np.linspace(0, 32, 321)
-        y = np.sqrt(mach ** -2 + (mach / (2 * rc('rl')[mach] * _x)) ** 2) / rc('rl')[mach]
+        y = np.sqrt(mach ** -2 + (mach / (2 * rc('rl')[mach] * x)) ** 2) / rc('rl')[mach]
         return x, y
 
     try:
@@ -514,16 +516,16 @@ def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300,
                     ### Plot modes
                     markers = 'o', '+', 'x', '.'
                     info = data[sims[i]]
-                    ax.scatter(*info['r0_modes'], marker=markers[0], lbl='Star')
-                    ax.scatter(*info['r1_modes'], marker=markers[1], lbl='Disk')
-                    ax.scatter(*info['global'], marker='*', lbl='Global')
+                    ax.scatter(*info['r0_modes'], marker=markers[0])
+                    ax.scatter(*info['r1_modes'], marker=markers[1])
+                    ax.scatter(*info['global'], marker='*')
                     if i == 1:
-                        plt.legend(**lopt)
+                        plt.legend(['Star', 'Disk', 'Global'], **lopt)
                     ylim = plt.ylim()
-                    ymax = max(ymax, info['r0_modes'][1].max(), info['r1_modes'][1].max(),
-                               info['global'][1].max(), ylim[1])
-                    ymin = min(ymin, info['r0_modes'][1].min(), info['r1_modes'][1].min(),
-                               info['global'][1].min(), ylim[0])
+                    ylist = [ymax] + list(info['r0_modes'][1]) + list(info['r1_modes'][1])
+                    ylist += list(info['global'][1])
+                    ymax = np.max(ylist)
+                    ymin = np.min(ylist)
                     ymax = min(1, ymax)
                     ymin = max(0, ymin)
                     # upper mode
@@ -533,14 +535,14 @@ def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300,
                     plt.plot(3 * _x, _y, c='.7', ls=':', lw=1, zorder=-1)
                     # lower mode
                     _x, _y = lower_mode(info)
-                    plt.plot(_x, yl, c='xkcd:crimson', ls='-.', lw=1, zorder=-1)
-                    plt.plot(2 * _x, yl, c='.6', ls='-.', lw=1, zorder=-1)
-                    plt.plot(3 * _x, yl, c='.7', ls='-.', lw=1, zorder=-1)
+                    plt.plot(_x, _y, c='xkcd:crimson', ls='-.', lw=1, zorder=-1)
+                    plt.plot(2 * _x, _y, c='.6', ls='-.', lw=1, zorder=-1)
+                    plt.plot(3 * _x, _y, c='.7', ls='-.', lw=1, zorder=-1)
                     plt.ylim(ymin, ymax)
                     ### End of mode plotting
                     ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
                     ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(5))
-                    lbl = chr(ord('a') + i) + ') ' + sim.name
+                    lbl = chr(ord('a') + i) + ') ' + sims[i]
                     #if sim.name == 'M09.HR.r.a':
                     #    plt.ylim(.1, None)
                     ax.text(.96, .94, lbl, c='k', transform=ax.transAxes, ha='right',
@@ -553,7 +555,6 @@ def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300,
                         plt.xlabel(r'$m$')
                     else:
                         plt.setp(ax.get_xticklabels(), visible=False)
-                    del(md, sim)
                     gc.collect()
             cap = .95
         if save:
