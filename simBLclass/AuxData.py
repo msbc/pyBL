@@ -2114,6 +2114,24 @@ class modeData(object):
             f.write('\n'.join(out))
         return
 
+    def plot_data(self):
+        out = dict()
+        tmp = self.g_modes()
+        out['global'] = np.array(tmp[:, 0], tmp[:, 3])
+        data = self.filter()
+        for i, r in enumerate(self.r):
+            key = 'r' + str(i)
+            out[key] = float(r)
+            try:
+                out[key + '_modes'] = np.array(data[i][:, 0], data[i][:, 3])
+            except IndexError:
+                out[key + '_modes'] = np.array([[],[]])
+        out['mach'] = float(self.sim.mach)
+        vphi = self.sim.flux_data['vphi'][t0:tf].mean(axis=0)
+        out['omega'] = vphi / self.sim.rc
+        out['rc'] = self.sim.rc
+        return out
+
     def plot(self, save=False, fn=None, ext='pdf', inc_global=True, show_pl=True,
              mklbls=True, legend=True, ymax=-1, use_ymax=False, cap=1, lopt=None,
              mu=True):

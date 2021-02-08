@@ -407,6 +407,31 @@ def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
         fig.savefig(fn)
         plt.close()
 
+def gen_dispersion_data(sims=None, fn=None, overwrite=False):
+    if fn is None:
+        fn = 'dispersion_data.hdf5'
+    if sims is None:
+        sims = ['M05.FR.r.a', 'M06.HR.r.lc.a', 'M07.FR.r.a', 'M08.FR.r.a',
+                'M09.FR.r.lc.a',
+                'M09.HR.r.a', 'M10.FR.r.a', 'M11.FR.r.a', 'M12.FR.r.lc.a', 'M13.FR.r.a',
+                'M14.FR.r.a', 'M15.FR.r.a']
+    if not overwrite:
+        if os.path.isfile(fn):
+            print('Datafile "{:}" already exists. Exiting data generation.'.format(fn))
+            return fn
+    with h5py.File(fn, 'a') as f:
+        for s in sims:
+            print('==> Generating dispersion data for ' + s)
+            sim = BLsim(s)
+            grp = f.create_group(sim.name)
+            data = sim.mode_detect().plot_data()
+            for i in data:
+                grp.create_dataset(i, data=data[i])
+            del(data, sim)
+            gc.collect()
+    print('Finished data generation')
+    return fn
+
 def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300,
                      fopt=None, lopt=None, fn=None, sdir=None, overwrite=True):
     if save or fn:
