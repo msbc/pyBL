@@ -454,21 +454,27 @@ def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300, skip_gen=
     if hasattr(data, "lower"):
         data = h5py.File(data, 'r')
         file_used = True
+    bbox = dict(edgecolor='none', facecolor='white', pad=0.3)
 
-    def upper_mode(param, r=None):
-        omega = param['omega'][()]
-        op = np.linspace(0, 0.95 * np.max(omega), 400)
+    def upper_mode(param, r=None, omega=None, use_kep=False, calc_kappa=False):
         if r is None:
-            ir = omega.argmax()
+            ir = param['omega'][()].argmax()
             r = param['rc'][ir]
         else:
-            ir = np.abs(r - param['rc']).argmin()
+            ir = np.abs(r - param['rc'][()]).argmin()
         # kappa = np.sqrt(2 * omega * (grad(self.rc, self.rc * vphi)))
-        kep = r ** -1.5
-        omega = kep
-        if op is None:
-            op = np.linspace(0, 0.95 * omega, 400)
+        if use_kep:
+            omega = r ** -1.5
+        if omega is None:
+            omega = param['omega'][ir]
+        op = np.linspace(0, 0.95 * omega, 400)
         kappa = 2 * omega
+        if calc_kappa:
+            _r = param['rc'][()]
+            _o = param['omega']
+            kappa = np.sqrt(2 * _o[ir] * grad(_r, _r**2 * _o)[ir])
+        if use_kep:
+            kappa = omega
         s = 1. / param['mach'][()]
         do = omega - op
         m2 = (do * kappa ** 2 * r ** 2 - 2 * s ** 2 * omega) / (
@@ -500,6 +506,8 @@ def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300, skip_gen=
                                    wspace=0, hspace=0)
         axs = [[None] * nc] * nr
         cap = 1
+        xmin = np.ones(nc) * 32
+        xmax = np.zeros(nc)
         for r in range(nr):
             ymax = -1
             ymin = 1
@@ -521,32 +529,54 @@ def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300, skip_gen=
                     ax.scatter(*info['global'], marker='*')
                     if i == 1:
                         plt.legend(['Star', 'Disk', 'Global'], **lopt)
-                    ylim = plt.ylim()
-                    ylist = [ymax] + list(info['r0_modes'][1]) + list(info['r1_modes'][1])
-                    ylist += list(info['global'][1])
-                    ymax = np.max(ylist)
-                    ymin = np.min(ylist)
-                    ymax = min(1, ymax)
+                    xlist = []
+                    ylist = []
+                    for key in ['r0_modes', 'r1_modes', 'global']:
+                        xlist.extend(list(info[key][0]))
+                        ylist.extend(list(info[key][1]))
+                    xmax[c] = max(xmax[c], np.max(xlist) + 1.0)
+                    xmin[c] = min(xmin[c], np.min(xlist) - 1.0)
+                    xmax[c] = min(32, xmax[c])
+                    xmin[c] = max(0, xmin[c])
+                    ymax = max(ymax, np.max(ylist) + .05)
+                    ymin = min(ymin, np.min(ylist) - .05)
+                    ymax = min(.99, ymax)
                     ymin = max(0, ymin)
                     # upper mode
-                    _x, _y = upper_mode(info)
+                    _x, _y = upper_mode(info, calc_kappa=True)#info['mach'][()] > 13.5)
                     plt.plot(_x, _y, c='xkcd:crimson', ls=':', lw=1, zorder=-1)
                     plt.plot(2 * _x, _y, c='.6', ls=':', lw=1, zorder=-1)
                     plt.plot(3 * _x, _y, c='.7', ls=':', lw=1, zorder=-1)
+                    # if info['mach'][()] > 0:#13.5:
+                    #     _x, _y = upper_mode(info, use_kep=True)
+                    #     plt.plot(_x, _y, c='xkcd:crimson', ls='-', lw=1, zorder=-1)
+                    # if int(np.round(info['mach'])) == 150:
+                    #     _x, _y = upper_mode(info, omega=0.8891435977119754, r=1.0500903710175424)
+                    #     plt.plot(_x, _y, c='xkcd:crimson', ls='-', lw=1, zorder=-1)
+                    # elif int(np.round(info['mach'])) == 140:
+                    #     _x, _y = upper_mode(info, omega=0.8854813712411813, r=1.0456745274364727)
+                    #     plt.plot(_x, _y, c='xkcd:crimson', ls='-', lw=1, zorder=-1)
                     # lower mode
                     _x, _y = lower_mode(info)
                     plt.plot(_x, _y, c='xkcd:crimson', ls='-.', lw=1, zorder=-1)
                     plt.plot(2 * _x, _y, c='.6', ls='-.', lw=1, zorder=-1)
                     plt.plot(3 * _x, _y, c='.7', ls='-.', lw=1, zorder=-1)
                     plt.ylim(ymin, ymax)
+                    plt.xlim(xmin[c], xmax[c])
+                    # omega_max
+                    plt.axhline(np.max(info['omega']), c='.5', lw=1, ls='--', zorder=-2)
                     ### End of mode plotting
+                    ax.xaxis.set_ticks_position('both')
+                    ax.yaxis.set_ticks_position('both')
+                    ax.tick_params(axis='both', which='both', direction='in', zorder=10)
                     ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
                     ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(5))
+                    ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
                     lbl = chr(ord('a') + i) + ') ' + sims[i]
                     #if sim.name == 'M09.HR.r.a':
                     #    plt.ylim(.1, None)
                     ax.text(.96, .94, lbl, c='k', transform=ax.transAxes, ha='right',
-                            fontsize=6)
+                            fontsize=6, bbox=bbox)
                     if c:
                         plt.setp(ax.get_yticklabels(), visible=False)
                     else:
@@ -558,6 +588,7 @@ def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300, skip_gen=
                     gc.collect()
             cap = .95
         if save:
+            print('Saving Figure')
             plt.savefig(fn)
             plt.close()
     finally:
@@ -913,7 +944,7 @@ def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi
         lopt.update(_lopt)
         lopt['cbl'] = False
         ropt['cbl'] = False
-        plots.append(dict(sim='M07.FR.r.a', t=450, lopt=lopt, ropt=ropt, op=.538, mode=4, phi0=1.45*np.pi))
+        plots.append(dict(sim='M07.FR.r.a', t=450, lopt=lopt, ropt=ropt, op=.538, mode=4, phi0=1.45*np.pi, vmax=1.1))
     if lvar is None:
         lvar = 'd_vortensity_0'
     if rvar is None:
@@ -946,7 +977,7 @@ def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi
 
     fig = plt.figure(**_fopt)
     hr = [.1, 1] * nr
-    gs_opt = dict(top=.9, bottom=.15, left=.10, right=.93, wspace=0, hspace=hspace)
+    gs_opt = dict(top=.9, bottom=.15, left=.15, right=.93, wspace=0, hspace=hspace)
     if cb_side == 'top':
         gs_opt['height_ratios'] = [.05, 1, .3] * nr
         gs_opt['width_ratios'] = [1/3.0, 1]

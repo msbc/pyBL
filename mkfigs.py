@@ -28,11 +28,6 @@ parser.add_argument('-g', '--git',
                     help='Git pull and exit')
 args = parser.parse_args()
 
-if args.git:
-    import sys_pyBL as blc
-    blc.git_pull()
-    import sys
-    sys.exit()
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -54,11 +49,20 @@ print("figs:", _figs)
 
 import gc
 import os
-import sys_pyBL as blc
 import matplotlib as mpl
 if __name__ == '__main__':
     mpl.use('agg')
+try:
+    import bl_reader as blc
+except ImportError:
+    import sys_pyBL as blc
 import matplotlib.pyplot as plt
+
+if args.git:
+    import sys_pyBL as blc
+    blc.git_pull()
+    import sys
+    sys.exit()
 
 blc.rc['rename_lc'] = True
 
@@ -218,7 +222,7 @@ class FigMaker:
     def one_armed(self):
         with blc.BLsim('M12.FR.random.a').loadfile('cons', 400) as df:
             df.plot2d(fn='M12_spiral.png', overwrite=_overwrite, minmax=False, rp=1.15,
-                      phi0=.8 * np.pi)
+                      phi0=.8 * np.pi, axis_labels=True)
 
     def vort_profiles(self):
         blc.multi_vortensity_prof(save=True, overwrite=_overwrite)
@@ -230,7 +234,46 @@ class FigMaker:
         blc.gen_dispersion_data(overwrite=_overwrite)
 
     def multi_dispersion(self):
-        blc.plot_dispersion_data(overwrite=_overwrite, skip_gen=True)
+        blc.plot_dispersion_data(save=True, overwrite=_overwrite, skip_gen=True)
+
+    def res_modes(self, q=2):
+        from matplotlib.colors import ListedColormap
+
+        mach = np.array([5.0, 6.0, 6.0, 8.0, 8.0, 9.0, 9.0, 9.0, 10.0, 11.0, 12.0, 13.0,
+                         14.0, 9.0, 9.0])
+        m = np.array([2.0, 5.0, 2.0, 4.0, 3.0, 4.0, 6.0, 5.0, 7.0, 6.0, 9.0, 7.0, 7.0,
+                      7.0, 3.0])
+        omega = np.array([0.11, 0.36, 0.15, 0.35, 0.21, 0.42, 0.49, 0.47, 0.56, 0.54,
+                          0.62, 0.6, 0.61, 0.53, 0.34])
+        nc = int(np.round(mach.max() - mach.min() + 1))
+        cm = plt.cm.get_cmap('plasma', nc)
+        colors = cm(np.linspace(0, 1, nc))
+        cm = plt.cm.get_cmap('viridis', nc)
+        colors[::2] = cm(np.linspace(0, 1, nc))[::2]
+        cmap = ListedColormap(colors)
+        fig = plt.figure(dpi=300, figsize=(5, 3.5))
+        plt.scatter(mach * m, omega, c=mach, norm=None, cmap=cmap, vmin=mach.min()-.5,
+                    vmax=mach.max()+.5)
+        ax = plt.gca()
+        ax.yaxis.set_ticks_position('both')
+        ax.xaxis.set_ticks_position('both')
+        ax.tick_params(axis='both', which='both', direction='in')
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(5))
+        ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.025))
+        xlim = plt.xlim()
+        ylim = plt.ylim()
+        y = np.linspace(0, 1, 400)
+        x = q * np.pi / (2 + y - 3 * y**(1./3.))
+        plt.plot(x, y, lw=1, zorder=-1)
+        plt.xlim(*xlim)
+        plt.ylim(*ylim)
+        plt.xlabel(r'$m\mathcal{M}$')
+        plt.ylabel(r'$\Omega_{\rm p}$')
+        cb = plt.colorbar(pad=0)
+        cb.ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        cb.set_label(r'$\mathcal{M}$')
+        plt.savefig('res_modes.pdf')
+        plt.close()
 
 
 print('Done with initialization')

@@ -233,7 +233,8 @@ class BLfile(BLfileBase):
                ax=None, log=False, aspect=1, sdir=None, smooth=None, cax=None,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1, lnorm=None,
                overwrite=True, display=False, minmax=True, txt_opt=None, printvmax=False,
-               figsize=None, dpi=300, rp=None, phi0=None, draw_opt=None):
+               figsize=None, dpi=300, rp=None, phi0=None, draw_opt=None,
+               axis_labels=False):
         """Plot 2D sim data"""
         if draw_opt is None:
             draw_opt = dict()
@@ -382,6 +383,9 @@ class BLfile(BLfileBase):
             if 'vmax' in _popt:
                 print(_popt['vmax'])
         pcm = plt.pcolormesh(x, y, data, **_popt)
+        if axis_labels:
+            plt.xlabel('$x$')
+            plt.xlabel('$y$')
         if rp is not None:
             self.draw_spiral(rp, phi0=phi0, opt=draw_opt)
         if minmax:
