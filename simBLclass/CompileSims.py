@@ -1079,8 +1079,9 @@ def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi
 def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
              fn=None, sdir=None, rmin=1.0, rmax=2.0, vmax1=None, vmax2=None, overwrite=True):
     if sims is None:
-        sims = ['M06.HR.r.lc.a', 'M09.FR.r.lc.a', 'M11.FR.r.a', 'M12.FR.r.lc.a',
+        sims = ['M06R.H.r.lc.a', 'M09.FR.r.lc.a', 'M11.FR.r.a', 'M12.FR.r.lc.a',
                 'M15.FR.r.a']
+        sims = ['M07.FR.r.a', 'M09.FR.r.lc.a', 'M12.FR.r.lc.a', 'M15.FR.r.a']
     if save or fn:
         save = True
         if not fn:
