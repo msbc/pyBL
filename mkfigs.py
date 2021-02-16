@@ -67,21 +67,21 @@ if args.git:
 blc.rc['rename_lc'] = True
 
 
-class sim_holder(dict):
+class SimHolder(dict):
     def __init__(self, *args, **kwargs):
-        super(sim_holder, self).__init__(*args, **kwargs)
-        self._dict = dict(m6='M06.HR.r.lc.a', m9='M09.FR.r.lc.a', m12='M12.FR.r.lc.a',
-                          m15='M15.FR.r.a')
+        super(SimHolder, self).__init__(*args, **kwargs)
+        self._dict = dict(m6='M06.HR.r.lc.a', m7='M07.FR.r.a', m9='M09.FR.r.lc.a',
+                          m12='M12.FR.r.lc.a', m15='M15.FR.r.a')
 
     def __getitem__(self, item):
         try:
-            return super(sim_holder, self).__getitem__(item)
+            return super(SimHolder, self).__getitem__(item)
         except KeyError:
             self[item] = blc.BLsim(self._dict.get(item, item))
             print('Loading ' + repr(self[item]) + ' from ' + self[item].path)
-        return super(sim_holder, self).__getitem__(item)
+        return super(SimHolder, self).__getitem__(item)
 
-_sims = sim_holder()
+_sims = SimHolder()
 
 
 class BLholder(blc.DataContainer):
@@ -150,6 +150,9 @@ bl_stats = BLholder()
 class FigMaker:
     aliases = {}
 
+    def __init__(self):
+        return
+
     def _sanitize(self, key):
         for i in '-. ':
             key = key.replace(i, '_')
@@ -182,6 +185,8 @@ class FigMaker:
     def _all_diag(self):
         return [i for i in self._all_plots if i.endswith('_diag')]
 
+
+class Paper1(FigMaker):
     def sonic_examples(self):
         blc.multi_stripe(save=True, overwrite=_overwrite)
 
@@ -284,10 +289,24 @@ class FigMaker:
         plt.savefig('res_modes.pdf')
         plt.close()
 
+    # paper 2
+class Paper2(FigMaker):
+    am_times = {7: [100, 200], 9: [400, 500], 12: [500, 600], 15: [500, 600]}
+
+    def multi_st(self):
+        blc.multi_st(save=True, overwrite=_overwrite)
+
+    def am_plot_data(self, overwrite=False):
+        _sims['m7'].am_plot_data(*self.am_times[7], overwrite=overwrite)
+        _sims['m9'].am_plot_data(*self.am_times[9], overwrite=overwrite)
+        blc.BLsim('M12.FR.mix.a').am_plot_data(*self.am_times[12], overwrite=overwrite)
+        _sims['m15'].am_plot_data(self.am_times[15], overwrite=overwrite)
+
 
 print('Done with initialization')
 
-FigMaker()(_figs)
+#Paper1()(_figs)
+Paper2()(_figs)
 
 # old figs
 if 0:
