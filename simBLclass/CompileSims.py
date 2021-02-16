@@ -944,7 +944,7 @@ def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi
         lopt.update(_lopt)
         lopt['cbl'] = False
         ropt['cbl'] = False
-        plots.append(dict(sim='M07.FR.r.a', t=450, lopt=lopt, ropt=ropt, op=.538, mode=4, phi0=1.45*np.pi, vmax=1.1))
+        plots.append(dict(sim='M07.FR.r.a', t=450, lopt=lopt, ropt=ropt, op=.538, mode=4, phi0=1.45*np.pi, vmax=1.1e-2))
     if lvar is None:
         lvar = 'd_vortensity_0'
     if rvar is None:
@@ -956,7 +956,7 @@ def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi
     cb_side = cb_side.lower()
     assert cb_side in ['top', 'side']
     if figsize is None:
-        figsize = 3, 7
+        figsize = 3, 5
     _fopt = dict(dpi=dpi, figsize=figsize)
     if fopt is None:
         fopt = {}
@@ -977,7 +977,7 @@ def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi
 
     fig = plt.figure(**_fopt)
     hr = [.1, 1] * nr
-    gs_opt = dict(top=.9, bottom=.15, left=.15, right=.93, wspace=0, hspace=hspace)
+    gs_opt = dict(top=.9, bottom=.0, left=.15, right=.93, wspace=0, hspace=hspace)
     if cb_side == 'top':
         gs_opt['height_ratios'] = [.05, 1, .3] * nr
         gs_opt['width_ratios'] = [1/3.0, 1]

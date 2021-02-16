@@ -221,8 +221,17 @@ class FigMaker:
 
     def one_armed(self):
         with blc.BLsim('M12.FR.random.a').loadfile('cons', 400) as df:
+            gsopt = dict(left=.08, right=.92, top=.95, bottom=.08)
+            fig, ax = plt.subplots(figsize=(6.3, 4.9), dpi=300, gridspec_kw=gsopt)
+            ax.yaxis.set_ticks_position('both')
+            ax.xaxis.set_ticks_position('both')
+            ax.tick_params(axis='both', which='both', direction='in', zorder=10)
+            ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+            ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+            ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(2))
+            ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(2))
             df.plot2d(fn='M12_spiral.png', overwrite=_overwrite, minmax=False, rp=1.15,
-                      phi0=.8 * np.pi, axis_labels=True)
+                      phi0=.8 * np.pi, axis_labels=True, fig=fig, ax=ax)
 
     def vort_profiles(self):
         blc.multi_vortensity_prof(save=True, overwrite=_overwrite)

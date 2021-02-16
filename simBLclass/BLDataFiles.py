@@ -234,7 +234,7 @@ class BLfile(BLfileBase):
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1, lnorm=None,
                overwrite=True, display=False, minmax=True, txt_opt=None, printvmax=False,
                figsize=None, dpi=300, rp=None, phi0=None, draw_opt=None,
-               axis_labels=False):
+               axis_labels=False, tight=False, tight_opt=None, subplots_adjust=None):
         """Plot 2D sim data"""
         if draw_opt is None:
             draw_opt = dict()
@@ -385,7 +385,7 @@ class BLfile(BLfileBase):
         pcm = plt.pcolormesh(x, y, data, **_popt)
         if axis_labels:
             plt.xlabel('$x$')
-            plt.xlabel('$y$')
+            plt.ylabel('$y$')
         if rp is not None:
             self.draw_spiral(rp, phi0=phi0, opt=draw_opt)
         if minmax:
@@ -429,6 +429,15 @@ class BLfile(BLfileBase):
         plt.sca(ax)
         if printvmax:
             print(plt.clim())
+        if subplots_adjust is not None:
+            print('subplots_adjust')
+            print(subplots_adjust)
+            plt.subplots_adjust(**subplots_adjust)
+        if tight:
+            if tight_opt is None:
+                tight_opt = dict()
+            print('Tight')
+            plt.tight_layout(*tight_opt)
         # save fig
         if save:
             plt.savefig(fn)
