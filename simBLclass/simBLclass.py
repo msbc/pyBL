@@ -75,6 +75,7 @@ class BLsim(object):
                 if os.path.isdir(tmp):
                     path = tmp
                     break
+        self.full_name = name
         self._is_lc_sim = '.lc.' in self.name
         if rc('rename_lc'):
             if '.lc.' in self.name:
@@ -1697,6 +1698,77 @@ class BLsim(object):
             if self.name == "M12.FR.mix.lc.a":
                 tf = min(tf, 599)
             flux_data = self.flux_compare(t, tf, save=save, sdir=sdir, flux_data=flux_data, **kwargs)
+
+    def am_plot_data(self, t0, tf, flux_data=None, fn=None, sdir='', overwrite=False,
+                     option=2, tnorm=tau, nm=5, o=2, s=1):
+        if fn is None:
+            fn = self.full_name + '_am_plot_data.hdf5'
+        if sdir:
+            fn = os.path.join(sdir, fn)
+        f = h5py.File(fn, 'a')
+        group_key = '{:04d}_{:04d}'.format(t0, tf)
+        if not overwrite:
+            if self.name in f and self.name + '/' + group_key in f:
+                f.close()
+            return fn
+        tmp = dict(mach=self.mach, name=self.name, path=self.path)
+        for i in tmp:
+            if i not in f:
+                f.attrs[i] = tmp[i]
+        tmp = dict(rc=self.rc)
+        for i in tmp:
+            if i not in f:
+                f.create_dataset(i, data=np.array(tmp[i]))
+        try:
+            opt = dict(t0=t0, tf=tf, ts=1, s=s, o=o, pns=20, nm=nm, tnorm=tnorm)
+            flux_data = self.load_flux_data()
+            ts = flux_data.time_slice(**opt)
+            csm = flux_data.csm[ts['loc']].mean(axis=0)
+            cs = flux_data.T12(o)[ts['loc']].mean(axis=0)
+            cl = flux_data['CL'][ts['loc']].mean(axis=0)
+            ca = cl - cs
+            ycs, ydv2, ymdot, ydp = flux_data.lines(**opt)[:4]
+            return None
+        except AttributeError:
+            print('Reverting to old flux data for ' + self.name)
+            if flux_data is None:
+                flux_data = self.time_fluxes(options=option, csm=True)
+            times = flux_data['t']
+            i0, il = np.searchsorted(times, [t0, tf])
+            if il < times.size - 1:
+                il += 1
+            loc = (slice(i0, il), slice(None))
+
+            def v(name):
+                return flux_data[name][loc].mean(axis=0)
+
+            csm = v('CSm')
+            csm[0, :] = 0
+            cs = v('T12')
+            cl = v('CL')
+            ca = cl - cs
+            ycs = v('ycs') # label=r'$T_{r\phi}$'
+            ydp = v('ydp') # label=r'$\partial_t\partial_rP$'
+            ydv2 = v('ydv2') # label=r'$\partial_t v_\phi$'
+            ymdot = v('yMdot') # label=r'$\dot{M}\partial_r\ell$'
+            #
+        window = np.ones_like(self.rc)
+        window[:self.rloc(1.0)] = 0
+        window[-5:] = 0
+        _norm = self.intr(np.abs(csm * window[None, :]))
+        modes = sorted(range(_norm.shape[0]), key=lambda x: -_norm[x])
+        tmp = dict(csm=csm, cs=cs, cl=cl, ca=ca, ycs=ycs, ydp=ydp, ydv2=ydv2, ymdot=ymdot,
+                   modes=modes)
+        if group_key in f:
+            group = f[group_key]
+        else:
+            group = f.create_group(group_key)
+        for i in tmp:
+            if i not in group:
+                group.create_dataset(i, data=np.array(tmp[i]))
+            else:
+                group[i] = np.array(tmp[i])
+        return fn
 
     def paper_flux_plot(self, t0, tf, flux_data=None, figsize=None, save=False, fn=None,
                         ext='pdf', lopt=None, sdir='', overwrite=True, option=2,
