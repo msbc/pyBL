@@ -1701,7 +1701,7 @@ class BLsim(object):
             flux_data = self.flux_compare(t, tf, save=save, sdir=sdir, flux_data=flux_data, **kwargs)
 
     def am_plot_data(self, t0, tf, flux_data=None, fn=None, sdir='', overwrite=False,
-                     option=3, tnorm=tau, nm=5, o=3, s=1):
+                     tnorm=tau, nm=5, s=1):
         if fn is None:
             fn = self.full_name + '_am_plot_data.hdf5'
         if sdir:
@@ -1728,13 +1728,12 @@ class BLsim(object):
             for v_opt in [2, 3]:
                 opt = dict(t0=t0, tf=tf, ts=1, s=s, o=v_opt, pns=20, nm=nm, tnorm=tnorm)
                 csm = flux_data.csm[ts['loc']].mean(axis=0)
-                cs = flux_data.T12(o)[ts['loc']].mean(axis=0)
+                cs = flux_data.T12(v_opt)[ts['loc']].mean(axis=0)
                 cl = flux_data['CL'][ts['loc']].mean(axis=0)
                 ca = cl - cs
                 ycs, ydv2, ymdot, ydp = flux_data.lines(**opt)[:4]
-                tmp = dict(csm=csm, cs=cs, cl=cl, ca=ca, ycs=ycs, ydp=ydp, ydv2=ydv2,
-                           ymdot=ymdot,
-                           modes=modes)
+                tmp = dict(cs=cs, cl=cl, ca=ca, ycs=ycs, ydp=ydp, ydv2=ydv2,
+                           ymdot=ymdot)
                 key = group_key + '/opt' + str(v_opt)
                 if key in f:
                     group = f[key]
@@ -1748,7 +1747,7 @@ class BLsim(object):
                             group[i] = np.array(tmp[i])
         except AttributeError:
             print('Reverting to old flux data for ' + self.name)
-            flux_data = self.time_fluxes(options=option, csm=True)
+            flux_data = self.time_fluxes(options=3, csm=True)
             times = flux_data['t']
             i0, il = np.searchsorted(times, [t0, tf])
             if il < times.size - 1:
@@ -1770,19 +1769,32 @@ class BLsim(object):
             ydp = v('ydp') # label=r'$\partial_t\partial_rP$'
             ydv2 = v('ydv2') # label=r'$\partial_t v_\phi$'
             ymdot = v('yMdot') # label=r'$\dot{M}\partial_r\ell$'
+            tmp = dict(cs=cs, cl=cl, ca=ca, ycs=ycs, ydp=ydp, ydv2=ydv2,
+                       ymdot=ymdot)
+            key = group_key + '/opt3'
+            if key in f:
+                group = f[key]
+            else:
+                group = f.create_group(key)
+            for i in tmp:
+                if tmp[i]:
+                    if i not in group:
+                        group.create_dataset(i, data=np.array(tmp[i]))
+                    else:
+                        group[i] = np.array(tmp[i])
+            return fn
             #
         window = np.ones_like(self.rc)
         window[:self.rloc(1.0)] = 0
         window[-5:] = 0
         _norm = self.intr(np.abs(csm * window[None, :]))
         modes = sorted(range(_norm.shape[0]), key=lambda x: -_norm[x])
-        tmp = dict(csm=csm, cs=cs, cl=cl, ca=ca, ycs=ycs, ydp=ydp, ydv2=ydv2, ymdot=ymdot,
-                   modes=modes)
-        group_key = group_key + '/opt3'
-        if group_key in f:
-            group = f[group_key]
+        tmp = dict(csm=csm, modes=modes)
+        key = group_key
+        if key in f:
+            group = f[key]
         else:
-            group = f.create_group(group_key)
+            group = f.create_group(key)
         for i in tmp:
             if tmp[i]:
                 if i not in group:
