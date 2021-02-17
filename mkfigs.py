@@ -300,7 +300,7 @@ class Paper2(FigMaker):
         _sims['m7'].am_plot_data(*self.am_times[7], overwrite=overwrite)
         _sims['m9'].am_plot_data(*self.am_times[9], overwrite=overwrite)
         blc.BLsim('M12.FR.mix.a').am_plot_data(*self.am_times[12], overwrite=overwrite)
-        _sims['m15'].am_plot_data(self.am_times[15], overwrite=overwrite)
+        _sims['m15'].am_plot_data(*self.am_times[15], overwrite=overwrite)
 
 
 print('Done with initialization')

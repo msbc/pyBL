@@ -833,6 +833,9 @@ class npz_wrapper(object):
             out *= tau * self.rc
         return out
 
+    def keys(self):
+        return self.npz.keys()
+
 
 class FluxData(object):
     def __init__(self, npz, rc, sim, ns=None, option=2, smoothing=None):

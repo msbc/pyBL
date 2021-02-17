@@ -75,7 +75,7 @@ class BLsim(object):
                 if os.path.isdir(tmp):
                     path = tmp
                     break
-        self.full_name = name
+        self.full_name = self.name
         self._is_lc_sim = '.lc.' in self.name
         if rc('rename_lc'):
             if '.lc.' in self.name:
@@ -1357,6 +1357,7 @@ class BLsim(object):
             elif o == 3:
                 vphi = out['vphi']
                 dr_rho = grad(rc, np.log(out['dens']), -1)
+                dm2 = np.ones_like(vphi) * np.nan
                 if isnew:
                     dm2 = out['mom2'] - vphi * out['dens']
             else:
@@ -1700,7 +1701,7 @@ class BLsim(object):
             flux_data = self.flux_compare(t, tf, save=save, sdir=sdir, flux_data=flux_data, **kwargs)
 
     def am_plot_data(self, t0, tf, flux_data=None, fn=None, sdir='', overwrite=False,
-                     option=2, tnorm=tau, nm=5, o=2, s=1):
+                     option=3, tnorm=tau, nm=5, o=3, s=1):
         if fn is None:
             fn = self.full_name + '_am_plot_data.hdf5'
         if sdir:
@@ -1708,9 +1709,10 @@ class BLsim(object):
         f = h5py.File(fn, 'a')
         group_key = '{:04d}_{:04d}'.format(t0, tf)
         if not overwrite:
-            if self.name in f and self.name + '/' + group_key in f:
+            if group_key in f:
+                print('No overwrite exit')
                 f.close()
-            return fn
+                return fn
         tmp = dict(mach=self.mach, name=self.name, path=self.path)
         for i in tmp:
             if i not in f:
@@ -1731,8 +1733,7 @@ class BLsim(object):
             return None
         except AttributeError:
             print('Reverting to old flux data for ' + self.name)
-            if flux_data is None:
-                flux_data = self.time_fluxes(options=option, csm=True)
+            flux_data = self.time_fluxes(options=option, csm=True)
             times = flux_data['t']
             i0, il = np.searchsorted(times, [t0, tf])
             if il < times.size - 1:
@@ -1740,7 +1741,11 @@ class BLsim(object):
             loc = (slice(i0, il), slice(None))
 
             def v(name):
-                return flux_data[name][loc].mean(axis=0)
+                try:
+                    return flux_data[name][loc].mean(axis=0)
+                except KeyError as e:
+                    print(list(flux_data.keys()))
+                    raise
 
             csm = v('CSm')
             csm[0, :] = 0
