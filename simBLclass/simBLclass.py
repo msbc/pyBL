@@ -1722,15 +1722,30 @@ class BLsim(object):
             if i not in f:
                 f.create_dataset(i, data=np.array(tmp[i]))
         try:
-            opt = dict(t0=t0, tf=tf, ts=1, s=s, o=o, pns=20, nm=nm, tnorm=tnorm)
             flux_data = self.load_flux_data()
+            opt = dict(t0=t0, tf=tf, ts=1, s=s, pns=20, nm=nm, tnorm=tnorm)
             ts = flux_data.time_slice(**opt)
-            csm = flux_data.csm[ts['loc']].mean(axis=0)
-            cs = flux_data.T12(o)[ts['loc']].mean(axis=0)
-            cl = flux_data['CL'][ts['loc']].mean(axis=0)
-            ca = cl - cs
-            ycs, ydv2, ymdot, ydp = flux_data.lines(**opt)[:4]
-            return None
+            for v_opt in [2, 3]:
+                opt = dict(t0=t0, tf=tf, ts=1, s=s, o=v_opt, pns=20, nm=nm, tnorm=tnorm)
+                csm = flux_data.csm[ts['loc']].mean(axis=0)
+                cs = flux_data.T12(o)[ts['loc']].mean(axis=0)
+                cl = flux_data['CL'][ts['loc']].mean(axis=0)
+                ca = cl - cs
+                ycs, ydv2, ymdot, ydp = flux_data.lines(**opt)[:4]
+                tmp = dict(csm=csm, cs=cs, cl=cl, ca=ca, ycs=ycs, ydp=ydp, ydv2=ydv2,
+                           ymdot=ymdot,
+                           modes=modes)
+                key = group_key + '/opt' + str(v_opt)
+                if key in f:
+                    group = f[key]
+                else:
+                    group = f.create_group(key)
+                for i in tmp:
+                    if tmp[i]:
+                        if i not in group:
+                            group.create_dataset(i, data=np.array(tmp[i]))
+                        else:
+                            group[i] = np.array(tmp[i])
         except AttributeError:
             print('Reverting to old flux data for ' + self.name)
             flux_data = self.time_fluxes(options=option, csm=True)
@@ -1743,9 +1758,8 @@ class BLsim(object):
             def v(name):
                 try:
                     return flux_data[name][loc].mean(axis=0)
-                except KeyError as e:
-                    print(list(flux_data.keys()))
-                    raise
+                except KeyError:
+                    print(self.name + " can't load " + name)
 
             csm = v('CSm')
             csm[0, :] = 0
@@ -1764,15 +1778,17 @@ class BLsim(object):
         modes = sorted(range(_norm.shape[0]), key=lambda x: -_norm[x])
         tmp = dict(csm=csm, cs=cs, cl=cl, ca=ca, ycs=ycs, ydp=ydp, ydv2=ydv2, ymdot=ymdot,
                    modes=modes)
+        group_key = group_key + '/opt3'
         if group_key in f:
             group = f[group_key]
         else:
             group = f.create_group(group_key)
         for i in tmp:
-            if i not in group:
-                group.create_dataset(i, data=np.array(tmp[i]))
-            else:
-                group[i] = np.array(tmp[i])
+            if tmp[i]:
+                if i not in group:
+                    group.create_dataset(i, data=np.array(tmp[i]))
+                else:
+                    group[i] = np.array(tmp[i])
         return fn
 
     def paper_flux_plot(self, t0, tf, flux_data=None, figsize=None, save=False, fn=None,
