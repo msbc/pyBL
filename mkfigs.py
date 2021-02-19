@@ -291,16 +291,22 @@ class Paper1(FigMaker):
 
     # paper 2
 class Paper2(FigMaker):
-    am_times = {7: [100, 200], 9: [400, 500], 12: [500, 600], 15: [500, 600]}
-
     def multi_st(self):
         blc.multi_st(save=True, overwrite=_overwrite)
 
     def am_plot_data(self, overwrite=False):
-        _sims['m7'].am_plot_data(*self.am_times[7], overwrite=overwrite)
-        _sims['m9'].am_plot_data(*self.am_times[9], overwrite=overwrite)
-        blc.BLsim('M12.FR.mix.a').am_plot_data(*self.am_times[12], overwrite=overwrite)
-        _sims['m15'].am_plot_data(*self.am_times[15], overwrite=overwrite)
+        _sims['m7'].am_plot_data(100, 200, overwrite=overwrite)
+        _sims['m7'].am_plot_data(200, 300, overwrite=overwrite)
+        _sims['m7'].am_plot_data(550, 600, overwrite=overwrite)
+        _sims['m9'].am_plot_data(100, 200, overwrite=overwrite)
+        _sims['m9'].am_plot_data(250, 350, overwrite=overwrite)
+        _sims['m9'].am_plot_data(400, 500, overwrite=overwrite)
+        _sims['M12.FR.mix.a'].am_plot_data(100, 200, overwrite=overwrite)
+        _sims['M12.FR.mix.a'].am_plot_data(250, 350, overwrite=overwrite)
+        _sims['M12.FR.mix.a'].am_plot_data(500, 600, overwrite=overwrite)
+        _sims['m15'].am_plot_data(100, 200, overwrite=overwrite)
+        _sims['m15'].am_plot_data(300, 400, overwrite=overwrite)
+        _sims['m15'].am_plot_data(500, 600, overwrite=overwrite)
 
 
 print('Done with initialization')
