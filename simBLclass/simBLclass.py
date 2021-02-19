@@ -1740,7 +1740,7 @@ class BLsim(object):
                 else:
                     group = f.create_group(key)
                 for i in tmp:
-                    if tmp[i]:
+                    if tmp[i] is not None:
                         if i not in group:
                             group.create_dataset(i, data=np.array(tmp[i]))
                         else:
@@ -1777,7 +1777,7 @@ class BLsim(object):
             else:
                 group = f.create_group(key)
             for i in tmp:
-                if tmp[i]:
+                if tmp[i] is not None:
                     if i not in group:
                         group.create_dataset(i, data=np.array(tmp[i]))
                     else:
@@ -1796,7 +1796,7 @@ class BLsim(object):
         else:
             group = f.create_group(key)
         for i in tmp:
-            if tmp[i]:
+            if tmp[i] is not None:
                 if i not in group:
                     group.create_dataset(i, data=np.array(tmp[i]))
                 else:
