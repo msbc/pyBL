@@ -1627,6 +1627,69 @@ def AM_plot(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sd
     return
 
 
+def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sdir=None, txt=True, lbl=True, spacer=True, rmin=None, rmax=None, nm=5, lopt=None, lnorm=-3, popt=None, overwrite=True, gsopt=None):
+    if sims is None:
+        sims = 1
+    if sims in [1 , 2]:
+        _sims = [dict(name='M07.FR.r.a', ts=[[100, 200, 125], [200, 300, 225], [550, 600, 575]]),
+                 dict(name='M09.FR.r.lc.a', ts=[[100, 200, 150], [250, 350, 275], [400, 500, 450]]),
+                 dict(name='M12.FR.mix.a', ts=[[100, 200, 150], [250, 350, 300], [500, 600, 550]]),
+                 dict(name='M15.FR.r.a', ts=[[100, 200, 150], [300, 400, 350], [500, 600, 550]]),
+                 ]
+        if save and not fn:
+            fn = 'am_subpanels_{}.pdf'.format(sims)
+        if sims == 1:
+            sims = _sims[0:2]
+        elif sims == 2:
+            sims = _sims[2:]
+    nsim = len(sims)
+    if not lnorm:
+        lnorm = 0
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'am_subpanels.pdf'
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if parse_not_overwrite(overwrite, fn):
+        return None
+    nc = nsim
+    nvar = 3
+    _popt = dict(lw=1)
+    if popt is not None:
+        _popt.update(popt)
+    if lopt is None:
+        lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
+    if figsize is None:
+        figsize = np.array([8.5, 11]) * 2
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt:
+        _fopt.update(fopt)
+    nt = len(sims[0]['ts'])
+    assert np.all([len(s['ts']) == nt for s in sims])
+    fig = plt.figure(**_fopt)
+    _gsopt = dict(top=.98, bottom=.02, left=.05, right=.99, hspace=0.1, wspace=0.1)
+    if gsopt is not None:
+        _gsopt.update(gsopt)
+    gs = mpl.gridspec.GridSpec(nt, nsim, **_gsopt)
+    for col, args in enumerate(sims):
+        sim = blc.BLsim(args['name'])
+        opt = args.get('opt', dict())
+        if type(opt) == dict:
+            opt = [opt] * nt
+        for row in range(nt):
+            ts = args['ts'][row]
+            sim.am_subpannel(*ts, gs0=gs[row, col], save=False, ylbl=(col==0),
+                             xlbl=(row==nt-1), hdf5=args.get('hdf5'), **opt[row])
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
+
+
 def mode_hist(sims=None, fn=None, save=None, data=None, ll=True, overwrite=True):
     if fn is None and save:
         fn = 'mode_hist.pdf'

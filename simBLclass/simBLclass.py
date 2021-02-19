@@ -1803,6 +1803,140 @@ class BLsim(object):
                     group[i] = np.array(tmp[i])
         return fn
 
+    def am_subpannel(self, t0, tf, tsnap, gs0=None, save=False, fn=None, xlbl=True,
+                     ylbl=True, fig=None, fopt=None, figsize=None, dpi=300, gsopt=None,
+                     hdf5=None, sdir=None, lopt=None, mopt=None, ropt=None,
+                     legend_opt=None, prefix='', lbl0='a', tx=.98, ty=.94, topt=None,
+                     use_txt=True):
+        if fig is None and gs0 is None:
+            _fopt = dict(dpi=dpi, figsize=figsize)
+            if fopt:
+                _fopt.update(fopt)
+            fig = plt.figure(**_fopt)
+        _gsopt = dict(top=.98, bottom=.02, left=.05, right=.99, hspace=0.1, wspace=0.1,
+                      height_ratios=[.1, 1, 1, 1], width_ratios=[2./3., 1, 1])
+        if gsopt is not None:
+            _gsopt.update(gsopt)
+        if gs0 is not None:
+            gs = gridspec.GridSpecFromSubplotSpec(3, 4, subplot_spec=gs0, **_gsopt)
+        else:
+            gs = gridspec.GridSpec(3, 4, **_gsopt)
+        if sdir is None:
+            sdir = ''
+        if lopt is None:
+            lopt = dict()
+        if mopt is None:
+            mopt = dict()
+        if ropt is None:
+            ropt = dict()
+        ri = self.sim.rloc(1.02)
+        if legend_opt is None:
+            legend_opt = dict(handlelength=1, fontsize=8, handletextpad=.4,
+                              columnspacing=.7)
+        if topt is None:
+            topt = dict()
+        hdf5 = self.am_plot_data(t0, tf, fn=hdf5, sdir=sdir)
+        _opt = dict(zerocent=True, cbopt=dict(orientation='horizontal'))
+        if hasattr(lbl0, 'lower'):
+            lbl0 = ord(lbl0)
+        else:
+            lbl0 += ord('a')
+        with h5py.File(hdf5, 'a') as f:
+            snap_key = 'snapshot_{:04d}'.format(tsnap)
+            if not snap_key in f:
+                group = f.create_group(snap_key)
+            else:
+                group = f[snap_key]
+            with self.loadfile(tsnap) as df:
+                for i in ['Rpseudo', 'd_vortensity']:
+                    if i not in group:
+                        group.create_dataset(i, data=df[i])
+                axs = []
+                caxs = []
+                # left/d_vortensity-stripe panel
+                caxs.append(plt.subplot(gs[0, 0]))
+                axs.append(plt.subplot(gs[0, 1]))
+                cbl = r'$\omega/\Sigma-\left<\omega/\Sigma\right>_0$' if xlbl else False
+                opt = _opt.copy()
+                opt.update(dict(ax=axs[-1], cax=cax[-1], cbl=cbl))
+                opt.update(lopt)
+                df.stripe(group['d_vortensity'][()], **opt)
+                # mid/Rpseudo-stripe panel
+                caxs.append(plt.subplot(gs[1:, 0]))
+                axs.append(plt.subplot(gs[1, 1]))
+                cbl = helpers.labeler('Rpseudo') if xlbl else False
+                opt = _opt.copy()
+                opt.update(dict(ax=axs[-1], cax=cax[-1], cbl=cbl))
+                opt.update(mopt)
+                df.stripe(group['Rpseudo'][()], **opt)
+                clim = plt.gci().get_clim()
+                # right/Rpseudo-map panel
+                axs.append(plt.subplot(gs[1, 2]))
+                opt = _opt.copy()
+                opt.update(dict(ax=axs[-1], cb=False, vmin=clim[0], vmax=clim[1]))
+                opt.update(mopt)
+                df.map(group['Rpseudo'][()], **opt)
+                # cleanup
+                for cax in caxs:
+                    cax.xaxis.set_label_position('top')
+                    cax.xaxis.set_ticks_position('top')
+            # CS, CA, CL plot
+            group = f['{:04d}_{:04d}/opt3'.format(t0, tf)]
+            axs.append(plt.subplot(gs[:, 2]))
+            cs, ca, cl = group['cs'][()], group['ca'][()], group['cl'][()]
+            y = np.array([cs, ca, cl])[:, ri:-5]
+            yl, yu = y.min(), y.max()
+            dy = (yu - yl) * .05
+            ylim = np.array((yl - dy, max(yu + dy, 2.5 * dy)))
+            plt.plot(self.rc, cs, label='$C_S$', c='k')
+            plt.plot(self.rc, ca, label='$C_A$')
+            plt.plot(self.rc, cl, label='$C_L$')
+            plt.legend(loc=4, ncol=3, **legend_opt)
+            plt.axhline(0, c='.5', ls=':', lw=1)
+            plt.axvline(1, c='.5', ls=':', lw=1)
+            plt.ylim(*ylim)
+            # CSm plot
+            group = f['{:04d}_{:04d}'.format(t0, tf)]
+            modes = group['modes'][()]
+            csm = group['csm'][()]
+            axs.append(plt.subplot(gs[:, 3], sharex=axs[-1]))
+            plt.plot(self.rc, cs, 'k-', label='$C_S$')
+            ym = []
+            for m in modes[:nm]:
+                ym.append(csm[m])
+                plt.plot(self.rc, csm[m], label=str(m), lw=1)
+            plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls='-', label='sum', lw=1)
+            ym = np.array(ym)
+            plt.legend(loc=4, ncol=nm + 2, **lopt)
+            plt.axhline(0, c='.5', ls=':', lw=1)
+            plt.axvline(1, c='.5', ls=':', lw=1)
+            # set ylim
+            yl = np.minimum(csm[1:].sum(axis=0), cs)
+            yl = np.minimum(yl, ym.min(axis=0))[ri:-5].min()
+            yl = min(0, yl)
+            yu = np.maximum(csm[1:].sum(axis=0), cs)
+            yu = np.maximum(yu, ym.max(axis=0))[ri:-5].max()
+            yu = max(0, yu)
+            dy = (yu - yl) * .05
+            plt.ylim(min(yl - dy, -2.5 * dy), max(yu + dy, 2.5 * dy))
+            if xlbl:
+                plt.xlabel('$r$')
+            if ylbl:
+                plt.ylabel('$C_S' + lntxt)
+            # cleanup
+            for i, ax in enumerate(axs):
+                ax.xaxis.set_ticks_position('both')
+                ax.yaxis.set_ticks_position('both')
+                ax.tick_params(axis='both', which='both', direction='in')
+                ax.set_axisbelow(False)
+                if use_txt:
+                    lbl = prefix + chr(lbl0 + i) + ')'
+                    ax.text(tx, ty, lbl, transform=ax.transAxes, **topt)
+        if save or fn:
+            plt.savefig(fn)
+            plt.close()
+        return
+
     def paper_flux_plot(self, t0, tf, flux_data=None, figsize=None, save=False, fn=None,
                         ext='pdf', lopt=None, sdir='', overwrite=True, option=2,
                         tnorm=tau, dpi=300, nm=5, plt_ydp=False, axs=None, use_txt=True,
