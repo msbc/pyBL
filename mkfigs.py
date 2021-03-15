@@ -174,7 +174,11 @@ class FigMaker:
                 elif attr in self.aliases:
                     attr = self.aliases[attr]
             print('plotting', attr)
-            getattr(self, attr)()
+            try:
+                getattr(self, attr)()
+            except Exception as e:
+                print('!!!!  Plotting {} failed!  !!!!'.format(attr))
+                print(e)
             gc.collect()
 
     @property
@@ -294,19 +298,27 @@ class Paper2(FigMaker):
     def multi_st(self):
         blc.multi_st(save=True, overwrite=_overwrite)
 
-    def am_plot_data(self, overwrite=False):
+    def _am_plot_data(self, overwrite=False):
+    #def am_plot_data(self, overwrite=True):
         _sims['m7'].am_plot_data(100, 200, overwrite=overwrite)
         _sims['m7'].am_plot_data(200, 300, overwrite=overwrite)
         _sims['m7'].am_plot_data(550, 600, overwrite=overwrite)
         _sims['m9'].am_plot_data(100, 200, overwrite=overwrite)
         _sims['m9'].am_plot_data(250, 350, overwrite=overwrite)
         _sims['m9'].am_plot_data(400, 500, overwrite=overwrite)
-        _sims['M12.FR.mix.a'].am_plot_data(100, 200, overwrite=overwrite)
-        _sims['M12.FR.mix.a'].am_plot_data(250, 350, overwrite=overwrite)
-        _sims['M12.FR.mix.a'].am_plot_data(500, 600, overwrite=overwrite)
+        _sims['M12.FR.mix.lc.a'].am_plot_data(100, 200, overwrite=overwrite)
+        _sims['M12.FR.mix.lc.a'].am_plot_data(250, 350, overwrite=overwrite)
+        _sims['M12.FR.mix.lc.a'].am_plot_data(500, 600, overwrite=overwrite)
         _sims['m15'].am_plot_data(100, 200, overwrite=overwrite)
         _sims['m15'].am_plot_data(300, 400, overwrite=overwrite)
         _sims['m15'].am_plot_data(500, 600, overwrite=overwrite)
+
+    def am_subpanels_1(self):
+        blc.am_subpanels(1, save=True, overwrite=_overwrite)
+
+    def am_subpanels_2(self):
+        _sims['m15'].am_plot_data(100, 200, overwrite=True)
+        blc.am_subpanels(2, save=True, overwrite=_overwrite)
 
 
 print('Done with initialization')

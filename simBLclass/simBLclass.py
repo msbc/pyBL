@@ -1743,8 +1743,8 @@ class BLsim(object):
                     if tmp[i] is not None:
                         if i not in group:
                             group.create_dataset(i, data=np.array(tmp[i]))
-                        else:
-                            group[i] = np.array(tmp[i])
+                        #else:
+                        #    group[i] = np.array(tmp[i])
         except AttributeError:
             print('Reverting to old flux data for ' + self.name)
             flux_data = self.time_fluxes(options=3, csm=True)
@@ -1780,10 +1780,8 @@ class BLsim(object):
                 if tmp[i] is not None:
                     if i not in group:
                         group.create_dataset(i, data=np.array(tmp[i]))
-                    else:
-                        group[i] = np.array(tmp[i])
-            return fn
-            #
+                    #else:
+                    #    group[i] = np.array(tmp[i])
         window = np.ones_like(self.rc)
         window[:self.rloc(1.0)] = 0
         window[-5:] = 0
@@ -1791,23 +1789,25 @@ class BLsim(object):
         modes = sorted(range(_norm.shape[0]), key=lambda x: -_norm[x])
         tmp = dict(csm=csm, modes=modes)
         key = group_key
+        print(key)
         if key in f:
             group = f[key]
         else:
             group = f.create_group(key)
         for i in tmp:
             if tmp[i] is not None:
+                print(i)
                 if i not in group:
                     group.create_dataset(i, data=np.array(tmp[i]))
-                else:
-                    group[i] = np.array(tmp[i])
+                #else:
+                #    group[i] = np.array(tmp[i])
         return fn
 
-    def am_subpannel(self, t0, tf, tsnap, gs0=None, save=False, fn=None, xlbl=True,
-                     ylbl=True, fig=None, fopt=None, figsize=None, dpi=300, gsopt=None,
-                     hdf5=None, sdir=None, lopt=None, mopt=None, ropt=None,
-                     legend_opt=None, prefix='', lbl0='a', tx=.98, ty=.94, topt=None,
-                     use_txt=True):
+    def am_subpanel(self, t0, tf, tsnap, gs0=None, save=False, fn=None, xlbl=True,
+                    ylbl=True, fig=None, fopt=None, figsize=None, dpi=300, gsopt=None,
+                    hdf5=None, sdir=None, lopt=None, mopt=None, ropt=None,
+                    legend_opt=None, prefix='', lbl0='a', tx=.98, ty=.94, topt=None,
+                    use_txt=True, nm=5):
         if fig is None and gs0 is None:
             _fopt = dict(dpi=dpi, figsize=figsize)
             if fopt:
@@ -1818,9 +1818,12 @@ class BLsim(object):
         if gsopt is not None:
             _gsopt.update(gsopt)
         if gs0 is not None:
-            gs = gridspec.GridSpecFromSubplotSpec(3, 4, subplot_spec=gs0, **_gsopt)
+            for i in ['top', 'bottom', 'left', 'right']:
+                if i in _gsopt:
+                    _gsopt.pop(i)
+            gs = mpl.gridspec.GridSpecFromSubplotSpec(4, 3, subplot_spec=gs0, **_gsopt)
         else:
-            gs = gridspec.GridSpec(3, 4, **_gsopt)
+            gs = mpl.gridspec.GridSpec(4, 3, **_gsopt)
         if sdir is None:
             sdir = ''
         if lopt is None:
@@ -1829,12 +1832,13 @@ class BLsim(object):
             mopt = dict()
         if ropt is None:
             ropt = dict()
-        ri = self.sim.rloc(1.02)
+        ri = self.rloc(1.02)
         if legend_opt is None:
             legend_opt = dict(handlelength=1, fontsize=8, handletextpad=.4,
                               columnspacing=.7)
-        if topt is None:
-            topt = dict()
+        _topt = dict(c='k', ha='right', va='top', fontsize=8)
+        if topt is not None:
+            _topt.update(topt)
         hdf5 = self.am_plot_data(t0, tf, fn=hdf5, sdir=sdir)
         _opt = dict(zerocent=True, cbopt=dict(orientation='horizontal'))
         if hasattr(lbl0, 'lower'):
@@ -1847,42 +1851,42 @@ class BLsim(object):
                 group = f.create_group(snap_key)
             else:
                 group = f[snap_key]
-            with self.loadfile(tsnap) as df:
-                for i in ['Rpseudo', 'd_vortensity']:
-                    if i not in group:
-                        group.create_dataset(i, data=df[i])
-                axs = []
-                caxs = []
-                # left/d_vortensity-stripe panel
-                caxs.append(plt.subplot(gs[0, 0]))
-                axs.append(plt.subplot(gs[0, 1]))
-                cbl = r'$\omega/\Sigma-\left<\omega/\Sigma\right>_0$' if xlbl else False
-                opt = _opt.copy()
-                opt.update(dict(ax=axs[-1], cax=cax[-1], cbl=cbl))
-                opt.update(lopt)
-                df.stripe(group['d_vortensity'][()], **opt)
-                # mid/Rpseudo-stripe panel
-                caxs.append(plt.subplot(gs[1:, 0]))
-                axs.append(plt.subplot(gs[1, 1]))
-                cbl = helpers.labeler('Rpseudo') if xlbl else False
-                opt = _opt.copy()
-                opt.update(dict(ax=axs[-1], cax=cax[-1], cbl=cbl))
-                opt.update(mopt)
-                df.stripe(group['Rpseudo'][()], **opt)
-                clim = plt.gci().get_clim()
-                # right/Rpseudo-map panel
-                axs.append(plt.subplot(gs[1, 2]))
-                opt = _opt.copy()
-                opt.update(dict(ax=axs[-1], cb=False, vmin=clim[0], vmax=clim[1]))
-                opt.update(mopt)
-                df.map(group['Rpseudo'][()], **opt)
-                # cleanup
-                for cax in caxs:
-                    cax.xaxis.set_label_position('top')
-                    cax.xaxis.set_ticks_position('top')
+            df = self.loadfile('cons', tsnap)
+            for i in ['Rpseudo', 'd_vortensity_0']:
+                if i not in group:
+                    group.create_dataset(i, data=df[i])
+            axs = []
+            caxs = []
+            # left/d_vortensity-stripe panel
+            caxs.append(plt.subplot(gs[0, 0]))
+            axs.append(plt.subplot(gs[1, 0]))
+            cbl = r'$\omega/\Sigma-\left<\omega/\Sigma\right>_0$' if xlbl else False
+            opt = _opt.copy()
+            opt.update(dict(ax=axs[-1], cax=caxs[-1], cbl=cbl, vmax='95%', r_cut=1.02))
+            opt.update(lopt)
+            df.stripe(group['d_vortensity_0'][()], **opt)
+            # mid/Rpseudo-stripe panel
+            caxs.append(plt.subplot(gs[0, 1:]))
+            axs.append(plt.subplot(gs[1, 1]))
+            cbl = helpers.labeler('Rpseudo') if xlbl else False
+            opt = _opt.copy()
+            opt.update(dict(ax=axs[-1], cax=caxs[-1], cbl=cbl, vmax='99%', r_cut=1.0))
+            opt.update(mopt)
+            df.stripe(group['Rpseudo'][()], **opt)
+            clim = plt.gci().get_clim()
+            # right/Rpseudo-map panel
+            axs.append(plt.subplot(gs[1, 2]))
+            opt = _opt.copy()
+            opt.update(dict(ax=axs[-1], cb=False, vmin=clim[0], vmax=clim[1], minmax=False))
+            opt.update(ropt)
+            df.plot2d(group['Rpseudo'][()], **opt)
+            # cleanup
+            for cax in caxs:
+                cax.xaxis.set_label_position('top')
+                cax.xaxis.set_ticks_position('top')
             # CS, CA, CL plot
             group = f['{:04d}_{:04d}/opt3'.format(t0, tf)]
-            axs.append(plt.subplot(gs[:, 2]))
+            axs.append(plt.subplot(gs[2, :]))
             cs, ca, cl = group['cs'][()], group['ca'][()], group['cl'][()]
             y = np.array([cs, ca, cl])[:, ri:-5]
             yl, yu = y.min(), y.max()
@@ -1897,9 +1901,9 @@ class BLsim(object):
             plt.ylim(*ylim)
             # CSm plot
             group = f['{:04d}_{:04d}'.format(t0, tf)]
-            modes = group['modes'][()]
+            modes = [i for i in group['modes'][()] if i]
             csm = group['csm'][()]
-            axs.append(plt.subplot(gs[:, 3], sharex=axs[-1]))
+            axs.append(plt.subplot(gs[3, :], sharex=axs[-1]))
             plt.plot(self.rc, cs, 'k-', label='$C_S$')
             ym = []
             for m in modes[:nm]:
@@ -1910,6 +1914,7 @@ class BLsim(object):
             plt.legend(loc=4, ncol=nm + 2, **lopt)
             plt.axhline(0, c='.5', ls=':', lw=1)
             plt.axvline(1, c='.5', ls=':', lw=1)
+            plt.xlim(self.r[0], self.r[-1])
             # set ylim
             yl = np.minimum(csm[1:].sum(axis=0), cs)
             yl = np.minimum(yl, ym.min(axis=0))[ri:-5].min()
@@ -1922,7 +1927,7 @@ class BLsim(object):
             if xlbl:
                 plt.xlabel('$r$')
             if ylbl:
-                plt.ylabel('$C_S' + lntxt)
+                plt.ylabel('$C_S$')
             # cleanup
             for i, ax in enumerate(axs):
                 ax.xaxis.set_ticks_position('both')
@@ -1931,7 +1936,7 @@ class BLsim(object):
                 ax.set_axisbelow(False)
                 if use_txt:
                     lbl = prefix + chr(lbl0 + i) + ')'
-                    ax.text(tx, ty, lbl, transform=ax.transAxes, **topt)
+                    ax.text(tx, ty, lbl, transform=ax.transAxes, **_topt)
         if save or fn:
             plt.savefig(fn)
             plt.close()

@@ -1633,11 +1633,11 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
     if sims in [1 , 2]:
         _sims = [dict(name='M07.FR.r.a', ts=[[100, 200, 125], [200, 300, 225], [550, 600, 575]]),
                  dict(name='M09.FR.r.lc.a', ts=[[100, 200, 150], [250, 350, 275], [400, 500, 450]]),
-                 dict(name='M12.FR.mix.a', ts=[[100, 200, 150], [250, 350, 300], [500, 600, 550]]),
+                 dict(name='M12.FR.mix.lc.a', ts=[[100, 200, 150], [250, 350, 300], [500, 600, 550]]),
                  dict(name='M15.FR.r.a', ts=[[100, 200, 150], [300, 400, 350], [500, 600, 550]]),
                  ]
         if save and not fn:
-            fn = 'am_subpanels_{}.pdf'.format(sims)
+            fn = 'am_subpanels_{}.png'.format(sims)
         if sims == 1:
             sims = _sims[0:2]
         elif sims == 2:
@@ -1648,7 +1648,7 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
     if save or fn:
         save = True
         if not fn:
-            fn = 'am_subpanels.pdf'
+            fn = 'am_subpanels.png'
         if sdir:
             sdir = os.path.expanduser(sdir)
             if not os.path.isdir(sdir):
@@ -1676,13 +1676,13 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
         _gsopt.update(gsopt)
     gs = mpl.gridspec.GridSpec(nt, nsim, **_gsopt)
     for col, args in enumerate(sims):
-        sim = blc.BLsim(args['name'])
+        sim = BLsim(args['name'])
         opt = args.get('opt', dict())
         if type(opt) == dict:
             opt = [opt] * nt
         for row in range(nt):
             ts = args['ts'][row]
-            sim.am_subpannel(*ts, gs0=gs[row, col], save=False, ylbl=(col==0),
+            sim.am_subpanel(*ts, gs0=gs[row, col], save=False, ylbl=(col==0),
                              xlbl=(row==nt-1), hdf5=args.get('hdf5'), **opt[row])
     if save:
         plt.savefig(fn)
