@@ -1684,7 +1684,7 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
             ts = args['ts'][row]
             opt = dict(gs0=gs[row, col], save=False, ylbl=(col==0), xlbl=(row==nt-1),
                        hdf5=args.get('hdf5'), cbl=row==0, lbl0=row*5,
-                       prefix=chr(ord(col + 65)))
+                       prefix=chr(col + 65))
             sim.am_subpanel(*ts, **opt, **ropt[row])
     if save:
         plt.savefig(fn)
