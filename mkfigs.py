@@ -179,6 +179,8 @@ class FigMaker:
             except Exception as e:
                 print('!!!!  Plotting {} failed!  !!!!'.format(attr))
                 print(e)
+                import traceback
+                traceback.print_tb(e.__traceback__)
             gc.collect()
 
     @property
