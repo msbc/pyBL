@@ -1692,6 +1692,50 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
     return
 
 
+def am_terms(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sdir=None, txt=True, lbl=True, spacer=True, rmin=None, rmax=None, nm=5, lopt=None, lnorm=-3, popt=None, overwrite=True, gsopt=None):
+    if sims is None:
+        sims = [dict(name='M06.HR.r.lc.a', ts=[200, 300]),
+                dict(name='M09.FR.r.lc.a', ts=[400, 500]),
+                dict(name='M12.FR.mix.lc.a', ts=[500, 600]),
+                ]
+    nsim = len(sims)
+    if not lnorm:
+        lnorm = 0
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'am_terms.pdf'
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if parse_not_overwrite(overwrite, fn):
+        return None
+    if lopt is None:
+        lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
+    if figsize is None:
+        figsize = np.array([8.5, 11]) * 2
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt:
+        _fopt.update(fopt)
+    assert np.all([len(s['ts']) == 2 for s in sims])
+    fig = plt.figure(**_fopt)
+    _gsopt = dict(top=.98, bottom=.02, left=.05, right=.99, hspace=0.0, wspace=0.0)
+    if gsopt is not None:
+        _gsopt.update(gsopt)
+    gs = mpl.gridspec.GridSpec(nsim, 1, **_gsopt)
+    for row, args in enumerate(sims):
+        sim = BLsim(args['name'])
+        ax = plt.subplot(gs[row])
+        opt = dict(ax=ax, save=False, xlbl=(row==nsim-1), hdf5=args.get('hdf5'), lbl0=row)
+        sim.am_terms(*args['ts'], **opt)
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
+
+
 def mode_hist(sims=None, fn=None, save=None, data=None, ll=True, overwrite=True):
     if fn is None and save:
         fn = 'mode_hist.pdf'

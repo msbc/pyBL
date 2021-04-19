@@ -302,6 +302,9 @@ class Paper2(FigMaker):
 
     def _am_plot_data(self, overwrite=False):
     #def am_plot_data(self, overwrite=True):
+        _sims['m6'].am_plot_data(100, 200, overwrite=overwrite)
+        _sims['m6'].am_plot_data(200, 300, overwrite=overwrite)
+        _sims['m6'].am_plot_data(550, 600, overwrite=overwrite)
         _sims['m7'].am_plot_data(100, 200, overwrite=overwrite)
         _sims['m7'].am_plot_data(200, 300, overwrite=overwrite)
         _sims['m7'].am_plot_data(550, 600, overwrite=overwrite)
@@ -319,8 +322,11 @@ class Paper2(FigMaker):
         blc.am_subpanels(1, save=True, overwrite=_overwrite)
 
     def am_subpanels_2(self):
-        _sims['m15'].am_plot_data(100, 200, overwrite=True)
         blc.am_subpanels(2, save=True, overwrite=_overwrite)
+
+    def am_terms(self):
+        self._am_plot_data()
+        blc.am_terms(save=True, overwrite=_overwrite)
 
 
 print('Done with initialization')

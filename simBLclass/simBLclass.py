@@ -1943,6 +1943,66 @@ class BLsim(object):
             plt.close()
         return
 
+    def am_terms(self, t0, tf, save=False, fn=None, xlbl=True, ax=None, fig=None,
+                 fopt=None, figsize=None, dpi=300, hdf5=None, sdir=None, legend_opt=None,
+                 prefix='', lbl0='a', tx=.98, ty=.94, topt=None, use_txt=True):
+        if fig is None and ax is None:
+            _fopt = dict(dpi=dpi, figsize=figsize)
+            if fopt:
+                _fopt.update(fopt)
+            fig = plt.figure(**_fopt)
+        if ax is not None:
+            plt.sca(ax)
+        if sdir is None:
+            sdir = ''
+        ri = self.rloc(1.0) - 1
+        if legend_opt is None:
+            legend_opt = dict(handlelength=1, fontsize=8, handletextpad=.4,
+                              columnspacing=.7)
+        _topt = dict(c='k', ha='right', va='top', fontsize=8)
+        if topt is not None:
+            _topt.update(topt)
+        hdf5 = self.am_plot_data(t0, tf, fn=hdf5, sdir=sdir)
+        if hasattr(lbl0, 'lower'):
+            lbl0 = ord(lbl0)
+        else:
+            lbl0 += ord('a')
+        with h5py.File(hdf5, 'a') as f:
+            group = f['{:04d}_{:04d}/opt2'.format(t0, tf)]
+            y = [group[i][()] for i in ['ycs', 'ydv2', 'yMdot', 'ydp']]
+        y.append(y[0] + y[1])
+        y = np.array(y)
+        yl, yu = y[:, ri:-5].min(), y[:, ri:-5].max()
+        dy = (yu - yl) * .05
+        ylim = np.array((yl - dy, max(yu + dy, 2.5 * dy)))
+        x = self.rc
+        plt.plot(x, y[0], label=r'$\partial_r C_{\rm S}$', lw=1)
+        plt.plot(x, y[1], label=r'$\partial_t v_\phi$', lw=1)
+        plt.plot(x, y[2], label=r'$\dot{M}\partial_r\ell$', c='k')
+        plt.plot(x, y[3], label=r'$\partial_t\partial_rP$', ls=':', lw=1)
+        plt.plot(x, y[4], label=r'$\partial_r C_{\rm S}\! +\! \partial_t v_\phi$', c='.5',
+                 lw=1)
+        plt.legend(loc=4, ncol=3, **legend_opt)
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
+        plt.ylim(*ylim)
+        plt.xlim(1, self.r[-1])
+        if xlbl:
+            plt.xlabel('$r$')
+        # cleanup
+        ax = plt.gca()
+        ax.xaxis.set_ticks_position('both')
+        ax.yaxis.set_ticks_position('both')
+        ax.tick_params(axis='both', which='both', direction='in')
+        ax.set_axisbelow(False)
+        if use_txt:
+            lbl = prefix + chr(lbl0) + ')'
+            ax.text(tx, ty, lbl, transform=ax.transAxes, **_topt)
+        if save or fn:
+            plt.savefig(fn)
+            plt.close()
+        return
+
     def paper_flux_plot(self, t0, tf, flux_data=None, figsize=None, save=False, fn=None,
                         ext='pdf', lopt=None, sdir='', overwrite=True, option=2,
                         tnorm=tau, dpi=300, nm=5, plt_ydp=False, axs=None, use_txt=True,
