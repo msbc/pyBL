@@ -145,7 +145,6 @@ class BLholder(blc.DataContainer):
         if save:
             plt.savefig(fn)
 
-bl_stats = BLholder()
 
 class FigMaker:
     aliases = {}
@@ -336,6 +335,8 @@ Paper2()(_figs)
 
 # old figs
 if 0:
+    bl_stats = BLholder()
+
     # fig 1
     if _all or 1 in _figs:
         blc.multi_stripe(save=True, overwrite=_overwrite)
