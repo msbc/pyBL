@@ -1805,7 +1805,7 @@ class BLsim(object):
 
     def am_subpanel(self, t0, tf, tsnap, gs0=None, save=False, fn=None, xlbl=True,
                     ylbl=True, fig=None, fopt=None, figsize=None, dpi=300, gsopt=None,
-                    hdf5=None, sdir=None, lopt=None, mopt=None, ropt=None,
+                    hdf5=None, sdir=None, lopt=None, mopt=None, ropt=None, cbl=None,
                     legend_opt=None, prefix='', lbl0='a', tx=.98, ty=.94, topt=None,
                     use_txt=True, nm=5):
         if fig is None and gs0 is None:
@@ -1860,7 +1860,8 @@ class BLsim(object):
             # left/d_vortensity-stripe panel
             caxs.append(plt.subplot(gs[0, 0]))
             axs.append(plt.subplot(gs[1, 0]))
-            cbl = r'$\omega/\Sigma-\left<\omega/\Sigma\right>_0$' if xlbl else False
+            if cbl is None or cbl is True:
+                cbl = r'$\omega/\Sigma-\left<\omega/\Sigma\right>_0$'
             opt = _opt.copy()
             opt.update(dict(ax=axs[-1], cax=caxs[-1], cbl=cbl, vmax='95%', r_cut=1.02))
             opt.update(lopt)

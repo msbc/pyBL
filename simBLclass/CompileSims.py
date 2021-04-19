@@ -1677,13 +1677,15 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
     gs = mpl.gridspec.GridSpec(nt, nsim, **_gsopt)
     for col, args in enumerate(sims):
         sim = BLsim(args['name'])
-        opt = args.get('opt', dict())
-        if type(opt) == dict:
-            opt = [opt] * nt
+        ropt = args.get('opt', dict())
+        if type(ropt) == dict:
+            ropt = [ropt] * nt
         for row in range(nt):
             ts = args['ts'][row]
-            sim.am_subpanel(*ts, gs0=gs[row, col], save=False, ylbl=(col==0),
-                             xlbl=(row==nt-1), hdf5=args.get('hdf5'), **opt[row])
+            opt = dict(gs0=gs[row, col], save=False, ylbl=(col==0), xlbl=(row==nt-1),
+                       hdf5=args.get('hdf5'), cbl=row==0, lbl0=row*5,
+                       prefix=chr(ord(col + 65)))
+            sim.am_subpanel(*ts, **opt, **ropt[row])
     if save:
         plt.savefig(fn)
         plt.close()
