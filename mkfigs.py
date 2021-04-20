@@ -85,12 +85,17 @@ _sims = SimHolder()
 
 
 class BLholder(blc.DataContainer):
-    def __init__(self, fn='bl_stats.npz', sim_list=sims):
+    def __init__(self, fn=None, sim_list=sims):
+        if fn is None:
+            fn = [i + 'bl_stats.npz' for i in ['', '../']]
+            fn = [i for i in fn if os.path.isfile(i)][0]
         if hasattr(sim_list, 'lower'):
-            if os.path.isfile(sim_list):
-                with open(sim_list) as f:
-                    sim_list = [l.split('#')[0].strip() for l in f.readlines()]
-                sim_list = [s for s in sim_list if s]
+            if not os.path.isfile(sim_list):
+                sim_list = '../' + os.path.isfile(sim_list)
+            assert os.path.isfile(sim_list)
+            with open(sim_list) as f:
+                sim_list = [l.split('#')[0].strip() for l in f.readlines()]
+            sim_list = [s for s in sim_list if s]
         self.sim_list = sim_list
         super().__init__(fn=fn, allow_pickle=True)
 
@@ -329,6 +334,24 @@ class Paper2(FigMaker):
 
     def mdot_cs(self):
         blc.Mdot_CS(save=True, overwrite=_overwrite)
+
+    def bl_properties(self):
+        fn = 'bl_properties.pdf'
+        if _overwrite and os.path.isfile(fn):
+            return
+        bl_stats = BLholder()
+        plt.figure(figsize=[4, 6], dpi=300)
+        gsopt = dict(top=.95, bottom=.1, left=.2, right=.98, hspace=0, wspace=0.1)
+        gs = mpl.gridspec.GridSpec(3, 1, **gsopt)
+        opt = dict(save=False, overwrite=_overwrite)
+        for i, var in enumerate(['bl', 'plateau', 'd1omega']):
+            ax = plt.subplot(gs[i])
+            bl_stats.plot_key(var, ax=ax, **opt)
+            if i != 2:
+                plt.setp(ax.get_xticklabels(), visible=False)
+                plt.xlabel('')
+        plt.savefig(fn)
+        plt.close()
 
 
 print('Done with initialization')
