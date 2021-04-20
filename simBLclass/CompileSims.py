@@ -1715,21 +1715,23 @@ def am_terms(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, s
     if lopt is None:
         lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
     if figsize is None:
-        figsize = np.array([8.5, 11]) * 2
+        figsize = np.array([4, 8])
     _fopt = dict(dpi=dpi, figsize=figsize)
     if fopt:
         _fopt.update(fopt)
     assert np.all([len(s['ts']) == 2 for s in sims])
     fig = plt.figure(**_fopt)
-    _gsopt = dict(top=.98, bottom=.02, left=.05, right=.99, hspace=0.0, wspace=0.0)
+    _gsopt = dict(top=.98, bottom=.05, left=.1, right=.97, hspace=0.0, wspace=0.0)
     if gsopt is not None:
         _gsopt.update(gsopt)
     gs = mpl.gridspec.GridSpec(nsim, 1, **_gsopt)
     for row, args in enumerate(sims):
         sim = BLsim(args['name'])
         ax = plt.subplot(gs[row])
-        opt = dict(ax=ax, save=False, xlbl=(row==nsim-1), hdf5=args.get('hdf5'), lbl0=row)
+        opt = dict(ax=ax, save=False, xlbl=(row==nsim-1), hdf5=args.get('hdf5'),
+                   lbl0=row, legend=row==0)
         sim.am_terms(*args['ts'], **opt)
+        plt.title(sim.name + r' $t/2\pi={:.0f}-{:.0f}$'.format(*args['ts']), y=.87)
     if save:
         plt.savefig(fn)
         plt.close()

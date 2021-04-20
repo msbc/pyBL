@@ -324,7 +324,7 @@ class Paper2(FigMaker):
         blc.am_subpanels(2, save=True, overwrite=_overwrite)
 
     def am_terms(self):
-        self._am_plot_data()
+        #self._am_plot_data()
         blc.am_terms(save=True, overwrite=_overwrite)
 
 

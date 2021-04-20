@@ -1945,7 +1945,8 @@ class BLsim(object):
 
     def am_terms(self, t0, tf, save=False, fn=None, xlbl=True, ax=None, fig=None,
                  fopt=None, figsize=None, dpi=300, hdf5=None, sdir=None, legend_opt=None,
-                 prefix='', lbl0='a', tx=.98, ty=.94, topt=None, use_txt=True):
+                 prefix='', lbl0='a', tx=.98, ty=.94, topt=None, use_txt=True,
+                 legend=True):
         if fig is None and ax is None:
             _fopt = dict(dpi=dpi, figsize=figsize)
             if fopt:
@@ -1955,7 +1956,7 @@ class BLsim(object):
             plt.sca(ax)
         if sdir is None:
             sdir = ''
-        ri = self.rloc(1.0) - 1
+        ri = self.rloc(1.01)
         if legend_opt is None:
             legend_opt = dict(handlelength=1, fontsize=8, handletextpad=.4,
                               columnspacing=.7)
@@ -1969,10 +1970,11 @@ class BLsim(object):
             lbl0 += ord('a')
         with h5py.File(hdf5, 'a') as f:
             group = f['{:04d}_{:04d}/opt2'.format(t0, tf)]
-            y = [group[i][()] for i in ['ycs', 'ydv2', 'yMdot', 'ydp']]
+            y = [group[i][()] for i in ['ycs', 'ydv2', 'ymdot', 'ydp']]
         y.append(y[0] + y[1])
         y = np.array(y)
-        yl, yu = y[:, ri:-5].min(), y[:, ri:-5].max()
+        loc = (slice(None), slice(ri, -20))
+        yl, yu = y[loc].min(), y[loc].max()
         dy = (yu - yl) * .05
         ylim = np.array((yl - dy, max(yu + dy, 2.5 * dy)))
         x = self.rc
@@ -1982,19 +1984,22 @@ class BLsim(object):
         plt.plot(x, y[3], label=r'$\partial_t\partial_rP$', ls=':', lw=1)
         plt.plot(x, y[4], label=r'$\partial_r C_{\rm S}\! +\! \partial_t v_\phi$', c='.5',
                  lw=1)
-        plt.legend(loc=4, ncol=3, **legend_opt)
+        if legend:
+            plt.legend(loc=4, ncol=3, **legend_opt)
         plt.axhline(0, c='.5', ls=':', lw=1)
         plt.axvline(1, c='.5', ls=':', lw=1)
         plt.ylim(*ylim)
         plt.xlim(1, self.r[-1])
         if xlbl:
             plt.xlabel('$r$')
+        else:
+            plt.setp(ax.get_xticklabels(), visible=False)
         # cleanup
         ax = plt.gca()
         ax.xaxis.set_ticks_position('both')
         ax.yaxis.set_ticks_position('both')
         ax.tick_params(axis='both', which='both', direction='in')
-        ax.set_axisbelow(False)
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
         if use_txt:
             lbl = prefix + chr(lbl0) + ')'
             ax.text(tx, ty, lbl, transform=ax.transAxes, **_topt)
