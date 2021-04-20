@@ -1759,12 +1759,12 @@ def Mdot_CS(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sd
     if lopt is None:
         lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
     if figsize is None:
-        figsize = np.array([4, 8])
+        figsize = np.array([4, 6])
     _fopt = dict(dpi=dpi, figsize=figsize)
     if fopt:
         _fopt.update(fopt)
     fig = plt.figure(**_fopt)
-    _gsopt = dict(top=.98, bottom=.05, left=.1, right=.97, hspace=0.1, wspace=0.1)
+    _gsopt = dict(top=.95, bottom=.1, left=.2, right=.98, hspace=0.2, wspace=0.1)
     if gsopt is not None:
         _gsopt.update(gsopt)
     gs = mpl.gridspec.GridSpec(nsim, 1, **_gsopt)
