@@ -1627,7 +1627,8 @@ def AM_plot(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sd
     return
 
 
-def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sdir=None, txt=True, lbl=True, spacer=True, rmin=None, rmax=None, nm=5, lopt=None, lnorm=-3, popt=None, overwrite=True, gsopt=None):
+def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
+                 sdir=None, lopt=None, lnorm=-3, popt=None, overwrite=True, gsopt=None):
     if sims is None:
         sims = 1
     if sims in [1 , 2]:
@@ -1692,7 +1693,8 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
     return
 
 
-def am_terms(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sdir=None, txt=True, lbl=True, spacer=True, rmin=None, rmax=None, nm=5, lopt=None, lnorm=-3, popt=None, overwrite=True, gsopt=None):
+def am_terms(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sdir=None,
+             lopt=None, lnorm=-3, overwrite=True, gsopt=None):
     if sims is None:
         sims = [dict(name='M06.HR.r.lc.a', ts=[200, 300]),
                 dict(name='M09.FR.r.lc.a', ts=[400, 500]),
@@ -1732,6 +1734,54 @@ def am_terms(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, s
                    lbl0=row, legend=row==0)
         sim.am_terms(*args['ts'], **opt)
         plt.title(sim.name + r' $t/2\pi={:.0f}-{:.0f}$'.format(*args['ts']), y=.87)
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
+
+
+def Mdot_CS(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sdir=None,
+            txt=True, lopt=None, overwrite=True, gsopt=None, tx=.98, ty=.94, topt=None):
+    if sims is None:
+        sims = ['M09.FR.r.lc.a', 'M12.FR.mix.lc.a']
+    nsim = len(sims)
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'mdot_cs.pdf'
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if parse_not_overwrite(overwrite, fn):
+        return None
+    if lopt is None:
+        lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
+    if figsize is None:
+        figsize = np.array([4, 8])
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt:
+        _fopt.update(fopt)
+    fig = plt.figure(**_fopt)
+    _gsopt = dict(top=.98, bottom=.05, left=.1, right=.97, hspace=0.1, wspace=0.1)
+    if gsopt is not None:
+        _gsopt.update(gsopt)
+    gs = mpl.gridspec.GridSpec(nsim, 1, **_gsopt)
+    _topt = dict(c='k', ha='right', va='top', fontsize=8)
+    if topt is not None:
+        _topt.update(topt)
+    for row, sim in enumerate(sims):
+        if hasattr(sim, 'lower'):
+            sim = BLsim(sim)
+        ax = plt.subplot(gs[row])
+        sim.Mdot_CS(ax=ax, legend=not row)
+        if not row:
+            plt.xlabel('')
+        plt.title(sim.name)
+        if txt:
+            lbl = chr(ord('a') + row) + ')'
+            ax.text(tx, ty, lbl, transform=ax.transAxes, **_topt)
     if save:
         plt.savefig(fn)
         plt.close()

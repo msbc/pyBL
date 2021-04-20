@@ -5178,7 +5178,7 @@ class BLsim(object):
         return self.mach, out
 
     def Mdot_CS(self, dt0=10, coef=.5, r=1, overwrite=True, save=False, fn=None, sdir='',
-                ext='pdf', hline=None):
+                ext='pdf', hline=None, ax=None, legend=True):
         if save or fn:
             save = True
             if fn is None:
@@ -5193,7 +5193,12 @@ class BLsim(object):
         rl = self.rloc(r)
         CS = fd['CS'][:, rl].cumsum()
         md = fd['Mdot'][:, rl].cumsum()
-        dt = np.array([1, 5, 10, 50, 100])
+        if ax is None:
+            top_only = False
+            dt = np.array([1, 5, 10, 50, 100])
+        else:
+            top_only = True
+            dt = np.array([5, 10])
         ns = np.round(fd['t'][-1] / (tau * dt)).astype(int)
         out = dict()
         for n, nbin in enumerate(ns):
@@ -5202,16 +5207,20 @@ class BLsim(object):
                     in range(nbin)]
             data = np.array(data).T / np.diff(bins)[None, :]
             out[dt[n]] = data[::-1]
-        plt.figure(figsize=(8.5, 11), dpi=300)
-        gs = mpl.gridspec.GridSpec(2, 2, width_ratios=[1, .05],
-                                   top=.95, bottom=.09, left=.13, right=.85, wspace=.01,
-                                   hspace=.2)
-        ax = plt.subplot(gs[0, 0])
+        if ax is None:
+            plt.figure(figsize=(8.5, 11), dpi=300)
+            gs = mpl.gridspec.GridSpec(2, 2, width_ratios=[1, .05],
+                                       top=.95, bottom=.09, left=.13, right=.85, wspace=.01,
+                                       hspace=.2)
+            ax = plt.subplot(gs[0, 0])
+        else:
+            plt.sca(ax)
         for i in out:
             plt.plot(*out[i], marker='o', linewidth=0)
         plt.xscale('symlog', linthreshx=1e-6)
         plt.yscale('symlog', linthreshy=1e-6)
-        plt.legend(list(map(str, dt)))
+        if legend:
+            plt.legend(list(map(str, dt)))
         x_ = 10 ** -np.linspace(1, 6, 100)
         x = np.array(list(-x_) + list(np.linspace(-1e-6, 1e-6, 100)) + list(x_[::-1]))
         xl = plt.xlim()
@@ -5228,6 +5237,8 @@ class BLsim(object):
                 hline = -1e-2 * self.mach**-2.6
             for h in np.atleast_1d(hline):
                 plt.axhline(h, c='k', lw=1, ls=':')
+        if top_only:
+            return
 
         # 2nd panel
         ax = plt.subplot(gs[1,0])
