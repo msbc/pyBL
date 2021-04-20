@@ -327,6 +327,9 @@ class Paper2(FigMaker):
         #self._am_plot_data()
         blc.am_terms(save=True, overwrite=_overwrite)
 
+    def mdot_cs(self):
+        blc.Mdot_CS(save=True, overwrite=_overwrite)
+
 
 print('Done with initialization')
 
