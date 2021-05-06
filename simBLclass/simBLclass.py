@@ -1749,7 +1749,7 @@ class BLsim(object):
             print('Reverting to old flux data for ' + self.name)
             flux_data = self.time_fluxes(options=3, csm=True)
             times = flux_data['t']
-            i0, il = np.searchsorted(times, [t0, tf])
+            i0, il = np.searchsorted(times / tnorm , [t0, tf])
             if il < times.size - 1:
                 il += 1
             loc = (slice(i0, il), slice(None))
