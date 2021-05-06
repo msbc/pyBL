@@ -91,7 +91,7 @@ class BLholder(blc.DataContainer):
             fn = [i for i in fn if os.path.isfile(i)][0]
         if hasattr(sim_list, 'lower'):
             if not os.path.isfile(sim_list):
-                sim_list = '../' + os.path.isfile(sim_list)
+                sim_list = '../' + sim_list
             assert os.path.isfile(sim_list)
             with open(sim_list) as f:
                 sim_list = [l.split('#')[0].strip() for l in f.readlines()]
@@ -112,9 +112,13 @@ class BLholder(blc.DataContainer):
             self.data[key] = data.data
 
     def plot_key(self, key, fn=None, diff=None, save=False, overwrite=True, ext='pdf',
-                 figsize=None, dpi=300, fig=None, ax=None):
+                 figsize=None, dpi=300, fig=None, ax=None, legend=True, log=True,
+                 pl=None, lbl=None):
         data = self.data
-        name = dict(bl=r'$\delta_{\rm bl}$', plateau=r'$\delta_{\rm plateau}$').get(key, key)
+        name = dict(bl=r'$\delta_{\rm bl}\,\left[R_\star\right]$',
+                    plateau=r'$\delta_{\rm plateau}\,\left[R_\star\right]$',
+                    d1omega=r'$\Omega_K-\Omega\,\left[{\rm cycles}/{\rm orbit}\right]$'
+                    ).get(key, key)
         if fn:
             save = True
         if save and fn is None:
@@ -142,9 +146,33 @@ class BLholder(blc.DataContainer):
         plt.scatter(machLR, yLR, label='LR')
         plt.scatter(machFR, yFR, label='FR')
         plt.scatter(machHR, yHR, label='HR')
-        plt.yscale('log')
-        plt.xscale('log')
-        plt.legend()
+        if legend:
+            plt.legend(loc='lower left')
+        if pl is not None:
+            xlim = np.array(plt.xlim())
+            ylim = np.array(plt.ylim())
+            a, b = pl
+            if a is None:
+                if log:
+                    a = np.sqrt(ylim.prod()) / np.sqrt(np.prod(xlim**b))
+                else:
+                    a = np.mean(ylim) / np.mean(xlim**b)
+                print("coef", a)
+            x = np.linspace(xlim[0], xlim[1], 100)
+            y = a * x**b
+            plt.plot(x, y, c='.5', lw=1, ls=':', zorder=-1)
+            plt.xlim(*xlim)
+            plt.ylim(*ylim)
+        ax.yaxis.set_ticks_position('both')
+        ax.xaxis.set_ticks_position('both')
+        ax.tick_params(axis='both', which='both', direction='in')
+        if log:
+            plt.yscale('log')
+            plt.xscale('log')
+        if lbl:
+            lbl = lbl + ')'
+            topt = dict(c='k', ha='right', va='top', fontsize=8)
+            ax.text(.98, .94, lbl, transform=ax.transAxes, **topt)
         plt.xlabel('$\mathcal{M}$')
         plt.ylabel(name)
         if save:
@@ -337,16 +365,17 @@ class Paper2(FigMaker):
 
     def bl_properties(self):
         fn = 'bl_properties.pdf'
-        if _overwrite and os.path.isfile(fn):
+        if not _overwrite and os.path.isfile(fn):
             return
         bl_stats = BLholder()
         plt.figure(figsize=[4, 6], dpi=300)
         gsopt = dict(top=.95, bottom=.1, left=.2, right=.98, hspace=0, wspace=0.1)
         gs = mpl.gridspec.GridSpec(3, 1, **gsopt)
-        opt = dict(save=False, overwrite=_overwrite)
         for i, var in enumerate(['bl', 'd1omega', 'plateau']):
             ax = plt.subplot(gs[i])
-            bl_stats.plot_key(var, ax=ax, **opt)
+            opt = dict(ax=ax, save=False, overwrite=_overwrite, legend=i==2,
+                       lbl='abc'[i], pl=[(None, -2), (None, -1), (None, -2./3.)][i])
+            bl_stats.plot_key(var, **opt)
             if i != 2:
                 plt.setp(ax.get_xticklabels(), visible=False)
                 plt.xlabel('')
