@@ -344,7 +344,7 @@ class Paper2(FigMaker):
         gsopt = dict(top=.95, bottom=.1, left=.2, right=.98, hspace=0, wspace=0.1)
         gs = mpl.gridspec.GridSpec(3, 1, **gsopt)
         opt = dict(save=False, overwrite=_overwrite)
-        for i, var in enumerate(['bl', 'plateau', 'd1omega']):
+        for i, var in enumerate(['bl', 'd1omega', 'plateau']):
             ax = plt.subplot(gs[i])
             bl_stats.plot_key(var, ax=ax, **opt)
             if i != 2:
