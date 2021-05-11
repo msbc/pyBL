@@ -1672,18 +1672,23 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
     nt = len(sims[0]['ts'])
     assert np.all([len(s['ts']) == nt for s in sims])
     fig = plt.figure(**_fopt)
-    _gsopt = dict(top=.98, bottom=.02, left=.05, right=.99, hspace=0.1, wspace=0.1)
+    _gsopt = dict(top=.98, bottom=.02, left=.05, right=.99, hspace=0.1, wspace=0.1,
+                  height_ratios=[.1, 1] * nt)
     if gsopt is not None:
         _gsopt.update(gsopt)
-    gs = mpl.gridspec.GridSpec(nt, nsim, **_gsopt)
+    gs = mpl.gridspec.GridSpec(2 * nt, nsim, **_gsopt)
     for col, args in enumerate(sims):
         sim = BLsim(args['name'])
         ropt = args.get('opt', dict())
         if type(ropt) == dict:
             ropt = [ropt] * nt
         for row in range(nt):
+            tax = plt.subplot(gs[2 * row, :])
+            tax.axis('off')
             ts = args['ts'][row]
-            opt = dict(gs0=gs[row, col], save=False, ylbl=(col==0), xlbl=(row==nt-1),
+            title = sim.name + r' $t/2\pi={:d}-{:d}$'.format(*ts[:2])
+            tax.set_title(title, y=0, va='top')
+            opt = dict(gs0=gs[2*row+1, col], save=False, ylbl=(col==0), xlbl=(row==nt-1),
                        hdf5=args.get('hdf5'), cbl=row==0, lbl0=row*5,
                        prefix=chr(col + 65))
             sim.am_subpanel(*ts, **opt, **ropt[row])
