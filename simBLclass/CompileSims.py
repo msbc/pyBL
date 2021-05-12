@@ -1686,7 +1686,7 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
         if type(ropt) == dict:
             ropt = [ropt] * nt
         for row in range(nt):
-            tax = plt.subplot(gs[2 * row, :])
+            tax = plt.subplot(gs[2 * row, col])
             tax.axis('off')
             ts = args['ts'][row]
             title = sim.name + r' $t/2\pi={:d}-{:d}$'.format(*ts[:2])
