@@ -382,6 +382,9 @@ class Paper2(FigMaker):
         plt.savefig(fn)
         plt.close()
 
+    def CS_both(self):
+        blc.CS_both(save=True)
+
 
 print('Done with initialization')
 

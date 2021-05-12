@@ -387,18 +387,19 @@ class BLsim(object):
                 return None
         return fn
 
-    def load_flux_data(self, ll=True, overwrite=False, data=None):
+    def load_flux_data(self, ll=True, overwrite=False, data=None, option=None):
         if self._flux_data is not None:
             return self._flux_data
         fn = self._get_flux_fn(1, 2, 0)
         if fn:
-            out = FluxData(fn, self.rc, self)
+            out = FluxData(fn, self.rc, self, option=option)
         else:
             fn = self._get_flux_fn(1, 1, 0) or self._get_flux_fn(1, 0, 0)
             if fn:
                 out = npz_wrapper(np.load(fn), self.rc)
             else:
-                out = FluxData(self._get_flux_fn(1, 2, 0, check=False), self.rc, self)
+                out = FluxData(self._get_flux_fn(1, 2, 0, check=False), self.rc, self,
+                               option=option)
         self._flux_data = out
         return self._flux_data
 
@@ -5163,7 +5164,8 @@ class BLsim(object):
         return op
 
     def ratio_Mdot(self, r=1, dt=5, lim_coef=-1e-2, lim_pow=-2.6):
-        fd = self.load_flux_data()
+        self._flux_data = None
+        fd = self.load_flux_data(option=3)
         rl = self.rloc(r)
         CS = fd['CS'][:, rl].cumsum()
         md = fd['Mdot'][:, rl].cumsum()

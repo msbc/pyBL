@@ -376,7 +376,10 @@ def CS_eff_bin_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None,
 def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
     kwargs['fig'] = False
     if 'data' not in kwargs:
-        kwargs['data'] = '~/data/pleiades_data/bl/cs_eff.npz'
+        fn = ['cs_eff.npz']#, '~/data/pleiades_data/bl/cs_eff.npz']
+        fn = [os.path.expanduser(i) for i in fn]
+        fn = [i for i in fn if os.path.isfile(i)] + [None]
+        kwargs['data'] = fn[0]
     if 'ylim' not in kwargs:
         kwargs['ylim'] = [1e-1, None]
     if figsize is None:

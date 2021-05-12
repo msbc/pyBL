@@ -839,6 +839,8 @@ class npz_wrapper(object):
 
 class FluxData(object):
     def __init__(self, npz, rc, sim, ns=None, option=2, smoothing=None):
+        if option is None:
+            option = 2
         self.npz = npz
         self.rc = rc
         self.sim = sim
