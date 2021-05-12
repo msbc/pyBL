@@ -5178,7 +5178,7 @@ class BLsim(object):
         return self.mach, out
 
     def Mdot_CS(self, dt0=10, coef=.5, r=1, overwrite=True, save=False, fn=None, sdir='',
-                ext='pdf', hline=None, ax=None, legend=True):
+                ext='pdf', hline=None, ax=None, legend=True, option=3):
         if save or fn:
             save = True
             if fn is None:
@@ -5189,7 +5189,7 @@ class BLsim(object):
         if parse_not_overwrite(overwrite, fn):
             return
 
-        fd = self.load_flux_data()
+        fd = self.load_flux_data(option=option)
         rl = self.rloc(r)
         CS = fd['CS'][:, rl].cumsum()
         md = fd['Mdot'][:, rl].cumsum()
