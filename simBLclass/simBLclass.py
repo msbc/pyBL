@@ -1984,7 +1984,7 @@ class BLsim(object):
         plt.plot(x, y[2], label=r'$\dot{M}\partial_r\ell$', c='k')
         plt.plot(x, y[3], label=r'$\partial_t\partial_rP$', ls=':', lw=1)
         plt.plot(x, y[4], label=r'$\partial_r C_{\rm S}\! +\! \partial_t v_\phi$', c='r',
-                 lw=1, ls='-.')
+                lw=1, ls=':')
         if legend:
             plt.legend(loc=4, ncol=3, **legend_opt)
         plt.axhline(0, c='.5', ls=':', lw=1)

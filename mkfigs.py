@@ -286,7 +286,7 @@ class Paper1(FigMaker):
         blc.gen_dispersion_data(overwrite=_overwrite)
 
     def multi_dispersion(self):
-        blc.plot_dispersion_data(save=True, overwrite=_overwrite, skip_gen=True)
+        blc.plot_dispersion_data(save=True, overwrite=_overwrite, skip_gen=True, T=True)
 
     def res_modes(self, q=2):
         from matplotlib.colors import ListedColormap
@@ -388,8 +388,8 @@ class Paper2(FigMaker):
 
 print('Done with initialization')
 
-#Paper1()(_figs)
-Paper2()(_figs)
+Paper1()(_figs)
+#Paper2()(_figs)
 
 # old figs
 if 0:
