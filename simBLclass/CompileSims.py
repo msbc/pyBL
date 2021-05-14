@@ -444,7 +444,8 @@ def gen_dispersion_data(sims=None, fn=None, overwrite=False, skip_gen=False):
     return fn
 
 def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300, skip_gen=False,
-                         fopt=None, lopt=None, fn=None, sdir=None, overwrite=True):
+                         fopt=None, lopt=None, fn=None, sdir=None, overwrite=True,
+                         T=False):
     if save or fn:
         save = True
         if not fn:
@@ -496,10 +497,14 @@ def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300, skip_gen=
         golden = (1 + 5 ** 0.5) / 2
         sims = sorted(list(data.keys()))
         nsim = len(sims)
-        nc = int(np.round(np.sqrt(nsim / golden)))
-        nr = int(np.round(np.sqrt(nsim * golden)))
+        if T:
+            nr = int(np.round(np.sqrt(nsim / golden)))
+            nc = int(np.round(np.sqrt(nsim * golden)))
+        else:
+            nc = int(np.round(np.sqrt(nsim / golden)))
+            nr = int(np.round(np.sqrt(nsim * golden)))
         if figsize is None:
-            figsize = (7.5, 9.5)
+            figsize = (7.5, 9.5) if not T else (9.5, 7.5)
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
             fopt = {}
