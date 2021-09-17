@@ -510,7 +510,7 @@ def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300, skip_gen=
             fopt = {}
         _fopt.update(fopt)
         fig = plt.figure(**_fopt)
-        gs = mpl.gridspec.GridSpec(nr, nc, top=.99, bottom=.04, left=.07, right=.99,
+        gs = mpl.gridspec.GridSpec(nr, nc, top=.99, bottom=.07 if T else .04, left=.07, right=.99,
                                    wspace=0, hspace=0)
         axs = [[None] * nc] * nr
         cap = 1
