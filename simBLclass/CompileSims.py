@@ -1673,7 +1673,7 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
     if lopt is None:
         lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
     if figsize is None:
-        figsize = np.array([8.5, 11]) * 2
+        figsize = np.array([8.5, 11]) * 1.5
     _fopt = dict(dpi=dpi, figsize=figsize)
     if fopt:
         _fopt.update(fopt)
@@ -1694,10 +1694,10 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
             tax = plt.subplot(gs[2 * row, col])
             tax.axis('off')
             ts = args['ts'][row]
-            title = sim.name + r' $t/2\pi={:d}-{:d}$'.format(*ts[:2])
-            tax.set_title(title, y=0, va='top')
+            title = r'$\mathcal{M}={:d}\;t/2\pi={:d}-{:d}$'.format(sim.mach, *ts[:2])
+            tax.set_title(title, y=0, va='bottom', fontsize='large')
             opt = dict(gs0=gs[2*row+1, col], save=False, ylbl=(col==0), xlbl=(row==nt-1),
-                       hdf5=args.get('hdf5'), cbl=row==0, lbl0=row*5,
+                       hdf5=args.get('hdf5'), cbl0=row==0, cbl1=row==0, lbl0=row*5,
                        prefix=chr(col + 65))
             sim.am_subpanel(*ts, **opt, **ropt[row])
     if save:

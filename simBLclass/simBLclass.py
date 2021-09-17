@@ -1806,16 +1806,16 @@ class BLsim(object):
 
     def am_subpanel(self, t0, tf, tsnap, gs0=None, save=False, fn=None, xlbl=True,
                     ylbl=True, fig=None, fopt=None, figsize=None, dpi=300, gsopt=None,
-                    hdf5=None, sdir=None, lopt=None, mopt=None, ropt=None, cbl=None,
+                    hdf5=None, sdir=None, lopt=None, mopt=None, ropt=None, cbl0=None,
                     legend_opt=None, prefix='', lbl0='a', tx=.98, ty=.94, topt=None,
-                    use_txt=True, nm=5):
+                    use_txt=True, nm=5, cbl1=None):
         if fig is None and gs0 is None:
             _fopt = dict(dpi=dpi, figsize=figsize)
             if fopt:
                 _fopt.update(fopt)
             fig = plt.figure(**_fopt)
-        _gsopt = dict(top=.98, bottom=.02, left=.05, right=.99, hspace=0.1, wspace=0.1,
-                      height_ratios=[.1, 1, 1, 1], width_ratios=[2./3., 1, 1])
+        _gsopt = dict(top=.98, bottom=.02, left=.05, right=.99, hspace=0.2, wspace=0.2,
+                      height_ratios=[.1, 1, 1, 1], width_ratios=[2./3., 1, .8])
         if gsopt is not None:
             _gsopt.update(gsopt)
         if gs0 is not None:
@@ -1861,31 +1861,33 @@ class BLsim(object):
             # left/d_vortensity-stripe panel
             caxs.append(plt.subplot(gs[0, 0]))
             axs.append(plt.subplot(gs[1, 0]))
-            if cbl is None or cbl is True:
-                cbl = r'$\omega/\Sigma-\left<\omega/\Sigma\right>_0$'
+            if cbl0 is None or cbl0 is True:
+                cbl0 = r'$\omega/\Sigma-\left<\omega/\Sigma\right>_0$'
             opt = _opt.copy()
-            opt.update(dict(ax=axs[-1], cax=caxs[-1], cbl=cbl, vmax='95%', r_cut=1.02))
+            opt.update(dict(ax=axs[-1], cax=caxs[-1], cbl=cbl0, vmax='95%', r_cut=1.02))
             opt.update(lopt)
             df.stripe(group['d_vortensity_0'][()], **opt)
             # mid/Rpseudo-stripe panel
             caxs.append(plt.subplot(gs[0, 1:]))
             axs.append(plt.subplot(gs[1, 1]))
-            cbl = helpers.labeler('Rpseudo') if xlbl else False
+            cbl1 = helpers.labeler('Rpseudo') if cbl1 is None or cbl1 is True else cbl1
             opt = _opt.copy()
-            opt.update(dict(ax=axs[-1], cax=caxs[-1], cbl=cbl, vmax='99%', r_cut=1.0))
+            opt.update(dict(ax=axs[-1], cax=caxs[-1], cbl=cbl1, vmax='99%', r_cut=1.0))
             opt.update(mopt)
             df.stripe(group['Rpseudo'][()], **opt)
             clim = plt.gci().get_clim()
             # right/Rpseudo-map panel
             axs.append(plt.subplot(gs[1, 2]))
             opt = _opt.copy()
-            opt.update(dict(ax=axs[-1], cb=False, vmin=clim[0], vmax=clim[1], minmax=False))
+            opt.update(dict(ax=axs[-1], cb=False, vmin=clim[0], vmax=clim[1],
+                            minmax=False))
             opt.update(ropt)
             df.plot2d(group['Rpseudo'][()], **opt)
             # cleanup
             for cax in caxs:
                 cax.xaxis.set_label_position('top')
                 cax.xaxis.set_ticks_position('top')
+                cax.xaxis.set_minor_locator(mpl.ticker.AutoMinorLocator())
             # CS, CA, CL plot
             group = f['{:04d}_{:04d}/opt3'.format(t0, tf)]
             axs.append(plt.subplot(gs[2, :]))
@@ -1935,6 +1937,8 @@ class BLsim(object):
                 ax.xaxis.set_ticks_position('both')
                 ax.yaxis.set_ticks_position('both')
                 ax.tick_params(axis='both', which='both', direction='in')
+                ax.xaxis.set_minor_locator(mpl.ticker.AutoMinorLocator())
+                ax.yaxis.set_minor_locator(mpl.ticker.AutoMinorLocator())
                 ax.set_axisbelow(False)
                 if use_txt:
                     lbl = prefix + chr(lbl0 + i) + ')'
