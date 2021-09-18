@@ -469,6 +469,10 @@ class BLfile(BLfileBase):
             rmin = self.r[0]
         if rmax is None:
             rmax = r_main(self.mach)
+        elif rmax == 'p2':
+            tmp = 7 / self.mach
+            rmax = 1 + .8 * min(tmp, tmp ** 2)
+            rmax = min(rmax, 3)
         rmax = min(rmax, self.r[-1])
         r = self.r[np.newaxis, :]
         phi = self.phi[:, np.newaxis] + phi_shift

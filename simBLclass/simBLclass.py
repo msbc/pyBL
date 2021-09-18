@@ -1808,23 +1808,28 @@ class BLsim(object):
                     ylbl=True, fig=None, fopt=None, figsize=None, dpi=300, gsopt=None,
                     hdf5=None, sdir=None, lopt=None, mopt=None, ropt=None, cbl0=None,
                     legend_opt=None, prefix='', lbl0='a', tx=.98, ty=.94, topt=None,
-                    use_txt=True, nm=5, cbl1=None):
+                    use_txt=True, nm=5, cbl1=None, rmax0=None, rmax1=None, am_lnorm=0,
+                    rloc=None):
         if fig is None and gs0 is None:
             _fopt = dict(dpi=dpi, figsize=figsize)
             if fopt:
                 _fopt.update(fopt)
             fig = plt.figure(**_fopt)
-        _gsopt = dict(top=.98, bottom=.02, left=.05, right=.99, hspace=0.2, wspace=0.2,
-                      height_ratios=[.1, 1, 1, 1], width_ratios=[2./3., 1, .8])
+        _s = .1
+        hr = [.1, 1, _s, 1, 1]
+        wr = [2./3., .1, 1, .8]
+        _gsopt = dict(top=1.0, bottom=.02, left=.05, right=.99, hspace=0.07, wspace=0.07,
+                      height_ratios=hr, width_ratios=wr)
+        _args = len(hr), len(wr)
         if gsopt is not None:
             _gsopt.update(gsopt)
         if gs0 is not None:
             for i in ['top', 'bottom', 'left', 'right']:
                 if i in _gsopt:
                     _gsopt.pop(i)
-            gs = mpl.gridspec.GridSpecFromSubplotSpec(4, 3, subplot_spec=gs0, **_gsopt)
+            gs = mpl.gridspec.GridSpecFromSubplotSpec(*_args, subplot_spec=gs0, **_gsopt)
         else:
-            gs = mpl.gridspec.GridSpec(4, 3, **_gsopt)
+            gs = mpl.gridspec.GridSpec(*_args, **_gsopt)
         if sdir is None:
             sdir = ''
         if lopt is None:
@@ -1833,7 +1838,7 @@ class BLsim(object):
             mopt = dict()
         if ropt is None:
             ropt = dict()
-        ri = self.rloc(1.02)
+        ri = self.rloc(1.02 if rloc is None else rloc)
         if legend_opt is None:
             legend_opt = dict(handlelength=1, fontsize=8, handletextpad=.4,
                               columnspacing=.7)
@@ -1841,7 +1846,7 @@ class BLsim(object):
         if topt is not None:
             _topt.update(topt)
         hdf5 = self.am_plot_data(t0, tf, fn=hdf5, sdir=sdir)
-        _opt = dict(zerocent=True, cbopt=dict(orientation='horizontal'))
+        _opt = dict(zerocent=True, cbopt=dict(orientation='horizontal'), lnorm=True)
         if hasattr(lbl0, 'lower'):
             lbl0 = ord(lbl0)
         else:
@@ -1864,36 +1869,50 @@ class BLsim(object):
             if cbl0 is None or cbl0 is True:
                 cbl0 = r'$\omega/\Sigma-\left<\omega/\Sigma\right>_0$'
             opt = _opt.copy()
-            opt.update(dict(ax=axs[-1], cax=caxs[-1], cbl=cbl0, vmax='95%', r_cut=1.02))
+            opt.update(dict(ax=axs[-1], cax=caxs[-1], cbl=cbl0, vmax='95%', r_cut=1.02, rmax=rmax0))
             opt.update(lopt)
             df.stripe(group['d_vortensity_0'][()], **opt)
             # mid/Rpseudo-stripe panel
-            caxs.append(plt.subplot(gs[0, 1:]))
-            axs.append(plt.subplot(gs[1, 1]))
+            caxs.append(plt.subplot(gs[0, 2:]))
+            axs.append(plt.subplot(gs[1, 2]))
             cbl1 = helpers.labeler('Rpseudo') if cbl1 is None or cbl1 is True else cbl1
             opt = _opt.copy()
-            opt.update(dict(ax=axs[-1], cax=caxs[-1], cbl=cbl1, vmax='99%', r_cut=1.0))
+            opt.update(dict(ax=axs[-1], cax=caxs[-1], cbl=cbl1, vmax='99%', r_cut=1.0, rmax=rmax1, lnorm=-2))
             opt.update(mopt)
             df.stripe(group['Rpseudo'][()], **opt)
             clim = plt.gci().get_clim()
             # right/Rpseudo-map panel
-            axs.append(plt.subplot(gs[1, 2]))
+            axs.append(plt.subplot(gs[1, 3]))
             opt = _opt.copy()
             opt.update(dict(ax=axs[-1], cb=False, vmin=clim[0], vmax=clim[1],
-                            minmax=False))
+                            minmax=False, lnorm=-2))
             opt.update(ropt)
             df.plot2d(group['Rpseudo'][()], **opt)
+            axs[-1].xaxis.set_major_locator(mpl.ticker.MultipleLocator(2))
             # cleanup
             for cax in caxs:
                 cax.xaxis.set_label_position('top')
                 cax.xaxis.set_ticks_position('top')
                 cax.xaxis.set_minor_locator(mpl.ticker.AutoMinorLocator())
+                cax.tick_params(axis='both', which='both', direction='in')
             # CS, CA, CL plot
             group = f['{:04d}_{:04d}/opt3'.format(t0, tf)]
-            axs.append(plt.subplot(gs[2, :]))
-            cs, ca, cl = group['cs'][()], group['ca'][()], group['cl'][()]
+            axs.append(plt.subplot(gs[3, :]))
+            lntxt = ''
+            lnorm = am_lnorm
+            if lnorm:
+                if lnorm is True:
+                    lnorm = -2
+                if lnorm:
+                    lntxt = '/10^{' + str(lnorm) + '}'
+            else:
+                lnorm = 0
+            norm = 10**-lnorm
+            i95 = self.rloc(.95)
+            cs, ca, cl = [group[key][()] * norm for key in ['cs', 'ca', 'cl']]
             y = np.array([cs, ca, cl])[:, ri:-5]
             yl, yu = y.min(), y.max()
+            yl = min(yl, cs[i95:-5].min())
             dy = (yu - yl) * .05
             ylim = np.array((yl - dy, max(yu + dy, 2.5 * dy)))
             plt.plot(self.rc, cs, label='$C_S$', c='k')
@@ -1903,26 +1922,30 @@ class BLsim(object):
             plt.axhline(0, c='.5', ls=':', lw=1)
             plt.axvline(1, c='.5', ls=':', lw=1)
             plt.ylim(*ylim)
+            if ylbl:
+                plt.ylabel(r'$C_{[\rm S,A,L]}' + lntxt + '$')
+            plt.setp(axs[-1].get_xticklabels(), visible=False)
             # CSm plot
             group = f['{:04d}_{:04d}'.format(t0, tf)]
             modes = [i for i in group['modes'][()] if i]
-            csm = group['csm'][()]
-            axs.append(plt.subplot(gs[3, :], sharex=axs[-1]))
+            csm = norm * group['csm'][()]
+            axs.append(plt.subplot(gs[4, :], sharex=axs[-1]))
             plt.plot(self.rc, cs, 'k-', label='$C_S$')
             ym = []
             for m in modes[:nm]:
                 ym.append(csm[m])
                 plt.plot(self.rc, csm[m], label=str(m), lw=1)
-            plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls='-', label='sum', lw=1)
+            cs_sum = csm[1:].sum(axis=0)
+            plt.plot(self.rc, cs_sum, c='.5', ls='-', label='sum', lw=1)
             ym = np.array(ym)
-            plt.legend(loc=4, ncol=nm + 2, **lopt)
+            plt.legend(loc=4, ncol=nm + 2, **legend_opt)
             plt.axhline(0, c='.5', ls=':', lw=1)
             plt.axvline(1, c='.5', ls=':', lw=1)
             plt.xlim(self.r[0], self.r[-1])
             # set ylim
-            yl = np.minimum(csm[1:].sum(axis=0), cs)
+            yl = np.minimum(cs_sum, cs)
             yl = np.minimum(yl, ym.min(axis=0))[ri:-5].min()
-            yl = min(0, yl)
+            yl = min(0, yl, cs[i95:-5].min())
             yu = np.maximum(csm[1:].sum(axis=0), cs)
             yu = np.maximum(yu, ym.max(axis=0))[ri:-5].max()
             yu = max(0, yu)
@@ -1931,7 +1954,7 @@ class BLsim(object):
             if xlbl:
                 plt.xlabel('$r$')
             if ylbl:
-                plt.ylabel('$C_S$')
+                plt.ylabel(r'$C_{\rm S}' + lntxt + r',\;C_{{\rm S},m}' + lntxt + '$')
             # cleanup
             for i, ax in enumerate(axs):
                 ax.xaxis.set_ticks_position('both')

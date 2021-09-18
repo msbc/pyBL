@@ -1680,7 +1680,7 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
     nt = len(sims[0]['ts'])
     assert np.all([len(s['ts']) == nt for s in sims])
     fig = plt.figure(**_fopt)
-    _gsopt = dict(top=.98, bottom=.02, left=.05, right=.99, hspace=0.1, wspace=0.1,
+    _gsopt = dict(top=.98, bottom=.02, left=.05, right=.99, hspace=0.06, wspace=0.1,
                   height_ratios=[.1, 1] * nt)
     if gsopt is not None:
         _gsopt.update(gsopt)
@@ -1694,11 +1694,14 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
             tax = plt.subplot(gs[2 * row, col])
             tax.axis('off')
             ts = args['ts'][row]
-            title = r'$\mathcal{M}={:d}\;t/2\pi={:d}-{:d}$'.format(sim.mach, *ts[:2])
-            tax.set_title(title, y=0, va='bottom', fontsize='large')
+            title = r'$\mathcal{{M}}={:d}\;\;t/2\pi={:d}-{:d}$'
+            title = title.format(int(np.round(sim.mach)), *ts[:2])
+            tkw = dict(y=1, va='top', fontsize='large')
+            tkw.update(dict(y=.4) if row else {})
+            tax.set_title(title, **tkw)
             opt = dict(gs0=gs[2*row+1, col], save=False, ylbl=(col==0), xlbl=(row==nt-1),
                        hdf5=args.get('hdf5'), cbl0=row==0, cbl1=row==0, lbl0=row*5,
-                       prefix=chr(col + 65))
+                       prefix=chr(2 * row + col + 65), rmax0='p2', am_lnorm=-4)
             sim.am_subpanel(*ts, **opt, **ropt[row])
     if save:
         plt.savefig(fn)
