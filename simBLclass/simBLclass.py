@@ -1973,8 +1973,8 @@ class BLsim(object):
 
     def am_terms(self, t0, tf, save=False, fn=None, xlbl=True, ax=None, fig=None,
                  fopt=None, figsize=None, dpi=300, hdf5=None, sdir=None, legend_opt=None,
-                 prefix='', lbl0='a', tx=.98, ty=.94, topt=None, use_txt=True,
-                 legend=True):
+                 prefix='', lbl0='a', tx=.97, ty=.94, topt=None, use_txt=True,
+                 legend=True, lnorm=None, ylbl=None):
         if fig is None and ax is None:
             _fopt = dict(dpi=dpi, figsize=figsize)
             if fopt:
@@ -1984,11 +1984,19 @@ class BLsim(object):
             plt.sca(ax)
         if sdir is None:
             sdir = ''
-        ri = self.rloc(1.01)
+        ri = self.rloc(1.05)
+        if lnorm:
+            if lnorm is True:
+                lnorm = -2
+            if lnorm:
+                lntxt = '/10^{' + str(lnorm) + '}'
+        else:
+            lnorm = 0
+        norm = 10**-lnorm
         if legend_opt is None:
             legend_opt = dict(handlelength=1, fontsize=8, handletextpad=.4,
                               columnspacing=.7)
-        _topt = dict(c='k', ha='right', va='top', fontsize=8)
+        _topt = dict(c='k', ha='right', va='top', fontsize=10)
         if topt is not None:
             _topt.update(topt)
         hdf5 = self.am_plot_data(t0, tf, fn=hdf5, sdir=sdir)
@@ -1998,7 +2006,7 @@ class BLsim(object):
             lbl0 += ord('a')
         with h5py.File(hdf5, 'a') as f:
             group = f['{:04d}_{:04d}/opt2'.format(t0, tf)]
-            y = [group[i][()] for i in ['ycs', 'ydv2', 'ymdot', 'ydp']]
+            y = [norm * group[i][()] for i in ['ycs', 'ydv2', 'ymdot', 'ydp']]
         y.append(y[0] + y[1])
         y = np.array(y)
         loc = (slice(None), slice(ri, -20))
@@ -2009,11 +2017,11 @@ class BLsim(object):
         plt.plot(x, y[0], label=r'$\partial_r C_{\rm S}$', lw=1)
         plt.plot(x, y[1], label=r'$\partial_t v_\phi$', lw=1)
         plt.plot(x, y[2], label=r'$\dot{M}\partial_r\ell$', c='k')
-        plt.plot(x, y[3], label=r'$\partial_t\partial_rP$', ls=':', lw=1)
+        # plt.plot(x, y[3], label=r'$\partial_t\partial_rP$', ls=':', lw=1)
         plt.plot(x, y[4], label=r'$\partial_r C_{\rm S}\! +\! \partial_t v_\phi$', c='r',
                 lw=1, ls=':')
         if legend:
-            plt.legend(loc=4, ncol=3, **legend_opt)
+            plt.legend(loc=4, ncol=4, **legend_opt)
         plt.axhline(0, c='.5', ls=':', lw=1)
         plt.axvline(1, c='.5', ls=':', lw=1)
         plt.ylim(*ylim)
@@ -2022,12 +2030,15 @@ class BLsim(object):
             plt.xlabel('$r$')
         else:
             plt.setp(ax.get_xticklabels(), visible=False)
+        if ylbl:
+            plt.ylabel(r'${\rm AM\;terms}' + lntxt + '$')
         # cleanup
         ax = plt.gca()
         ax.xaxis.set_ticks_position('both')
         ax.yaxis.set_ticks_position('both')
         ax.tick_params(axis='both', which='both', direction='in')
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+        ax.yaxis.set_minor_locator(mpl.ticker.AutoMinorLocator())
         if use_txt:
             lbl = prefix + chr(lbl0) + ')'
             ax.text(tx, ty, lbl, transform=ax.transAxes, **_topt)

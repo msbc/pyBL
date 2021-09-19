@@ -1710,7 +1710,7 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
 
 
 def am_terms(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sdir=None,
-             lopt=None, lnorm=-3, overwrite=True, gsopt=None):
+             lopt=None, lnorm=-2, overwrite=True, gsopt=None):
     if sims is None:
         sims = [dict(name='M06.HR.r.lc.a', ts=[200, 300]),
                 dict(name='M09.FR.r.lc.a', ts=[400, 500]),
@@ -1739,7 +1739,7 @@ def am_terms(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, s
         _fopt.update(fopt)
     assert np.all([len(s['ts']) == 2 for s in sims])
     fig = plt.figure(**_fopt)
-    _gsopt = dict(top=.98, bottom=.05, left=.1, right=.97, hspace=0.0, wspace=0.0)
+    _gsopt = dict(top=.98, bottom=.05, left=.15, right=.97, hspace=0.0, wspace=0.0)
     if gsopt is not None:
         _gsopt.update(gsopt)
     gs = mpl.gridspec.GridSpec(nsim, 1, **_gsopt)
@@ -1747,9 +1747,10 @@ def am_terms(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, s
         sim = BLsim(args['name'])
         ax = plt.subplot(gs[row])
         opt = dict(ax=ax, save=False, xlbl=(row==nsim-1), hdf5=args.get('hdf5'),
-                   lbl0=row, legend=row==0)
+                lbl0=row, legend=row==0, lnorm=-4, ylbl=row==1)
         sim.am_terms(*args['ts'], **opt)
-        plt.title(sim.name + r' $t/2\pi={:.0f}-{:.0f}$'.format(*args['ts']), y=.87)
+        title = r'$\mathcal{{M}}={:d}\;\;t/2\pi={:.0f}-{:.0f}$'
+        plt.title(title.format(int(sim.mach+.1), *args['ts']), y=.87)
     if save:
         plt.savefig(fn)
         plt.close()
