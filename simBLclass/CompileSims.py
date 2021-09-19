@@ -1115,7 +1115,7 @@ def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
         fopt = {}
     _fopt.update(fopt)
     fig = plt.figure(**_fopt)
-    gs = mpl.gridspec.GridSpec(nvar, nsim + 1, top=.985, bottom=.07, left=.035, right=.95,
+    gs = mpl.gridspec.GridSpec(nvar, nsim + 1, top=.985, bottom=.07, left=.035, right=.93,
                                wspace=0, hspace=0, width_ratios=[1] * nsim + [.04])
     col1 = [None] * nvar
     r1lim = -np.inf
@@ -1142,8 +1142,8 @@ def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
             if i == 0:
                 sim.rho_st(delta=True, norm=MidpointNormalize(-1, .1, 0),
                             cmap=helpers.NCcmap, vmin=-1, vmax=.1, zerocent=False, **opt)
-                plt.text(.5, .9, sim.name, c='k', ha='center',
-                         transform=ax.transAxes)
+                cbl = r'$\mathcal{{M}}={:d}$'.format(int(sim.mach + .1))
+                plt.text(.5, .9, cbl, c='k', ha='center', transform=ax.transAxes)
             if i == 1:
                 sim.stress_st(vmax=vmax1, **opt)
                 r1lim = max(r1lim, max(plt.gci().get_clim()))
