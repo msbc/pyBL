@@ -1781,7 +1781,7 @@ def Mdot_CS(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sd
     if fopt:
         _fopt.update(fopt)
     fig = plt.figure(**_fopt)
-    _gsopt = dict(top=.95, bottom=.1, left=.2, right=.98, hspace=0.2, wspace=0.1)
+    _gsopt = dict(top=.98, bottom=.07, left=.17, right=.98, hspace=0.1, wspace=0.1)
     if gsopt is not None:
         _gsopt.update(gsopt)
     gs = mpl.gridspec.GridSpec(nsim, 1, **_gsopt)
@@ -1792,12 +1792,12 @@ def Mdot_CS(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sd
         if hasattr(sim, 'lower'):
             sim = BLsim(sim)
         ax = plt.subplot(gs[row])
-        sim.Mdot_CS(ax=ax, legend=not row)
+        sim.Mdot_CS(ax=ax, legend=not row, title=False)
         if not row:
             plt.xlabel('')
-        plt.title(sim.name)
+        # plt.title(sim.name)
         if txt:
-            lbl = chr(ord('a') + row) + ')'
+            lbl = chr(ord('a') + row) + r') $\;\mathcal{{M}}={:d}$'.format(int(sim.mach+.1))
             ax.text(tx, ty, lbl, transform=ax.transAxes, **_topt)
     if save:
         plt.savefig(fn)

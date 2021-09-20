@@ -5218,7 +5218,7 @@ class BLsim(object):
         return self.mach, out
 
     def Mdot_CS(self, dt0=10, coef=.5, r=1, overwrite=True, save=False, fn=None, sdir='',
-                ext='pdf', hline=None, ax=None, legend=True, option=3):
+                ext='pdf', hline=None, ax=None, legend=True, option=3, title=True):
         if save or fn:
             save = True
             if fn is None:
@@ -5256,9 +5256,9 @@ class BLsim(object):
         else:
             plt.sca(ax)
         for i in out:
-            plt.plot(*out[i], marker='o', linewidth=0)
-        plt.xscale('symlog', linthreshx=1e-6)
-        plt.yscale('symlog', linthreshy=1e-6)
+            plt.plot(-out[i][0], *out[i][1:], marker='o', linewidth=0)
+        plt.xscale('symlog', linthreshx=1e-6, subs=[2,3,4,5,6,7,8,9])
+        plt.yscale('symlog', linthreshy=1e-6, subs=[2,3,4,5,6,7,8,9])
         if legend:
             plt.legend(list(map(str, dt)))
         x_ = 10 ** -np.linspace(1, 6, 100)
@@ -5271,7 +5271,11 @@ class BLsim(object):
         plt.ylim(*yl)
         plt.xlabel(r'$\dot{M}$')
         plt.ylabel(r'$C_{\rm S}$')
-        plt.title(self.name)
+        ax.xaxis.set_ticks_position('both')
+        ax.yaxis.set_ticks_position('both')
+        ax.tick_params(axis='both', which='both', direction='in')
+        if title:
+            plt.title(self.name if title is True else title)
         if hline:
             if hline is True:
                 hline = -1e-2 * self.mach**-2.6
@@ -5289,8 +5293,8 @@ class BLsim(object):
         c = cmap(norm(c))
         for j in js:
             plt.plot(*out[dt0][:, j], marker='o', linewidth=0, mfc=c[j], mec=c[j])
-        plt.xscale('symlog', linthreshx=1e-6)
-        plt.yscale('symlog', linthreshy=1e-6)
+        plt.xscale('symlog', linthreshx=1e-6, subs=[2,3,4,5,6,7,8,9])
+        plt.yscale('symlog', linthreshy=1e-6, subs=[2,3,4,5,6,7,8,9])
         plt.title('$dt={:d}$'.format(dt0))
         xl = plt.xlim()
         yl = plt.ylim()
@@ -5300,6 +5304,9 @@ class BLsim(object):
         plt.ylim(*yl)
         plt.xlabel(r'$\dot{M}$')
         plt.ylabel(r'$C_{\rm S}$')
+        ax.xaxis.set_ticks_position('both')
+        ax.yaxis.set_ticks_position('both')
+        ax.tick_params(axis='both', which='both', direction='in')
         if hline:
             for h in np.atleast_1d(hline):
                 plt.axhline(h, c='k', lw=1, ls=':')
