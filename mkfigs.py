@@ -392,6 +392,84 @@ class Paper2(FigMaker):
     def CS_both(self):
         blc.CS_both(save=True)
 
+    def mode_hist(self):
+        import os
+        import cmocean
+        from matplotlib.colors import ListedColormap
+
+
+        data = blc.modes.data
+        fn = os.path.abspath(os.path.join(os.path.dirname(__file__), 'bl.csv'))
+        #fn = os.path.expanduser(
+        #    '~/Dropbox/Research/IAS/rrr/bl_shared/simulation_results/Production/bl.csv')
+        gdata = np.genfromtxt(fn, skip_header=1, delimiter=', ', dtype=int)[:, (0, 2)]
+
+        nmodes = 3
+        hist = {}
+        for i in data:
+            mach = int(i[1:3])
+            tmp = data[i]
+            nsets = len(tmp) + 1
+            if not mach in hist:
+                hist[mach] = np.zeros((nsets, 32))
+            for j in range(nsets - 1):
+                for m in tmp[j][:nmodes]:
+                    hist[mach][j, m] += 1
+        for i in gdata:
+            hist[i[1]][2, i[0]] += 1
+
+        dx = .05
+        os = 2.5 * dx
+        hmax = 0
+        for i in hist:
+            hmax = int(max(hmax, hist[i].max()) + .5)
+        print(hmax)
+        names = ['Reds', 'Blues', 'Greys', 'Greens']
+        names = ['cmo.solar_r', 'cmo.dense', 'cmo.matter']
+        cmaps = []
+        for i in range(nsets):
+            cm = plt.cm.get_cmap(names[i], hmax + 1)
+            colors = cm(np.linspace(.05, 1, hmax + 1))
+            colors[0, :] = np.array([1, 1, 1, 0])
+            cmaps.append(ListedColormap(colors))
+        # cmaps = [plt.cm.get_cmap(cmaps[i], hmax + 1) for i in range(nsets)]
+        ims = [None, ] * nsets
+        imopt = dict(vmin=-.5, vmax=hmax + .5, interpolation='nearest')
+
+        fig = plt.figure(figsize=(4.5, 3), dpi=300)
+        gs = mpl.gridspec.GridSpec(1, nsets + 2, width_ratios=[1, .05] + [.05, ] * nsets,
+                                   top=.99,
+                                   bottom=.15, left=.1, right=.93, wspace=0)
+        ax = plt.subplot(gs[0])
+        for i in hist:
+            for j in range(nsets):
+                extent = [i - dx + os * (j - 1), i + dx + os * (j - 1), 0, 31]
+                ims[j] = plt.imshow(np.array([hist[i][j]]).T, extent=extent,
+                                    cmap=cmaps[j], **imopt)
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+        ax.xaxis.set_ticks_position('both')
+        ax.yaxis.set_ticks_position('both')
+        ax.tick_params(axis='both', which='both', direction='in')
+        yl = plt.ylim()
+        xl = plt.xlim(4.5, 15.5)
+        plt.plot(xl, xl, c='.5', lw=1, ls=':', zorder=-10)
+        plt.ylim(*yl)
+        plt.xlim(*xl)
+        plt.xlabel(r'$\mathcal{M}$')
+        plt.ylabel(r'$m$')
+        names = ['star', 'disk', 'global']
+        for j in range(nsets):
+            cax = plt.subplot(gs[2 + j])
+            t = []
+            if j == nsets - 1:
+                t = np.arange(hmax + 1)
+            cb = plt.colorbar(ims[j], cax=cax, ticks=t)
+            cax.set_xlabel(names[j], fontsize=8, rotation='vertical')
+
+        plt.savefig('mode_hist.pdf')
+        plt.close()
+
 
 print('Done with initialization')
 
