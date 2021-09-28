@@ -178,7 +178,7 @@ class BLholder(blc.DataContainer):
             plt.xscale('log')
         if lbl:
             lbl = lbl + ')'
-            topt = dict(c='k', ha='right', va='top', fontsize=8)
+            topt = dict(c='k', ha='right', va='top', fontsize=10)
             ax.text(.98, .94, lbl, transform=ax.transAxes, **topt)
         plt.xlabel('$\mathcal{M}$')
         plt.ylabel(name)
@@ -376,12 +376,12 @@ class Paper2(FigMaker):
             return
         bl_stats = BLholder()
         plt.figure(figsize=[4, 6], dpi=300)
-        gsopt = dict(top=.95, bottom=.1, left=.2, right=.98, hspace=0, wspace=0.1)
+        gsopt = dict(top=.99, bottom=.06, left=.2, right=.98, hspace=0, wspace=0.1)
         gs = mpl.gridspec.GridSpec(3, 1, **gsopt)
         for i, var in enumerate(['bl', 'd1omega', 'plateau']):
             ax = plt.subplot(gs[i])
             opt = dict(ax=ax, save=False, overwrite=_overwrite, legend=i==2,
-                       lbl='abc'[i], pl=[(None, -2), (None, -1), (None, -2./3.)][i])
+                       lbl='abc'[i], pl=[(1.6, -2), (1.6, -1), (0.9, -2./3.)][i])
             bl_stats.plot_key(var, **opt)
             if i != 2:
                 plt.setp(ax.get_xticklabels(), visible=False)
