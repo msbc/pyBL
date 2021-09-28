@@ -851,7 +851,7 @@ class BLfile(blc.BLfileBase):
         a1 = ax.pcolormesh(x, y, data_slice, **opt['popt'])
         plt.sca(ax)
         plt.xlabel('$R$')
-        plt.ylabel(r'$\phi/\pi$')
+        plt.ylabel(r'$\varphi/\pi$')
         plt.axvline(1., lw=1, ls=':', c='1')
         ax.set_ylim(0, 2)
         ax.set_xlim(self.r[0], rmax)

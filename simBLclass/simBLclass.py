@@ -4225,7 +4225,7 @@ class BLsim(object):
                     if i % ncol:
                         ax.set_yticklabels([])
                     else:
-                        plt.ylabel(r'$\phi/\pi$')
+                        plt.ylabel(r'$\varphi/\pi$')
                     if i / ncol < nrow - 1:
                         ax.set_xticklabels([])
                     else:
@@ -4371,7 +4371,7 @@ class BLsim(object):
 
             lax = plt.subplot(gs[i + 1, 0])
             df.stripe(left, ax=lax, **_lopt)
-            lax.set_ylabel(r'$\phi/\pi$')
+            lax.set_ylabel(r'$\varphi/\pi$')
             if llim is None:
                 llim = plt.gci().get_clim()
                 _lopt['vmin'] = llim[0]
@@ -4507,7 +4507,7 @@ class BLsim(object):
 
             lax = plt.subplot(gs[i + 1, 0])
             df.stripe(left, ax=lax, **_lopt)
-            lax.set_ylabel(r'$\phi/\pi$')
+            lax.set_ylabel(r'$\varphi/\pi$')
             if i < nt - 1:
                 yticks = lax.yaxis.get_major_ticks()
                 for k in [0]:
@@ -4757,7 +4757,7 @@ class BLsim(object):
             #rax.yaxis.set_label_position('right')
             #rax.yaxis.tick_right()
             if i == 0:
-                rax.set_ylabel(r'$\phi/\pi$')
+                rax.set_ylabel(r'$\varphi/\pi$')
 
             lax.set_xticklabels([])
             if i > 0:
@@ -5039,7 +5039,7 @@ class BLsim(object):
             add_plbl(3 * i)
             # rax.yaxis.set_label_position('right')
             # rax.yaxis.tick_right()
-            l_ax.set_ylabel(r'$\phi/\pi$', labelpad=ylabelpad)
+            l_ax.set_ylabel(r'$\varphi/\pi$', labelpad=ylabelpad)
             if llim is None:
                 llim = plt.gci().get_clim()
                 print(llim)

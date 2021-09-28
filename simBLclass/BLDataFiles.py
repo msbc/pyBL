@@ -616,7 +616,7 @@ class BLfile(BLfileBase):
         if lbls:
             plt.xlabel('$r$')
             if phi_norm == np.pi:
-                plt.ylabel(r'$\phi/\pi$')
+                plt.ylabel(r'$\varphi/\pi$')
             elif phi_norm == 1:
                 plt.ylabel(r'$\phi$')
             elif phi_norm == 2 * np.pi:
@@ -731,7 +731,7 @@ class BLfile(BLfileBase):
         pcm = self.stripe(var, ax=ax0, cax=cax, lbls=False, **kwargs)
         xlim = ax0.get_xlim()
         #print(xlim)
-        plt.ylabel(r'$\phi/\pi$')
+        plt.ylabel(r'$\varphi/\pi$')
         ax0.set_xticklabels([])
 
         ax = plt.subplot(gs[1, 0])

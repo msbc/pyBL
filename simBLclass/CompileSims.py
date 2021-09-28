@@ -899,7 +899,7 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                 if c:
                     plt.setp(ax.get_yticklabels(), visible=False)
                 else:
-                    plt.ylabel(r'$\phi/\pi$')
+                    plt.ylabel(r'$\varphi/\pi$')
                 if r == nr -1:
                     plt.xlabel(r'$r$')
                 else:
@@ -1051,7 +1051,7 @@ def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi
                 if c:
                     plt.setp(ax.get_yticklabels(), visible=False)
                 else:
-                    plt.ylabel(r'$\phi/\pi$')
+                    plt.ylabel(r'$\varphi/\pi$')
                 if r == nr -1:
                     plt.xlabel(r'$r$')
                 else:
