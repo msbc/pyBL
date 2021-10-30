@@ -419,7 +419,7 @@ class Paper2(FigMaker):
             hist[i[1]][2, i[0]] += 1
 
         dx = .05
-        os = 2.5 * dx
+        offsett = 2.5 * dx
         hmax = 0
         for i in hist:
             hmax = int(max(hmax, hist[i].max()) + .5)
@@ -443,7 +443,7 @@ class Paper2(FigMaker):
         ax = plt.subplot(gs[0])
         for i in hist:
             for j in range(nsets):
-                extent = [i - dx + os * (j - 1), i + dx + os * (j - 1), 0, 31]
+                extent = [i - dx + offsett * (j - 1), i + dx + offsett * (j - 1), 0, 31]
                 ims[j] = plt.imshow(np.array([hist[i][j]]).T, extent=extent,
                                     cmap=cmaps[j], **imopt)
         ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
