@@ -1673,7 +1673,7 @@ def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=Non
     if lopt is None:
         lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
     if figsize is None:
-        figsize = np.array([8.5, 10]) * 1.5
+        figsize = np.array([8.5, 10.5]) * 1.5
     _fopt = dict(dpi=dpi, figsize=figsize)
     if fopt:
         _fopt.update(fopt)
