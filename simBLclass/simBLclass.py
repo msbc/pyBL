@@ -217,8 +217,11 @@ class BLsim(object):
         try:
             return self._lightcurve
         except AttributeError:
-            self._lightcurve = Lightcurves(self.files('flux'), sim=self)
+            self._lightcurve = self.get_lightcurve()
         return self._lightcurve
+
+    def get_lightcurve(self, **kwargs):
+        return Lightcurves(self.files('flux'), sim=self, **kwargs)
 
     def _old_upper_omega(self, m, n=0, r=1.1, t0=2000, tf=None):
         vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
