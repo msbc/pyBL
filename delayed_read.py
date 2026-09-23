@@ -20,7 +20,48 @@ except ImportError:
 
 
 class athdf(dict):
-    """Read .athdf files and populate dict of arrays of data."""
+    """Lazily read variables from an Athena++ ``.athdf`` file.
+
+    The object behaves like a dictionary of field arrays, but delays reading
+    individual quantities until they are requested. Coordinate arrays and
+    file metadata are loaded during initialization; call :meth:`load_all` to
+    materialize every selected quantity.
+
+    Parameters
+    ----------
+    filename : path-like
+        Path to an Athena++ ``.athdf`` file.
+    data : dict, optional
+        Existing mapping to populate instead of creating a new result.
+    quantities : sequence of str, optional
+        Field names to make available. If omitted, all file quantities are
+        available for lazy loading.
+    dtype : numpy.dtype, default=numpy.float32
+        Data type used for loaded field arrays.
+    level : int, optional
+        AMR level to load. Defaults to the maximum level in the file.
+    return_levels : bool, default=False
+        Include AMR level information in the result.
+    subsample : bool, default=False
+        Select data at the requested level without restriction averaging.
+    fast_restrict : bool, default=False
+        Use the faster AMR restriction path.
+    x1_min, x1_max, x2_min, x2_max, x3_min, x3_max : float, optional
+        Bounds of the region to load in each coordinate direction.
+    vol_func : callable, optional
+        Cell-volume function used for volume-weighted restriction.
+    vol_params : tuple, optional
+        Additional parameters for ``vol_func``.
+    face_func_1, face_func_2, face_func_3 : callable, optional
+        Coordinate-face transformation functions.
+    center_func_1, center_func_2, center_func_3 : callable, optional
+        Cell-center functions for each coordinate direction.
+
+    Notes
+    -----
+    ``h5py`` is required when constructing an instance. Accessing a field
+    through ``obj[name]`` loads that field and caches it in the mapping.
+    """
 
     # Initialization
     def __init__(
@@ -538,6 +579,7 @@ class athdf(dict):
         return False
 
     def load_all(self):
+        """Load and cache every available field quantity."""
         self._grab_quantities([i for i in self.keys() if self._need_to_read(i)])
 
     # Function for setting all needed quantities

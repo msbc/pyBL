@@ -16,7 +16,27 @@ import numpy as np
 # ========================================================================================
 
 def hst(filename, raw=False):
-    """Read .hst files and return dict of 1D arrays."""
+    """Read an Athena++ history file.
+
+    Parameters
+    ----------
+    filename : path-like
+        Path to an Athena++ ``.hst`` file.
+    raw : bool, default=False
+        If true, retain every row. Otherwise, remove repeated or
+        non-monotonic time branches before returning the data.
+
+    Returns
+    -------
+    dict[str, numpy.ndarray]
+        One-dimensional arrays keyed by the names in the history header.
+
+    Raises
+    ------
+    AthenaError
+        If the header is missing or cannot be parsed, or if the time column
+        cannot be identified in normal mode.
+    """
 
     # Read data
     with open(filename, 'r') as data_file:
@@ -79,7 +99,30 @@ def hst(filename, raw=False):
 # ========================================================================================
 
 def tab(filename, raw=False, dimensions=None):
-    """Read .tab files and return dict or array."""
+    """Read an Athena++ tabular output file.
+
+    Parameters
+    ----------
+    filename : path-like
+        Path to an Athena++ ``.tab`` file.
+    raw : bool, default=False
+        Return numeric data without interpreting the file header. Raw mode
+        requires ``dimensions``.
+    dimensions : {1, 2, 3}, optional
+        Number of spatial dimensions in raw mode. In normal mode the value
+        is inferred from the column headings.
+
+    Returns
+    -------
+    dict or numpy.ndarray
+        In normal mode, a dictionary containing metadata and named variable
+        arrays. In raw mode, the numeric data array.
+
+    Raises
+    ------
+    AthenaError
+        If the header or requested raw dimensionality is invalid.
+    """
 
     # Check for valid number of dimensions
     if raw and not (dimensions == 1 or dimensions == 2 or dimensions == 3):
@@ -172,7 +215,25 @@ def tab(filename, raw=False, dimensions=None):
 # ========================================================================================
 
 def vtk(filename):
-    """Read .vtk files and return dict of arrays of data."""
+    """Read a binary, rectilinear-grid VTK file written by Athena++.
+
+    Parameters
+    ----------
+    filename : path-like
+        Path to a binary VTK file containing ``RECTILINEAR_GRID`` data.
+
+    Returns
+    -------
+    tuple
+        ``(x_faces, y_faces, z_faces, data)``. The first three elements are
+        face-coordinate arrays; ``data`` maps scalar and vector names to
+        NumPy arrays.
+
+    Raises
+    ------
+    AthenaError
+        If the file does not match the expected binary VTK layout.
+    """
 
     # Read raw data
     with open(filename, 'rb') as data_file:
@@ -286,7 +347,61 @@ def athdf(filename, raw=False, data=None, quantities=None, dtype=np.float32, lev
           x1_max=None, x2_min=None, x2_max=None, x3_min=None, x3_max=None, vol_func=None,
           vol_params=None, face_func_1=None, face_func_2=None, face_func_3=None,
           center_func_1=None, center_func_2=None, center_func_3=None, num_ghost=0):
-    """Read .athdf files and populate dict of arrays of data."""
+    """Read an Athena++ HDF5 output file and return its fields.
+
+    The default mode assembles block data onto a regular grid, optionally
+    restricts adaptive-mesh data to a requested level, and returns selected
+    quantities as NumPy arrays. ``raw=True`` instead returns native file
+    metadata and datasets without assembling the blocks.
+
+    Parameters
+    ----------
+    filename : path-like
+        Path to an Athena++ ``.athdf`` file.
+    raw : bool, default=False
+        Return native file contents rather than assembled grid data.
+    data : dict, optional
+        Existing mapping to populate.
+    quantities : sequence of str, optional
+        Variable names to load. By default, all available variables are
+        loaded.
+    dtype : numpy.dtype, default=numpy.float32
+        Data type used for assembled arrays.
+    level : int, optional
+        AMR level at which to assemble data. Defaults to the maximum level.
+    return_levels : bool, default=False
+        Include AMR level information in the assembled result.
+    subsample : bool, default=False
+        Select data at the requested level without restriction averaging.
+    fast_restrict : bool, default=False
+        Use the faster restriction path when restricting AMR data.
+    x1_min, x1_max, x2_min, x2_max, x3_min, x3_max : float, optional
+        Coordinate bounds for selecting a subregion.
+    vol_func : callable, optional
+        Function used to compute cell volumes for volume-weighted data.
+    vol_params : tuple, optional
+        Additional parameters passed to ``vol_func``.
+    face_func_1, face_func_2, face_func_3 : callable, optional
+        Functions that transform coordinate faces in each dimension.
+    center_func_1, center_func_2, center_func_3 : callable, optional
+        Functions that compute cell centers in each dimension.
+    num_ghost : int, default=0
+        Number of ghost zones to account for when reading block data.
+
+    Returns
+    -------
+    dict
+        A mapping of metadata, coordinate arrays, and requested field arrays.
+        Assembled fields use ``(x3, x2, x1)`` ordering, with singleton
+        dimensions retained where appropriate.
+
+    Raises
+    ------
+    ImportError
+        If ``h5py`` is unavailable.
+    AthenaError
+        If file metadata or the requested grid restriction is inconsistent.
+    """
 
     # Load HDF5 reader
     import h5py
@@ -896,7 +1011,28 @@ def athdf(filename, raw=False, data=None, quantities=None, dtype=np.float32, lev
 # ========================================================================================
 
 def restrict_like(vals, levels, vols=None):
-    """Average cell values according to given mesh refinement scheme."""
+    """Restrict cell-centered values according to an AMR level map.
+
+    Parameters
+    ----------
+    vals : numpy.ndarray
+        Cell-centered values with dimensions ordered ``(x3, x2, x1)``.
+    levels : numpy.ndarray
+        AMR level for each cell, with the same shape as ``vals``.
+    vols : numpy.ndarray, optional
+        Cell volumes used as weights. If omitted, all cells have unit volume.
+
+    Returns
+    -------
+    numpy.ndarray
+        Restricted values retaining the original array shape.
+
+    Raises
+    ------
+    AthenaError
+        If the inputs cannot be evenly restricted or ``vols`` has a
+        different shape from ``vals``.
+    """
 
     # Determine maximum amount of restriction
     nx3, nx2, nx1 = vals.shape
@@ -951,7 +1087,21 @@ def restrict_like(vals, levels, vols=None):
 # ========================================================================================
 
 def athinput(filename):
-    """Read athinput file and returns a dictionary of dictionaries."""
+    """Parse an Athena++ input file into nested dictionaries.
+
+    Parameters
+    ----------
+    filename : path-like
+        Path to an Athena++ ``athinput`` file. Comments beginning with ``#``
+        and blank lines are ignored.
+
+    Returns
+    -------
+    dict[str, dict[str, int | float | complex | str]]
+        A mapping from input blocks such as ``"mesh"`` or ``"hydro"`` to
+        parameter dictionaries. Values are converted to numeric types when
+        possible; otherwise they remain strings.
+    """
 
     # Read data
     with open(filename, 'r') as athinput:
