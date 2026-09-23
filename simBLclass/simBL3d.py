@@ -17,6 +17,7 @@ from .. import athena_read as ar
 from .. import helpers
 from . import simBLclass as blc
 from .BlockByBlock import BlockByBlock
+from .defaults import rc
 
 tau = 2 * np.pi
 #hpi = .5 * np.pi
@@ -112,6 +113,53 @@ def plot_mesh(fn='mesh_structure.dat', data=None, save=False, fig_fn=None):
     print("n_theta", np.pi / (th[th > hpi].min() - hpi))
 
     return ax0_phi, ax0_r, ax1_th, ax1_r
+
+
+class BlockByBlock3D(BlockByBlock):
+    def plot2(self, data=None, phi=None, fn=None, save=False, title=None, name=None,
+              ext='png', popt=None, cb=True, cbl=None, zerocent=None, vmin=None,
+              vmax=None, cmap=None, cbopt=None, fig=None, fopt=None, log=False, aspect=1,
+              sdir=None, r_cut=None, ret_fn=False):
+        data, opt = self._data_opt_parser(data=data, vmax=vmax, vmin=vmin, zerocent=zerocent, cbl=cbl, name=name,
+                                          r_cut=r_cut)
+        i = np.argmax(self.thetac[self.thetac < .5 * np.pi])
+        data_slice = np.vstack([data.mean(axis=0), data[:,i:i+2,:].mean(axis=1)])
+        opt = self._opt_parser(data=data_slice, log=log, popt=popt, cbopt=cbopt, cmap=cmap, title=title,
+                               **opt)
+        if fopt is None:
+            fopt = {'figsize': (8,6), 'dpi': 300}
+        if fig is None:
+            fig = plt.figure(**fopt)
+        _gsopt = dict(right=.9, width_ratios=[1,.5, .05], top=.95, left=.05, bottom=.08, wspace=.15, hspace=.25)
+        gs = mpl.gridspec.GridSpec(1, 3, **_gsopt)
+        ax = plt.subplot(gs[0])
+        _opt = {}
+        _opt.update(opt)
+        _opt['cb'] = False
+        a0 = self.r_phi_plot(data, ax=ax, **_opt)
+
+
+        ax = plt.subplot(gs[1])
+        cax = plt.subplot(gs[2])
+        _opt = {}
+        _opt.update(opt)
+        _opt['cbopt']['cax'] = cax
+        _opt['name'] = None
+        _opt['title'] = False
+        a1 = self.r_theta_plot(data, ax=ax, phi=phi, **_opt)
+        ax.set_xlim(0, None)
+
+        vmin, vmax = a0.get_clim()
+        tmp = a1.get_clim()
+        vmin = min(vmin, tmp[0])
+        vmax = max(vmax, tmp[1])
+
+        a0.set_clim(vmin, vmax)
+        a1.set_clim(vmin, vmax)
+
+        if save or fn:
+            fn = self._save_fig(fn, self._prefix + '_map_plot.' + ext, sdir=sdir)
+
 
 class BLfile(blc.BLfileBase):
     def __init__(self, fn, sim_path=None, t=None, data=None, defvar=None, ai_data=None, sim=None,
@@ -803,7 +851,7 @@ class BLfile(blc.BLfileBase):
         a1 = ax.pcolormesh(x, y, data_slice, **opt['popt'])
         plt.sca(ax)
         plt.xlabel('$R$')
-        plt.ylabel(r'$\phi/\pi$')
+        plt.ylabel(r'$\varphi/\pi$')
         plt.axvline(1., lw=1, ls=':', c='1')
         ax.set_ylim(0, 2)
         ax.set_xlim(self.r[0], rmax)
@@ -830,7 +878,7 @@ class BLfile(blc.BLfileBase):
         if data is None:
             data = self.mom_r(pre, post)
         _data = [i.copy() for i in data]
-        lbl = [r'$\partial_t v_r$', r'$(v\cdot\nabla v)_r$', r'$c_s^2\partial_r \rho/\rho$', r'$g_r$']
+        lbl = [r'$\partial_t v_r$', r'$(v\cdot\nabla v)_r$', r'$c_s^2\partial_r \Sigma/\Sigma$', r'$g_r$']
         if data[0].ndim == 3:
             for i in range(3):
                 _data[i] = self.midplane(_data[i]).mean(axis=0)
@@ -864,9 +912,9 @@ class BLfile(blc.BLfileBase):
             os.chdir(path)
             self.zoom_plot(data[0], cbl=r'$\partial_t v_r$', fn='figure_1.png')
             self.zoom_plot(data[1], cbl=r'$(v\cdot\nabla v)_r$', fn='figure_2.png')
-            self.zoom_plot(data[2], cbl=r'$c_s^2\partial_r \rho/\rho$', fn='figure_3.png')
+            self.zoom_plot(data[2], cbl=r'$c_s^2\partial_r \Sigma/\Sigma$', fn='figure_3.png')
             self.zoom_plot(data[3], cbl=r'$|g_r|$', fn='figure_4.png')
-            self.zoom_plot(tot    , cbl=r'$(v\cdot\nabla v)_r+c_s^2\partial_r \rho/\rho-g_r$', fn='figure_5.png')
+            self.zoom_plot(tot    , cbl=r'$(v\cdot\nabla v)_r+c_s^2\partial_r \Sigma/\Sigma-g_r$', fn='figure_5.png')
             os.chdir(pwd)
             path = 'meridional'
             if not os.path.isdir(path):
@@ -875,9 +923,9 @@ class BLfile(blc.BLfileBase):
             opt = dict(vmax=1, phi=0, lim=1.2,)
             self.r_theta_plot(data[0], cbl=r'$\partial_t v_r$', fn='figure_1.png', **opt)
             self.r_theta_plot(data[1], cbl=r'$(v\cdot\nabla v)_r$', fn='figure_2.png', **opt)
-            self.r_theta_plot(data[2], cbl=r'$c_s^2\partial_r \rho/\rho$', fn='figure_3.png', **opt)
+            self.r_theta_plot(data[2], cbl=r'$c_s^2\partial_r \Sigma/\Sigma$', fn='figure_3.png', **opt)
             self.r_theta_plot(data[3], cbl=r'$|g_r|$', fn='figure_4.png', **opt)
-            self.r_theta_plot(tot, cbl=r'$(v\cdot\nabla v)_r+c_s^2\partial_r \rho/\rho-g_r$', fn='figure_5.png', **opt)
+            self.r_theta_plot(tot, cbl=r'$(v\cdot\nabla v)_r+c_s^2\partial_r \Sigma/\Sigma-g_r$', fn='figure_5.png', **opt)
         finally:
             os.chdir(pwd)
 
@@ -924,7 +972,7 @@ def _window(x, x0, s=5.):
 class BL3dSim(object):
     def __init__(self, path, athinput=None, x2_face=None, fmts=None, defvar='Rpseudo'):
         if fmts is None:
-            fmts = blc._file_fmts
+            fmts = rc.file_fmts
         self.name = os.path.split(os.path.abspath(path))[-1]
         path = os.path.expanduser(path)
         if path == self.name and not os.path.isdir(path):
@@ -1012,7 +1060,7 @@ class BL3dSim(object):
             for out in outs:
                 files = []
                 b = self.inputs[out].get('id', 'out' + out[6:])
-                searches = ['.'.join([a, b, c, ext]) for ext in blc._ext]
+                searches = ['.'.join([a, b, c, ext]) for ext in rc('ext')]
                 for search in searches:
                     files += [os.path.split(i)[-1] for i in glob(os.path.join(path, search))]
                 self.fileDict[out] = sorted(files)
@@ -1191,7 +1239,7 @@ class BL3dSim(object):
         out = self.swp(overwrite=overwrite)
         plt.semilogy(*out)
         plt.xlabel('$r$')
-        plt.ylabel(r'$\int v_r^2\rho dr$')
+        plt.ylabel(r'$\int v_r^2\Sigma dr$')
         plt.title(name)
         plt.savefig(os.path.join(self.path, 'power_time.pdf'))
         plt.close()
@@ -1199,7 +1247,7 @@ class BL3dSim(object):
         bf = self.loadfile('out1', -1)
         plt.plot(bf.rc, bf['pseudo'].mean(axis=(0,1)))
         plt.xlabel('$r$')
-        plt.ylabel(r'$v_r\sqrt{\rho}$')
+        plt.ylabel(r'$v_r\sqrt{\Sigma}$')
         plt.title(name)
         plt.savefig(os.path.join(self.path, 'pseudo.pdf'))
         plt.close()

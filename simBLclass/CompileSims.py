@@ -376,7 +376,10 @@ def CS_eff_bin_plot(sims=None, sims_path=None, data=None, dpi=300, figsize=None,
 def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
     kwargs['fig'] = False
     if 'data' not in kwargs:
-        kwargs['data'] = '~/data/pleiades_data/bl/cs_eff.npz'
+        fn = ['cs_eff.npz']#, '~/data/pleiades_data/bl/cs_eff.npz']
+        fn = [os.path.expanduser(i) for i in fn]
+        fn = [i for i in fn if os.path.isfile(i)] + [None]
+        kwargs['data'] = fn[0]
     if 'ylim' not in kwargs:
         kwargs['ylim'] = [1e-1, None]
     if figsize is None:
@@ -406,6 +409,200 @@ def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
             fn = 'Dropbox/' + fn
         fig.savefig(fn)
         plt.close()
+
+def gen_dispersion_data(sims=None, fn=None, overwrite=False, skip_gen=False):
+    if fn is None:
+        fn = 'dispersion_data.hdf5'
+    if skip_gen and os.path.isfile(fn):
+        return fn
+    if sims is None:
+        sims = ['M05.FR.r.a', 'M06.HR.r.lc.a', 'M07.FR.r.a', 'M08.FR.r.a',
+                'M09.FR.r.lc.a',
+                'M09.HR.r.a', 'M10.FR.r.a', 'M11.FR.r.a', 'M12.FR.r.lc.a', 'M13.FR.r.a',
+                'M14.FR.r.a', 'M15.FR.r.a']
+    with h5py.File(fn, 'a') as f:
+        for s in sims:
+            sim = BLsim(s)
+            if not overwrite:
+                if sim.name in f and sim.name + '/mach' in f:
+                    print('~~~ Skipping {:}, data already exists.'.format(s))
+                    continue
+            print('==> Generating dispersion data for ' + s)
+            data = sim.mode_detect().plot_data()
+            if not sim.name in f:
+                grp = f.create_group(sim.name)
+            else:
+                grp = f[sim.name]
+            for i in data:
+                if i not in grp:
+                    grp.create_dataset(i, data=data[i])
+                else:
+                    grp[i][:] = data[i]
+            del(data, sim)
+            gc.collect()
+    print('Finished data generation')
+    return fn
+
+def plot_dispersion_data(data=None, save=False, figsize=None, dpi=300, skip_gen=False,
+                         fopt=None, lopt=None, fn=None, sdir=None, overwrite=True,
+                         T=False):
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'multi_dispersion.pdf'
+    if parse_not_overwrite(overwrite, fn):
+        return None
+    if data is None:
+        data = gen_dispersion_data(skip_gen=skip_gen)
+    file_used = False
+    if hasattr(data, "lower"):
+        data = h5py.File(data, 'r')
+        file_used = True
+    bbox = dict(edgecolor='none', facecolor='white', pad=0.3)
+
+    def upper_mode(param, r=None, omega=None, use_kep=False, calc_kappa=False):
+        if r is None:
+            ir = param['omega'][()].argmax()
+            r = param['rc'][ir]
+        else:
+            ir = np.abs(r - param['rc'][()]).argmin()
+        # kappa = np.sqrt(2 * omega * (grad(self.rc, self.rc * vphi)))
+        if use_kep:
+            omega = r ** -1.5
+        if omega is None:
+            omega = param['omega'][ir]
+        op = np.linspace(0, 0.95 * omega, 400)
+        kappa = 2 * omega
+        if calc_kappa:
+            _r = param['rc'][()]
+            _o = param['omega']
+            kappa = np.sqrt(2 * _o[ir] * grad(_r, _r**2 * _o)[ir])
+        if use_kep:
+            kappa = omega
+        s = 1. / param['mach'][()]
+        do = omega - op
+        m2 = (do * kappa ** 2 * r ** 2 - 2 * s ** 2 * omega) / (
+                do ** 3 * r ** 2 - s ** 2 * do)
+        return np.sqrt(m2), op
+
+    def lower_mode(param):
+        mach = int(np.round(param['mach']))
+        x = np.linspace(0, 32, 321)
+        y = np.sqrt(mach ** -2 + (mach / (2 * rc('rl')[mach] * x)) ** 2) / rc('rl')[mach]
+        return x, y
+
+    try:
+        if lopt is None:
+            lopt = dict(loc='upper left')
+        golden = (1 + 5 ** 0.5) / 2
+        sims = sorted(list(data.keys()))
+        nsim = len(sims)
+        if T:
+            nr = int(np.round(np.sqrt(nsim / golden)))
+            nc = int(np.round(np.sqrt(nsim * golden)))
+        else:
+            nc = int(np.round(np.sqrt(nsim / golden)))
+            nr = int(np.round(np.sqrt(nsim * golden)))
+        if figsize is None:
+            figsize = (7.5, 9.5) if not T else (9.5, 7.5)
+        _fopt = dict(dpi=dpi, figsize=figsize)
+        if fopt is None:
+            fopt = {}
+        _fopt.update(fopt)
+        fig = plt.figure(**_fopt)
+        gs = mpl.gridspec.GridSpec(nr, nc, top=.99, bottom=.07 if T else .04, left=.07, right=.99,
+                                   wspace=0, hspace=0)
+        axs = [[None] * nc] * nr
+        cap = 1
+        xmin = np.ones(nc) * 32
+        xmax = np.zeros(nc)
+        for r in range(nr):
+            ymax = -1
+            ymin = 1
+            for c in range(nc):
+                i = c + r * nc
+                if i < nsim:
+                    opt = dict()
+                    if c > 0:
+                        opt['sharey'] = axs[r][0]
+                    if r > 0:
+                        opt['sharex'] = axs[0][c]
+                    ax = plt.subplot(gs[r, c], **opt)
+                    axs[r][c] = ax
+                    ### Plot modes
+                    markers = 'o', '+', 'x', '.'
+                    info = data[sims[i]]
+                    ax.scatter(*info['r0_modes'], marker=markers[0])
+                    ax.scatter(*info['r1_modes'], marker=markers[1])
+                    ax.scatter(*info['global'], marker='*')
+                    if i == 1:
+                        plt.legend(['Star', 'Disk', 'Global'], **lopt)
+                    xlist = []
+                    ylist = []
+                    for key in ['r0_modes', 'r1_modes', 'global']:
+                        xlist.extend(list(info[key][0]))
+                        ylist.extend(list(info[key][1]))
+                    xmax[c] = max(xmax[c], np.max(xlist) + 1.0)
+                    xmin[c] = min(xmin[c], np.min(xlist) - 1.0)
+                    xmax[c] = min(32, xmax[c])
+                    xmin[c] = max(0, xmin[c])
+                    ymax = max(ymax, np.max(ylist) + .05)
+                    ymin = min(ymin, np.min(ylist) - .05)
+                    ymax = min(.99, ymax)
+                    ymin = max(0, ymin)
+                    # upper mode
+                    _x, _y = upper_mode(info, calc_kappa=True)#info['mach'][()] > 13.5)
+                    plt.plot(_x, _y, c='xkcd:crimson', ls=':', lw=1, zorder=-1)
+                    plt.plot(2 * _x, _y, c='.6', ls=':', lw=1, zorder=-1)
+                    plt.plot(3 * _x, _y, c='.7', ls=':', lw=1, zorder=-1)
+                    # if info['mach'][()] > 0:#13.5:
+                    #     _x, _y = upper_mode(info, use_kep=True)
+                    #     plt.plot(_x, _y, c='xkcd:crimson', ls='-', lw=1, zorder=-1)
+                    # if int(np.round(info['mach'])) == 150:
+                    #     _x, _y = upper_mode(info, omega=0.8891435977119754, r=1.0500903710175424)
+                    #     plt.plot(_x, _y, c='xkcd:crimson', ls='-', lw=1, zorder=-1)
+                    # elif int(np.round(info['mach'])) == 140:
+                    #     _x, _y = upper_mode(info, omega=0.8854813712411813, r=1.0456745274364727)
+                    #     plt.plot(_x, _y, c='xkcd:crimson', ls='-', lw=1, zorder=-1)
+                    # lower mode
+                    _x, _y = lower_mode(info)
+                    plt.plot(_x, _y, c='xkcd:crimson', ls='-.', lw=1, zorder=-1)
+                    plt.plot(2 * _x, _y, c='.6', ls='-.', lw=1, zorder=-1)
+                    plt.plot(3 * _x, _y, c='.7', ls='-.', lw=1, zorder=-1)
+                    plt.ylim(ymin, ymax)
+                    plt.xlim(xmin[c], xmax[c])
+                    # omega_max
+                    plt.axhline(np.max(info['omega']), c='.5', lw=1, ls='--', zorder=-2)
+                    ### End of mode plotting
+                    ax.xaxis.set_ticks_position('both')
+                    ax.yaxis.set_ticks_position('both')
+                    ax.tick_params(axis='both', which='both', direction='in', zorder=10)
+                    ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+                    ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(5))
+                    ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(1))
+                    lbl = chr(ord('a') + i) + ') ' + sims[i]
+                    #if sim.name == 'M09.HR.r.a':
+                    #    plt.ylim(.1, None)
+                    ax.text(.96, .94, lbl, c='k', transform=ax.transAxes, ha='right',
+                            fontsize=6, bbox=bbox)
+                    if c:
+                        plt.setp(ax.get_yticklabels(), visible=False)
+                    else:
+                        plt.ylabel(r'$\Omega_p$')
+                    if r == nr -1:
+                        plt.xlabel(r'$m$')
+                    else:
+                        plt.setp(ax.get_xticklabels(), visible=False)
+                    gc.collect()
+            cap = .95
+        if save:
+            print('Saving Figure')
+            plt.savefig(fn)
+            plt.close()
+    finally:
+        if file_used:
+            data.close()
+    return
 
 def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300,
                      fopt=None, lopt=None, fn=None, sdir=None, overwrite=True):
@@ -472,6 +669,8 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
                 ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
                 ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(5))
                 lbl = chr(ord('a') + i) + ') ' + sim.name
+                if sim.name == 'M09.HR.r.a':
+                    plt.ylim(.1, None)
                 ax.text(.96, .94, lbl, c='k', transform=ax.transAxes, ha='right',
                         fontsize=6)
                 if c:
@@ -491,7 +690,7 @@ def multi_dispersion(sims=None, data_dir=None, save=False, figsize=None, dpi=300
     return
 
 def multi_map(map_dict=None, var=None, save=False, figsize=None, dpi=300, fopt=None,
-              fn=None, sdir=None, nc=None, nr=None, file='cons', txt=True, lbl=True,
+              fn=None, sdir=None, nc=None, nr=None, kind='cons', txt=True, lbl=True,
               skeys=None):
     if map_dict is None:
         map_dict = {'M05.FR.r.a': [200],
@@ -542,7 +741,7 @@ def multi_map(map_dict=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                     sim = None
                 if sim is None:
                     sim = BLsim(skeys[0])
-                with sim.loadfile(file, map_dict[skeys[0]].pop(0)) as df:
+                with sim.loadfile(kind, map_dict[skeys[0]].pop(0)) as df:
                     df.plot2d(var, ax=ax, cb=False, title=False, minmax=False)
                     ax.yaxis.set_ticks_position('both')
                     ax.xaxis.set_ticks_position('both')
@@ -581,15 +780,28 @@ def multi_map(map_dict=None, var=None, save=False, figsize=None, dpi=300, fopt=N
     return
 
 def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=None,
-              fn=None, sdir=None, nc=None, nr=None, file='cons', txt=True, lbl=True,
-              lnorm=-2, overwrite=True):
+              fn=None, sdir=None, nc=None, nr=None, kind='cons', txt=True, lbl=True,
+              lnorm=-2, overwrite=True, cb_side=None, tsz=10):
     if plots is None:
         plots = [dict(sim='M07.FR.r.a', t=450),
                  dict(sim='M09.FR.r.lc.a', t=175, ps=.316, mode=19, rm_last=True),
                  dict(sim='M13.FR.r.a', t=375),
                  ]
+        plots = [dict(sim='M06.HR.r.lc.a', t=25, op=0.75755, mode=7, phi0=1.2 * np.pi),
+                 dict(sim='M09.FR.r.a', t=175, ps=.315, mode=19, op=.315, ru=1.5,
+                      phi0=1.63 * np.pi),
+                 #dict(sim='M13.FR.r.a', t=375),
+                 ]
+        if nr is None and nc is None:
+            nr = 2
+            nc = 1
+            cb_side = 'right'
     golden = (1 + 5 ** 0.5) / 2
     nplots = len(plots)
+    if cb_side is None:
+        cb_side = 'top'
+    cb_side = cb_side.lower()
+    assert cb_side in ['top', 'right']
     if nr is None:
         nr = int(np.round(np.sqrt(nplots / golden)))
     if nc is None:
@@ -600,8 +812,11 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
             nc = int(np.round(np.sqrt(nplots * golden)))
     if figsize is None:
         margin = .25
-        s0 = 2
-        figsize = (nc * s0 + margin, nr * s0 + margin)
+        s0 = 2.5
+        width, height = nc * s0 + margin, nr * s0 + margin
+        if cb_side in ['right']:
+            width += margin * 3
+        figsize = width, height
     _fopt = dict(dpi=dpi, figsize=figsize)
     if fopt is None:
         fopt = {}
@@ -615,14 +830,22 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
     def add_plbl(lbl, ax=None):
         if ax is None:
             ax = plt.gca()
-        ax.text(.01, .97, '(' + lbl + ')', c='k', transform=ax.transAxes, ha='left',
-                va='top', fontsize=8)
+        ax.text(.01, .97, '(' + lbl + ')', c='w', transform=ax.transAxes, ha='left',
+                va='top', fontsize=tsz)
 
     fig = plt.figure(**_fopt)
     hr = [.1, 1] * nr
-    gs = mpl.gridspec.GridSpec(nr * 2, nc, top=.9, bottom=.15, left=.07, right=.93,
-                               wspace=0, hspace=0, height_ratios=hr)
-    axs = [[None] * nc * 2] * nr
+    gs_opt = dict(top=.9, bottom=.15, left=.07, right=.93, wspace=0, hspace=0)
+    if cb_side == 'top':
+        gs_opt['height_ratios'] = [.1, 1] * nr
+        gs = mpl.gridspec.GridSpec(nr * 2, nc, **gs_opt)
+        orientation = 'horizontal'
+    elif cb_side == 'right':
+        gs_opt.update(dict(top=.93, bottom=.08, left=.15, right=.87))
+        gs_opt['width_ratios'] = [1, .05] * nc
+        gs = mpl.gridspec.GridSpec(nr, nc * 2, **gs_opt)
+        orientation = 'vertical'
+    axs = [[None] * nc] * nr
     sim = None
 
     fmt = oomfmt(lnorm)
@@ -635,13 +858,18 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                     opt['sharey'] = axs[r][0]
                 if r > 0:
                     opt['sharex'] = axs[0][c]
-                ax = plt.subplot(gs[2 * r + 1, c], **opt)
-                cax = plt.subplot(gs[2 * r, c])
+                if cb_side == 'top':
+                    ax = plt.subplot(gs[2 * r + 1, c], **opt)
+                    cax = plt.subplot(gs[2 * r, c])
+                elif cb_side == 'right':
+                    ax = plt.subplot(gs[r, 2 * c], **opt)
+                    axs[r][c] = ax
+                    cax = plt.subplot(gs[r, 2 * c + 1])
                 sname = plots[i]['sim']
                 if getattr(sim, 'name', None) != sname:
                     sim = BLsim(sname)
-                with sim.loadfile(file, plots[i]['t']) as df:
-                    cbopt = dict(orientation='horizontal', format=fmt)
+                with sim.loadfile(kind, plots[i]['t']) as df:
+                    cbopt = dict(orientation=orientation, format=fmt)
                     sopt = dict(ax=ax, cax=cax, title=False, lbls=False, cbopt=cbopt,
                                 cbl=False)
                     for key in plots[i].keys():
@@ -655,29 +883,191 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
                     ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
                     ax.xaxis.set_ticks_position('both')
                     ax.tick_params(axis='both', which='both', direction='in')
+
                     cax.xaxis.set_ticks_position('top')
                     cax.xaxis.set_label_position('top')
-                    cax.tick_params(axis='x', which='both', direction='in')
+                    cax.tick_params(axis='both', which='both', direction='in')
                     cax.xaxis.get_offset_text().set_visible(False)
+                    cax.yaxis.get_offset_text().set_visible(False)
                     if txt:
                         t = int(df.t / tau + .5)
                         txt = sim.name + "\n" + r"$t/2\pi={:d}$".format(t)
-                        ax.text(.96, .97, txt, c='k', transform=ax.transAxes, ha='right',
-                                va='top', fontsize=6)
+                        ax.text(.96, .96, txt, c='k', transform=ax.transAxes, ha='right',
+                                va='top', fontsize=tsz)
                 if lbl:
                     add_plbl(chr(ord('a') + i))
                 if c:
                     plt.setp(ax.get_yticklabels(), visible=False)
                 else:
-                    plt.ylabel(r'$\phi/2\pi$')
+                    plt.ylabel(r'$\varphi/\pi$')
                 if r == nr -1:
                     plt.xlabel(r'$r$')
                 else:
                     plt.setp(ax.get_xticklabels(), visible=False)
-                if r == 0 and c == nc - 1:
-                    cax.text(1.01, 1.13, r'$\times 10^{{{}}}$'.format(lnorm),
-                             transform=ax.transAxes, ha='left', va='bottom')#, fontsize=6)
+                if cb_side == 'top':
+                    if r == 0 and c == nc - 1:
+                        cax.text(1.01, 1.13, r'$\times 10^{{{}}}$'.format(lnorm),
+                                 transform=ax.transAxes, ha='left', va='bottom')#, fontsize=6)
+                elif r == 0:
+                    plt.title(r'$r v_r \sqrt{{\Sigma}}/10^{{{}}}$'.format(lnorm), fontsize=tsz)
+                else:
+                    yticks = ax.yaxis.get_major_ticks()
+                    yticks[-1].label1.set_visible(False)
+                    yticks[-2].label1.set_visible(False)
                 gc.collect()
+    plt.draw()
+    if save or fn:
+        save = True
+        if sdir is True:
+            sdir = os.path.split(sim.path)[0]
+            sdir = os.path.join(os.path.split(sdir, 'figs'))
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
+
+def vortex_types(plots=None, lvar=None, rvar=None, save=False, figsize=None, dpi=300,
+                 fopt=None, fn=None, sdir=None, kind='cons', txt=True, lbl=True,
+                 overwrite=True, cb_side=None, tsz=10, hspace=.01):
+    if plots is None:
+        rmin, rmax = .98, 2.0
+        _ropt = dict(cbl=None, xminor=False, lnorm=-2)
+        ropt = dict(rmax=1*rmax)
+        ropt.update(_ropt)
+        _lopt = dict(rmin=rmin, vmax='98%', cbl=r'$\omega/\Sigma-\left.\left<\omega/\Sigma\right>\right|_{t=0}$', xminor=False)
+        rmax = rmin + (rmax - rmin) / 3
+        lopt = dict(rmax=1*rmax)
+        lopt.update(_lopt)
+        plots = [dict(sim='M11.FR.r.a', t=173, lopt=lopt, ropt=ropt, rp=1.1, phi0=.68*np.pi)]
+
+        rmin, rmax = .98, 3.5
+        ropt = dict(rmax=1*rmax)
+        rmax = rmin + (rmax - rmin) / 3
+        lopt = dict(rmax=1*rmax)
+        lopt.update(_lopt)
+        lopt['cbl'] = False
+        ropt['cbl'] = False
+        plots.append(dict(sim='M07.FR.r.a', t=450, lopt=lopt, ropt=ropt, op=.538, mode=4, phi0=1.45*np.pi, vmax=1.1e-2))
+    if lvar is None:
+        lvar = 'd_vortensity_0'
+    if rvar is None:
+        rvar = 'Rpseudo'
+    nr = len(plots)
+    nc = 2
+    if cb_side is None:
+        cb_side = 'top'
+    cb_side = cb_side.lower()
+    assert cb_side in ['top', 'side']
+    if figsize is None:
+        figsize = 3, 5
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt is None:
+        fopt = {}
+    _fopt.update(fopt)
+
+    if save and not fn:
+        fn = 'vortex_types.png'
+    if parse_not_overwrite(overwrite, fn):
+        return None
+
+    def add_plbl(lbl, ax=None, side=0):
+        if ax is None:
+            ax = plt.gca()
+        x = .02 if side else .06
+        bbox = dict(facecolor='w', alpha=0.5, edgecolor='none', clip_on=True)
+        ax.text(.01, .97, '(' + lbl + ')', c='k', transform=ax.transAxes, ha='left',
+                    va='top', fontsize=tsz, bbox=bbox, clip_on=True)
+
+    fig = plt.figure(**_fopt)
+    hr = [.1, 1] * nr
+    gs_opt = dict(top=.9, bottom=.0, left=.15, right=.93, wspace=0, hspace=hspace)
+    if cb_side == 'top':
+        gs_opt['height_ratios'] = [.05, 1, .3] * nr
+        gs_opt['width_ratios'] = [1/3.0, 1]
+        gs = mpl.gridspec.GridSpec(nr * 3, nc, **gs_opt)
+        orientation = 'horizontal'
+        _nx, _ny = 2, 3
+        _dx, _dy = 0, 1
+    elif cb_side == 'side':
+        gs_opt.update(dict(top=.93, bottom=.08, left=.15, right=.87))
+        gs_opt['width_ratios'] = [.05, 1/3.0, 1, .05]
+        gs = mpl.gridspec.GridSpec(nr, nc * 2, **gs_opt)
+        orientation = 'vertical'
+        _nx, _ny = 4, 1
+        _dx, _dy = 1, 0
+    sim = None
+    axs = [None, None]
+
+    for r in range(nr):
+        sname = plots[r]['sim']
+        if getattr(sim, 'name', None) != sname:
+            sim = BLsim(sname)
+        with sim.loadfile(kind, plots[r]['t']) as df:
+            for c in range(nc):
+                i = c + r * nc
+                opt = dict()
+                if c > 0:
+                    opt['sharey'] = axs[0]
+                if r > 0:
+                    opt['sharex'] = None  # axs[c]
+                ax = plt.subplot(gs[r * _ny + _dy, c + _dx], **opt)
+                if cb_side == 'top':
+                    cax = plt.subplot(gs[r * _ny, c])
+                elif cb_side == 'side':
+                    cax = plt.subplot(gs[r * _ny, -1 if c else 0])
+                axs[c] = ax
+                cbopt = dict(orientation=orientation)
+                sopt = dict(ax=ax, cax=cax, title=False, lbls=False, cbopt=cbopt,
+                            cbl=False)
+                for key in plots[r].keys():
+                    if key not in ['sim', 't', 'lopt', 'ropt']:
+                        sopt[key] = plots[r][key]
+                if ['lopt', 'ropt'][c] in plots[r]:
+                    sopt.update(plots[r][['lopt', 'ropt'][c]])
+                #print(sname, sopt)
+                df.stripe([lvar, rvar][c], **sopt)
+                ax.yaxis.set_ticks_position('both')
+                # ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+                ax.xaxis.set_ticks_position('both')
+                ax.tick_params(axis='both', which='both', direction='in')
+
+                cax.xaxis.set_ticks_position('top')
+                cax.xaxis.set_label_position('top')
+                cax.tick_params(axis='both', which='both', direction='in')
+                cax.xaxis.get_offset_text().set_visible(False)
+                cax.yaxis.get_offset_text().set_visible(False)
+                if txt and c == 1:
+                    t = int(df.t / tau + .5)
+                    txt = sim.name + "\n" + r"$t/2\pi={:d}$".format(t)
+                    ax.text(.9, .96, txt, c='k', transform=ax.transAxes, ha='right',
+                            va='top', fontsize=tsz)
+                if lbl:
+                    add_plbl(chr(ord('a') + i), side=c)
+                if c:
+                    plt.setp(ax.get_yticklabels(), visible=False)
+                else:
+                    plt.ylabel(r'$\varphi/\pi$')
+                if r == nr -1:
+                    plt.xlabel(r'$r$')
+                else:
+                    # plt.setp(ax.get_xticklabels(), visible=False)
+                    pass
+                #if cb_side == 'top':
+                #    if r == 0 and c == nc - 1:
+                #        cax.text(1.01, 1.13, r'$\times 10^{{{}}}$'.format(lnorm),
+                #                 transform=ax.transAxes, ha='left', va='bottom')#, fontsize=6)
+                #elif r == 0:
+                #    plt.title(r'$r v_r \sqrt{{\Sigma}}/10^{{{}}}$'.format(lnorm), fontsize=tsz)
+                #else:
+                #    yticks = ax.yaxis.get_major_ticks()
+                #    yticks[-1].label1.set_visible(False)
+                #    yticks[-2].label1.set_visible(False)
+        gc.collect()
     plt.draw()
     if save or fn:
         save = True
@@ -697,8 +1087,9 @@ def multi_stripe(plots=None, var=None, save=False, figsize=None, dpi=300, fopt=N
 def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
              fn=None, sdir=None, rmin=1.0, rmax=2.0, vmax1=None, vmax2=None, overwrite=True):
     if sims is None:
-        sims = ['M06.HR.r.lc.a', 'M09.FR.r.lc.a', 'M11.FR.r.a', 'M12.FR.r.lc.a',
+        sims = ['M06R.H.r.lc.a', 'M09.FR.r.lc.a', 'M11.FR.r.a', 'M12.FR.r.lc.a',
                 'M15.FR.r.a']
+        sims = ['M07.FR.r.a', 'M09.FR.r.lc.a', 'M12.FR.r.lc.a', 'M15.FR.r.a']
     if save or fn:
         save = True
         if not fn:
@@ -724,7 +1115,7 @@ def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
         fopt = {}
     _fopt.update(fopt)
     fig = plt.figure(**_fopt)
-    gs = mpl.gridspec.GridSpec(nvar, nsim + 1, top=.985, bottom=.07, left=.035, right=.95,
+    gs = mpl.gridspec.GridSpec(nvar, nsim + 1, top=.985, bottom=.07, left=.035, right=.93,
                                wspace=0, hspace=0, width_ratios=[1] * nsim + [.04])
     col1 = [None] * nvar
     r1lim = -np.inf
@@ -751,8 +1142,8 @@ def multi_st(sims=None, opts=None, save=False, figsize=None, dpi=300, fopt=None,
             if i == 0:
                 sim.rho_st(delta=True, norm=MidpointNormalize(-1, .1, 0),
                             cmap=helpers.NCcmap, vmin=-1, vmax=.1, zerocent=False, **opt)
-                plt.text(.5, .9, sim.name, c='k', ha='center',
-                         transform=ax.transAxes)
+                cbl = r'$\mathcal{{M}}={:d}$'.format(int(sim.mach + .1))
+                plt.text(.5, .9, cbl, c='k', ha='center', transform=ax.transAxes)
             if i == 1:
                 sim.stress_st(vmax=vmax1, **opt)
                 r1lim = max(r1lim, max(plt.gci().get_clim()))
@@ -1244,6 +1635,176 @@ def AM_plot(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sd
     return
 
 
+def am_subpanels(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
+                 sdir=None, lopt=None, lnorm=-3, popt=None, overwrite=True, gsopt=None):
+    if sims is None:
+        sims = 1
+    if sims in [1 , 2]:
+        _sims = [dict(name='M07.FR.r.a', ts=[[100, 200, 125], [200, 300, 225], [550, 600, 575]]),
+                 dict(name='M09.FR.r.lc.a', ts=[[100, 200, 150], [250, 350, 275], [400, 500, 450]]),
+                 dict(name='M12.FR.mix.lc.a', ts=[[100, 200, 150], [250, 350, 300], [500, 600, 550]]),
+                 dict(name='M15.FR.r.a', ts=[[100, 200, 150], [300, 400, 350], [500, 600, 550]]),
+                 ]
+        if save and not fn:
+            fn = 'am_subpanels_{}.png'.format(sims)
+        if sims == 1:
+            sims = _sims[0:2]
+        elif sims == 2:
+            sims = _sims[2:]
+    nsim = len(sims)
+    if not lnorm:
+        lnorm = 0
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'am_subpanels.png'
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if parse_not_overwrite(overwrite, fn):
+        return None
+    nc = nsim
+    nvar = 3
+    _popt = dict(lw=1)
+    if popt is not None:
+        _popt.update(popt)
+    if lopt is None:
+        lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
+    if figsize is None:
+        figsize = np.array([8.5, 10.5]) * 1.5
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt:
+        _fopt.update(fopt)
+    nt = len(sims[0]['ts'])
+    assert np.all([len(s['ts']) == nt for s in sims])
+    fig = plt.figure(**_fopt)
+    _gsopt = dict(top=.98, bottom=.02, left=.05, right=.99, hspace=0.06, wspace=0.1,
+                  height_ratios=[.1, 1] * nt)
+    if gsopt is not None:
+        _gsopt.update(gsopt)
+    gs = mpl.gridspec.GridSpec(2 * nt, nsim, **_gsopt)
+    for col, args in enumerate(sims):
+        sim = BLsim(args['name'])
+        ropt = args.get('opt', dict())
+        if type(ropt) == dict:
+            ropt = [ropt] * nt
+        for row in range(nt):
+            tax = plt.subplot(gs[2 * row, col])
+            tax.axis('off')
+            ts = args['ts'][row]
+            title = r'$\mathcal{{M}}={:d}\;\;t/2\pi={:d}-{:d}$'
+            title = title.format(int(np.round(sim.mach)), *ts[:2])
+            tkw = dict(y=1, va='top', fontsize='large')
+            tkw.update(dict(y=.4) if row else {})
+            tax.set_title(title, **tkw)
+            opt = dict(gs0=gs[2*row+1, col], save=False, ylbl=(col==0), xlbl=(row==nt-1),
+                       hdf5=args.get('hdf5'), cbl0=row==0, cbl1=row==0, #lbl0=row*5,
+                       prefix=chr(row + nt * col + 65), rmax0='p2', am_lnorm=-4)
+            sim.am_subpanel(*ts, **opt, **ropt[row])
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
+
+
+def am_terms(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sdir=None,
+             lopt=None, lnorm=-2, overwrite=True, gsopt=None):
+    if sims is None:
+        sims = [dict(name='M06.HR.r.lc.a', ts=[200, 300]),
+                dict(name='M09.FR.r.lc.a', ts=[400, 500]),
+                dict(name='M12.FR.mix.lc.a', ts=[500, 600]),
+                ]
+    nsim = len(sims)
+    if not lnorm:
+        lnorm = 0
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'am_terms.pdf'
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if parse_not_overwrite(overwrite, fn):
+        return None
+    if lopt is None:
+        lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
+    if figsize is None:
+        figsize = np.array([4, 8])
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt:
+        _fopt.update(fopt)
+    assert np.all([len(s['ts']) == 2 for s in sims])
+    fig = plt.figure(**_fopt)
+    _gsopt = dict(top=.98, bottom=.05, left=.15, right=.97, hspace=0.0, wspace=0.0)
+    if gsopt is not None:
+        _gsopt.update(gsopt)
+    gs = mpl.gridspec.GridSpec(nsim, 1, **_gsopt)
+    for row, args in enumerate(sims):
+        sim = BLsim(args['name'])
+        ax = plt.subplot(gs[row])
+        opt = dict(ax=ax, save=False, xlbl=(row==nsim-1), hdf5=args.get('hdf5'),
+                lbl0=row, legend=row==0, lnorm=-4, ylbl=row==1)
+        sim.am_terms(*args['ts'], **opt)
+        title = r'$\mathcal{{M}}={:d}\;\;t/2\pi={:.0f}-{:.0f}$'
+        plt.title(title.format(int(sim.mach+.1), *args['ts']), y=.87)
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
+
+
+def Mdot_CS(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None, sdir=None,
+            txt=True, lopt=None, overwrite=True, gsopt=None, tx=.98, ty=.94, topt=None):
+    if sims is None:
+        sims = ['M09.FR.r.lc.a', 'M12.FR.mix.lc.a']
+    nsim = len(sims)
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'mdot_cs.pdf'
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if parse_not_overwrite(overwrite, fn):
+        return None
+    if lopt is None:
+        lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
+    if figsize is None:
+        figsize = np.array([4, 6])
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt:
+        _fopt.update(fopt)
+    fig = plt.figure(**_fopt)
+    _gsopt = dict(top=.98, bottom=.07, left=.17, right=.98, hspace=0.1, wspace=0.1)
+    if gsopt is not None:
+        _gsopt.update(gsopt)
+    gs = mpl.gridspec.GridSpec(nsim, 1, **_gsopt)
+    _topt = dict(c='k', ha='right', va='top', fontsize=8)
+    if topt is not None:
+        _topt.update(topt)
+    for row, sim in enumerate(sims):
+        if hasattr(sim, 'lower'):
+            sim = BLsim(sim)
+        ax = plt.subplot(gs[row])
+        sim.Mdot_CS(ax=ax, legend=not row, title=False)
+        if not row:
+            plt.xlabel('')
+        # plt.title(sim.name)
+        if txt:
+            lbl = chr(ord('a') + row) + r') $\;\mathcal{{M}}={:d}$'.format(int(sim.mach+.1))
+            ax.text(tx, ty, lbl, transform=ax.transAxes, **_topt)
+    if save:
+        plt.savefig(fn)
+        plt.close()
+    return
+
+
 def mode_hist(sims=None, fn=None, save=None, data=None, ll=True, overwrite=True):
     if fn is None and save:
         fn = 'mode_hist.pdf'
@@ -1378,6 +1939,62 @@ def multi_mdot_split(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn
             plt.setp(ax.get_xticklabels(), visible=False)
             plt.xlabel('')
 
+    if fn or save:
+        plt.savefig(fn)
+        plt.close()
+    return
+
+
+def multi_vortensity_prof(sims=None, save=False, figsize=None, dpi=300, fopt=None,
+                          fn=None, sdir=None, lbl=True, lnorm=True, overwrite=True,
+                          lopt=None):
+    if save or fn:
+        save = True
+        if not fn:
+            fn = 'multi_vortensity_prof.pdf'
+        if sdir:
+            sdir = os.path.expanduser(sdir)
+            if not os.path.isdir(sdir):
+                os.mkdir(sdir)
+            fn = os.path.join(sdir, fn)
+    if parse_not_overwrite(overwrite, fn):
+        return None
+    if lopt is None:
+        lopt = dict(handlelength=1, fontsize=7, handletextpad=.4, columnspacing=.7,
+                    ncol=2, loc=7)
+    if sims is None:
+        F = False
+        sims = [
+            dict(name='M06.HR.r.lc.a', kwargs=dict(rmax=3, ylim=[0,10.5])),
+            dict(name='M09.FR.r.lc.a', kwargs=dict(rmax=1.8, ylim=[0,13.5], legend=F)),
+            dict(name='M12.FR.r.lc.a', kwargs=dict(rmax=1.8, ylim=[0,2.1], legend=F)),
+            dict(name='M15.FR.r.a', kwargs=dict(rmax=1.5, ylim=[0,3], legend=F)),
+        ]
+    nr = len(sims)
+    nc = 1
+
+    if figsize is None:
+        figsize = np.array([3, 7.5])
+    _fopt = dict(dpi=dpi, figsize=figsize)
+    if fopt is None:
+        fopt = {}
+    _fopt.update(fopt)
+    fig = plt.figure(**_fopt)
+    gs = mpl.gridspec.GridSpec(nr, nc, top=.99, bottom=.05, left=.16, right=.97,
+                               hspace=.15)
+    ax = None
+    for ns, s in enumerate(sims):
+        ax = plt.subplot(gs[ns])
+        sim = BLsim(s['name'])
+        sim.alt_vortensity_profiles(ax=ax, **s['kwargs'], title=False, lopt=lopt)
+        ax.yaxis.set_ticks_position('both')
+        ax.xaxis.set_ticks_position('both')
+        ax.tick_params(axis='both', which='both', direction='in', zorder=10)
+        lbl = chr(ord('a') + ns) + ') ' + 'M{:d}'.format(int(np.round(sim.mach)))
+        ax.text(.83, .97, lbl, c='k', transform=ax.transAxes, ha='left', va='top',
+                fontsize=8)
+        if ns < nr - 1:
+            plt.xlabel('')
     if fn or save:
         plt.savefig(fn)
         plt.close()

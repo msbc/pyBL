@@ -7,3 +7,5 @@ test/*
 .DS_Store
 mov
 .idea
+*.png
+*.pdf

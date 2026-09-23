@@ -61,7 +61,18 @@ if __name__ == '__main__':
                         action='store_true',
                         default=False,
                         help='Skip data gen (if possible)')
+    parser.add_argument('-g', '--git',
+                        action='store_true',
+                        default=False,
+                        help='git pull')
     args = parser.parse_args()
+
+    if args.git:
+        from .git_update import git_pull
+        git_pull()
+
+    import matplotlib as mpl
+    mpl.use('agg')
     if args.a:
         print(vars(args))
     elif args.tbl:

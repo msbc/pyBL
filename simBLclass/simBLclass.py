@@ -75,6 +75,7 @@ class BLsim(object):
                 if os.path.isdir(tmp):
                     path = tmp
                     break
+        self.full_name = self.name
         self._is_lc_sim = '.lc.' in self.name
         if rc('rename_lc'):
             if '.lc.' in self.name:
@@ -215,10 +216,13 @@ class BLsim(object):
         try:
             return self._lightcurve
         except AttributeError:
-            self._lightcurve = Lightcurves(self.files('flux'), sim=self)
+            self._lightcurve = self.get_lightcurve()
         return self._lightcurve
 
-    def upper_omega(self, m, n=0, r=1.1, t0=2000, tf=None):
+    def get_lightcurve(self, **kwargs):
+        return Lightcurves(self.files('flux'), sim=self, **kwargs)
+
+    def _old_upper_omega(self, m, n=0, r=1.1, t0=2000, tf=None):
         vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
         omega = vphi / self.rc
         if r is None:
@@ -227,6 +231,7 @@ class BLsim(object):
             print(r)
         else:
             ir = self.rloc(r)
+            r = self.rc[ir]
         #kappa = np.sqrt(2 * omega * (grad(self.rc, self.rc * vphi)))
         kappa = 2 * omega
         kappa = kappa[ir]
@@ -238,6 +243,74 @@ class BLsim(object):
         ang = np.arctan(np.sqrt(c1 ** 3 - c2 ** 2) / c1)
         tmp = 2 * np.sqrt(c1) * np.cos(ang / 3) / (3 * m ** 2 * r ** 2)
         return kep - tmp
+
+    def upper_omega(self, m, n=0, r=1.1, t0=2000, tf=None):
+        vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
+        omega = vphi / self.rc
+        if r is None:
+            ir = omega.argmax()
+            r = self.rc[ir]
+            print(r)
+        else:
+            ir = self.rloc(r)
+            r = self.rc[ir]
+        omega = omega[ir]
+        #kappa = np.sqrt(2 * omega * (grad(self.rc, self.rc * vphi)))
+        kappa = 2 * omega
+        kep = r ** -1.5
+        M = self.mach
+        s = 1. / M
+        a = -(m*omega*r*s**2) + np.sqrt(m**2*omega**2*r**2*s**4 - (kappa**2*r**2 + m**2*s**2)**3/27.)
+        a = a**(1./3.)
+        return omega - (3*a**2 + kappa**2*r**2 + m**2*s**2)/(3.*a*m*r)
+
+    def _old_upper_m(self, op, n=0, r=1.1, t0=2000, tf=None):
+        vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
+        omega = vphi / self.rc
+        if op is None:
+            op = np.linspace(0, omega.max(), 100)
+        if r is None:
+            ir = omega.argmax()
+            r = self.rc[ir]
+            print(r)
+        else:
+            ir = self.rloc(r)
+            r = self.rc[ir]
+        #kappa = np.sqrt(2 * omega * (grad(self.rc, self.rc * vphi)))
+        omega = omega[ir]
+        kappa = 2 * omega
+        kep = r ** -1.5
+        M = self.mach
+        s = 1. / M
+        do = omega - op
+        return np.sqrt((do * kappa**2 * r**2 - 2 * s**2 * omega) / (do**3 * r**2 - s**2 * do))
+
+    def upper_m(self, op=None, n=0, r=None, t0=2000, tf=None):
+        vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
+        omega = vphi / self.rc
+        if r is None:
+            ir = np.abs(self.rc**-1.5-omega).argmin()
+            r = self.rc[ir]
+        if r is None:
+            ir = omega.argmax()
+            r = self.rc[ir]
+            #ir = self.rloc(np.sqrt(r))
+            #r = self.rc[ir]
+            print(r)
+        else:
+            ir = self.rloc(r)
+            r = self.rc[ir]
+        #kappa = np.sqrt(2 * omega * (grad(self.rc, self.rc * vphi)))
+        omega = omega[ir]
+        kep = r ** -1.5
+        omega = kep
+        if op is None:
+            op = np.linspace(0, 0.95 * omega, 400)
+        kappa = 2 * omega
+        M = self.mach
+        s = 1. / M
+        do = omega - op
+        return np.sqrt((do * kappa**2 * r**2 - 2 * s**2 * omega) / (do**3 * r**2 - s**2 * do)), op
 
     def info_row(self):
         M, res, seed, suffix = self.name.split('.')
@@ -308,9 +381,7 @@ class BLsim(object):
     def _mk_flux_data(self, ll=True):
         return np.array(self.map_files('ffts', 'flux_data', ll=ll), 'float32')
 
-    def _get_flux_fn(self, a, b=0, c=0, check=True, overwrite=False):
-        if overwrite == True:
-            return
+    def _get_flux_fn(self, a, b=0, c=0, check=True):
         fn = 'flux_data_v{:d}.{:d}.{:d}.npz'.format(a, b, c)
         fn = os.path.join(self.path, fn)
         if check:
@@ -318,21 +389,19 @@ class BLsim(object):
                 return None
         return fn
 
-    def load_flux_data(self, ll=True, overwrite=False, data=None):
+    def load_flux_data(self, ll=True, overwrite=False, data=None, option=None):
         if self._flux_data is not None:
             return self._flux_data
-        fn = self._get_flux_fn(1, 2, 0, overwrite=overwrite)
+        fn = self._get_flux_fn(1, 2, 0)
         if fn:
-            out = FluxData(fn, self.rc, self)
+            out = FluxData(fn, self.rc, self, option=option)
         else:
-            if self._is_lc_sim:
-                overwrite = True
-            fn = (self._get_flux_fn(1, 1, 0, overwrite=overwrite) or
-                  self._get_flux_fn(1, 0, 0, overwrite=overwrite))
+            fn = self._get_flux_fn(1, 1, 0) or self._get_flux_fn(1, 0, 0)
             if fn:
                 out = npz_wrapper(np.load(fn), self.rc)
             else:
-                out = FluxData(self._get_flux_fn(1, 2, 0, check=False), self.rc, self)
+                out = FluxData(self._get_flux_fn(1, 2, 0, check=False), self.rc, self,
+                               option=option)
         self._flux_data = out
         return self._flux_data
 
@@ -581,12 +650,12 @@ class BLsim(object):
                 data = (data - data[0][None, :]) / data[0][None, :]
             return data
 
-        cbl = r'$\rho$'
+        cbl = r'$\Sigma$'
         name = 'dens'
         if not 'vmax' in kwargs:
             kwargs['vmax'] = 1
         if delta:
-            cbl = r'$\Delta \rho/\rho_0$'
+            cbl = r'$\Delta \Sigma/\Sigma_0$'
             name = 'delta_dens'
             if not 'zerocent' in kwargs:
                 kwargs['zerocent'] = True
@@ -933,18 +1002,100 @@ class BLsim(object):
             except AttributeError:
                 self.loadfile('cons', args[0]).drho_plot()
 
-    def draw_spiral(self, rp, phi0=0, opt=None):
+    def draw_spiral(self, rp, phi0=0, cart=True, norm=np.pi, opt=None):
         if opt is None:
             opt = {}
         if 'ls' not in opt:
-            opt['ls'] = ':'
+            opt['ls'] = ':' if cart else '--'
         if 'lw' not in opt:
             opt['lw'] = 1
         if 'c' not in opt:
             opt['c'] = '1'
         r = np.array([i for i in self.rc if i >= rp])
         phi = spiral(r, rp, 1. / self.mach) + phi0
-        plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
+        if cart:
+            plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
+        else:
+            phi = phi % tau
+            dphi = np.diff(phi)
+            x = []
+            y = []
+            for i in range(phi.size - 1):
+                x.append(r[i])
+                y.append(phi[i])
+                if np.abs(dphi[i]) > np.pi:
+                    x.append(np.nan)
+                    y.append(np.nan)
+            x.append(r[-1])
+            y.append(phi[-1])
+            y = np.array(y) / norm
+            plt.plot(x, y, **opt)
+
+    def kr_sqr(self, op, m, t0=None, tf=None):
+        if t0 is None:
+            t0 = 2000
+        omega = self.flux_data['vphi'][t0:tf].mean(axis=0) / self.rc
+        return (m**2 * (omega - op)**2 - omega**2) * self.mach ** 2
+
+    def draw_mode_curve(self, op, m, rl=None, ru=None, phi0=0, opt=None, norm=1, polar=False,
+                        t0=None, tf=None, reflect=None, zorder=None):
+        if opt is None:
+            opt = {}
+        if 'ls' not in opt:
+            opt['ls'] = '--'
+        if 'lw' not in opt:
+            opt['lw'] = 1
+        if 'c' not in opt:
+            opt['c'] = '1'
+        r = self.rc
+        kr2 = self.kr_sqr(op, m, t0=t0, tf=tf)
+        if ru is None:
+            ru = r[-1]
+            rui = r.size - 1
+        else:
+            rui = self.rloc(ru)
+            while rui < r.size - 1 and kr2[rui] > 0:
+                rui += 1
+            rui -= 1
+            ru = r
+        if rl is None:
+            rli = rui
+            while kr2[rli] > 0 and rli > 0:
+                rli -= 1
+            rli += 1
+            rp = r[rli]
+        else:
+            rli = self.rloc(rl)
+        loc = slice(rli, rui + 1)
+        phi = - np.cumsum(np.sqrt(kr2[loc]) / m * np.diff(self.r)[loc])
+        phi += phi0 - phi[0]
+        r = r[loc]
+        if reflect is None:
+            if rui < self.rc.size - 1:
+                reflect = True
+        if reflect:
+            tmp = 2 * phi[-1] - phi[::-1]
+            phi = np.hstack([phi, tmp])
+            r = np.hstack([r, r[::-1]])
+        if polar:
+            plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
+        else:
+            phi = phi % tau
+            dphi = np.diff(phi)
+            x = []
+            y = []
+            for i in range(phi.size - 1):
+                x.append(r[i])
+                y.append(phi[i])
+                if np.abs(dphi[i]) > np.pi:
+                    x.append(np.nan)
+                    y.append(np.nan)
+            x.append(r[-1])
+            y.append(phi[-1])
+            y = np.array(y) / norm
+            plt.plot(x, y, zorder=zorder, **opt)
+            if rui == self.rc.size - 1:
+                plt.plot([1, rp], [y[0], y[0]], **opt)
 
     def __repr__(self):
         return '<BLsim "{0:}">'.format(self.name)
@@ -1020,9 +1171,12 @@ class BLsim(object):
             i += 1
         if progress:
             helpers.update_progress(1)
+        print('tf', ft.t / tnorm, tf / tnorm, i, ft.fn)
+        print(n, i, i1)
         out['tf'] = ft.t / tnorm
         out['dwdt'] /= (tsb - tsa) * self.rc * nsmooth
         out['drhodt'] /= (tsb - tsa) * nsmooth
+        print("t div", tnorm * (out['tf'] - out['t0']), dt * nsmooth, tsb - tsa)
 
         for k in keys:
             out[k] /= n
@@ -1195,6 +1349,7 @@ class BLsim(object):
             elif o == 3:
                 vphi = out['vphi']
                 dr_rho = grad(rc, np.log(out['dens']), -1)
+                dm2 = np.ones_like(vphi) * np.nan
                 if isnew:
                     dm2 = out['mom2'] - vphi * out['dens']
             else:
@@ -1338,150 +1493,7 @@ class BLsim(object):
                     if s == 1:
                         y[3] = data['coef_dp'] * grad(self.rc, _dt('dens'), axis=-1)
                     else:
-                        y[3] = data['coef_dp'] * s2data['opt2']['drdtsd'][loc].mean(axis=0) / tau
-
-                else:
-                    y[1] = v('ydv2') / (1 if o == 1 else tau)
-                    y[3] = v('ydp')
-                y.append(y[0] + y[1])
-                plt.plot(self.rc, y[0], label=r'$T_{r\phi}$', lw=1)
-                plt.plot(self.rc, y[1], label=r'$\partial_t v_\phi$', lw=1)
-                plt.plot(self.rc, y[2], label=r'$\dot{M}\partial_r\ell$', c='k')
-                plt.plot(self.rc, ydp * y[3], label=r'$\partial_t\partial_rP$', ls=':',
-                         lw=1)
-                plt.plot(self.rc, y[4], label=r'$T_{r\phi}\! +\! \partial_t v_\phi$',
-                         c='.5', lw=1)
-                plt.axhline(0, c='.5', ls=':', lw=1)
-                plt.axvline(1, c='.5', ls=':', lw=1)
-
-                # ylim
-                y.pop(3)
-                y = np.array(y)[:, ri:ro]
-                yu = max(y.max(), _yu)
-                yl = max(y.min(), _yl)
-                if s != 2 and o != 1:
-                    _yl, _yu = plt.ylim(yl, yu)
-                    dy = (yu - yl) * .05
-                    plt.ylim(min(yl - dy, -2.5 * dy), max(yu + dy, 2.5 * dy))
-
-                # labels
-                if i == 0:
-                    plt.legend(ncol=3, **lopt)
-                plt.xlim(self.r[0], self.r[-1])
-                if s == 2:
-                    plt.xlabel('$R$')
-                else:
-                    plt.setp(ax.get_xticklabels(), visible=False)
-                lbl = chr(ord('a') + i) + ') Option ' + str(o) + chr(ord('a') + s - 1)
-                ax.text(.96, .8, lbl, c='k', transform=ax.transAxes, ha='right',
-                        fontsize=8)
-                ax.xaxis.set_ticks_position('both')
-                ax.yaxis.set_ticks_position('both')
-                ax.tick_params(axis='both', which='both', direction='in', zorder=10)
-                ax.set_axisbelow(False)
-                plt.xlim(1, self.r[-1])
-                # ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(25))
-                # ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(100))
-                i += 1
-
-        fig.suptitle(title)
-
-        if save or fn:
-            plt.savefig(fn)
-            plt.close()
-
-        return s1data, s2data
-
-    def smooth_flux_comp(self, t0, tf, tnorm=tau, figsize=None, save=False, fn=None,
-                         ext='pdf', lopt=None, sdir='', overwrite=True, dpi=300,
-                         s1data=None, s2data=None, ts=False, dtf=None, ydp=1, ns=100):
-        if save or fn:
-            save = True
-            if fn is None:
-                fn = '_smooth_flux_comp_{:04d}_{:04d}.'.format(t0, tf)
-                fn = os.path.join(sdir, self.name + fn + ext)
-                if sdir:
-                    if not os.path.isdir(sdir):
-                        os.mkdir(sdir)
-        if parse_not_overwrite(overwrite, fn):
-            return None
-        if s1data is None:
-            s1data = self.time_fluxes(options=True, ns=ns, sopt=1)
-        if s2data is None:
-            s2data = self.time_fluxes(options=True, ns=ns, sopt=1)
-        if not tnorm or tnorm is True:
-            tnorm = 1
-        title = ''
-        try:
-            title = self.name + ' '
-        except AttributeError:
-            pass
-        if tnorm == tau:
-            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
-        t0 *= tnorm
-        tf *= tnorm
-        ts *= tnorm
-        invdt = 1 / (tf - t0 - ts)
-        if tnorm != tau:
-            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0 / tau, tf / tau)
-        t = s1data['t']
-        i0, il = np.searchsorted(t, [t0, tf])
-        if il < t.size - 1:
-            il += 1
-        ts = int(np.round(np.searchsorted(t, ts))) + 1
-        loc = (slice(i0, il), slice(None))
-        loc1 = (slice(i0, i0 + ts + 1), slice(None))
-        loc2 = (slice(il - ts - 1, il), slice(None))
-
-        if lopt is None:
-            lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
-
-        if figsize is None:
-            figsize = np.array((11*.5, 8.5)) * .8
-        fig = plt.figure(figsize=figsize, dpi=dpi)
-        gs = mpl.gridspec.GridSpec(2, 2, top=.93, left=.08, right=.98, bottom=.08,
-                                   hspace=0, wspace=0)
-
-        ax = None
-        _yl = 0
-        _yu = 0
-        ri = self.rloc(1.01)
-        ro = -5
-
-        i = 0
-        for s in range(1, 3):
-            for o in range(1, 3):
-                ax = plt.subplot(gs[s-1, o-1], sharex=ax, sharey=ax)
-                data = s1data if s == 1 else s2data
-                data = data['opt' + str(o)]
-
-                def v(name, ds=0):
-                    return data[name][loc].mean(axis=0)
-
-                y = [v('ycs'), None, v('yMdot'), None]
-                if o == 1:
-                    r2 = (tau * self.rc ** 2).astype(np.float32)
-                    if s == 1:
-                        def hann(f, d):
-                            return f
-                    else:
-                        def hann(f, d):
-                            if not d:
-                                return f
-                            kern = scipy.signal.windows.hann(d)
-                            if f.ndim == 2:
-                                kern = kern[:, np.newaxis]
-                            kern /= kern.sum()
-                            return scipy.signal.fftconvolve(np.real(f), kern, mode='same',
-                                                            axes=0)
-                    def _dt(f):
-                        out = hann(s1data[f] if f in s1data else data[f], ns)
-                        return (out[loc2] - out[loc1]).mean(axis=0) * invdt
-
-                    y[1] = r2 * (_dt('mom2') - self.rc**-.5 * _dt('dens'))
-                    if s == 1:
-                        y[3] = data['coef_dp'] * grad(self.rc, _dt('dens'), axis=-1)
-                    else:
+                        #print('os', o, s)
                         y[3] = data['coef_dp'] * s2data['opt2']['drdtsd'][loc].mean(axis=0) / tau
 
                 else:
@@ -1675,6 +1687,352 @@ class BLsim(object):
             if self.name == "M12.FR.mix.lc.a":
                 tf = min(tf, 599)
             flux_data = self.flux_compare(t, tf, save=save, sdir=sdir, flux_data=flux_data, **kwargs)
+
+    def am_plot_data(self, t0, tf, flux_data=None, fn=None, sdir='', overwrite=False,
+                     tnorm=tau, nm=5, s=1):
+        if fn is None:
+            fn = self.full_name + '_am_plot_data.hdf5'
+        if sdir:
+            fn = os.path.join(sdir, fn)
+        f = h5py.File(fn, 'a')
+        group_key = '{:04d}_{:04d}'.format(t0, tf)
+        if not overwrite:
+            if group_key in f:
+                print('No overwrite exit')
+                f.close()
+                return fn
+        tmp = dict(mach=self.mach, name=self.name, path=self.path)
+        for i in tmp:
+            if i not in f:
+                f.attrs[i] = tmp[i]
+        tmp = dict(rc=self.rc)
+        for i in tmp:
+            if i not in f:
+                f.create_dataset(i, data=np.array(tmp[i]))
+        try:
+            flux_data = self.load_flux_data()
+            opt = dict(t0=t0, tf=tf, ts=1, s=s, pns=20, nm=nm, tnorm=tnorm)
+            ts = flux_data.time_slice(**opt)
+            for v_opt in [2, 3]:
+                opt = dict(t0=t0, tf=tf, ts=1, s=s, o=v_opt, pns=20, nm=nm, tnorm=tnorm)
+                csm = flux_data.csm[ts['loc']].mean(axis=0)
+                cs = flux_data.T12(v_opt)[ts['loc']].mean(axis=0)
+                cl = flux_data['CL'][ts['loc']].mean(axis=0)
+                ca = cl - cs
+                ycs, ydv2, ymdot, ydp = flux_data.lines(**opt)[:4]
+                tmp = dict(cs=cs, cl=cl, ca=ca, ycs=ycs, ydp=ydp, ydv2=ydv2,
+                           ymdot=ymdot)
+                key = group_key + '/opt' + str(v_opt)
+                if key in f:
+                    group = f[key]
+                else:
+                    group = f.create_group(key)
+                for i in tmp:
+                    if tmp[i] is not None:
+                        if i not in group:
+                            group.create_dataset(i, data=np.array(tmp[i]))
+                        #else:
+                        #    group[i] = np.array(tmp[i])
+        except AttributeError:
+            print('Reverting to old flux data for ' + self.name)
+            flux_data = self.time_fluxes(options=3, csm=True)
+            times = flux_data['t']
+            i0, il = np.searchsorted(times / tnorm , [t0, tf])
+            if il < times.size - 1:
+                il += 1
+            loc = (slice(i0, il), slice(None))
+
+            def v(name):
+                try:
+                    return flux_data[name][loc].mean(axis=0)
+                except KeyError:
+                    print(self.name + " can't load " + name)
+
+            csm = v('CSm')
+            csm[0, :] = 0
+            cs = v('T12')
+            cl = v('CL')
+            ca = cl - cs
+            ycs = v('ycs') # label=r'$T_{r\phi}$'
+            ydp = v('ydp') # label=r'$\partial_t\partial_rP$'
+            ydv2 = v('ydv2') # label=r'$\partial_t v_\phi$'
+            ymdot = v('yMdot') # label=r'$\dot{M}\partial_r\ell$'
+            tmp = dict(cs=cs, cl=cl, ca=ca, ycs=ycs, ydp=ydp, ydv2=ydv2,
+                       ymdot=ymdot)
+            key = group_key + '/opt3'
+            if key in f:
+                group = f[key]
+            else:
+                group = f.create_group(key)
+            for i in tmp:
+                if tmp[i] is not None:
+                    if i not in group:
+                        group.create_dataset(i, data=np.array(tmp[i]))
+                    #else:
+                    #    group[i] = np.array(tmp[i])
+        window = np.ones_like(self.rc)
+        window[:self.rloc(1.0)] = 0
+        window[-5:] = 0
+        _norm = self.intr(np.abs(csm * window[None, :]))
+        modes = sorted(range(_norm.shape[0]), key=lambda x: -_norm[x])
+        tmp = dict(csm=csm, modes=modes)
+        key = group_key
+        print(key)
+        if key in f:
+            group = f[key]
+        else:
+            group = f.create_group(key)
+        for i in tmp:
+            if tmp[i] is not None:
+                print(i)
+                if i not in group:
+                    group.create_dataset(i, data=np.array(tmp[i]))
+                #else:
+                #    group[i] = np.array(tmp[i])
+        return fn
+
+    def am_subpanel(self, t0, tf, tsnap, gs0=None, save=False, fn=None, xlbl=True,
+                    ylbl=True, fig=None, fopt=None, figsize=None, dpi=300, gsopt=None,
+                    hdf5=None, sdir=None, lopt=None, mopt=None, ropt=None, cbl0=None,
+                    legend_opt=None, prefix='', lbl0='a', tx=.98, ty=.94, topt=None,
+                    use_txt=True, nm=5, cbl1=None, rmax0=None, rmax1=None, am_lnorm=0,
+                    rloc=None):
+        if fig is None and gs0 is None:
+            _fopt = dict(dpi=dpi, figsize=figsize)
+            if fopt:
+                _fopt.update(fopt)
+            fig = plt.figure(**_fopt)
+        _s = .1
+        hr = [.1, 1, _s, 1, 1]
+        wr = [2./3., .1, 1, .8]
+        _gsopt = dict(top=1.0, bottom=.02, left=.05, right=.99, hspace=0.07, wspace=0.07,
+                      height_ratios=hr, width_ratios=wr)
+        _args = len(hr), len(wr)
+        if gsopt is not None:
+            _gsopt.update(gsopt)
+        if gs0 is not None:
+            for i in ['top', 'bottom', 'left', 'right']:
+                if i in _gsopt:
+                    _gsopt.pop(i)
+            gs = mpl.gridspec.GridSpecFromSubplotSpec(*_args, subplot_spec=gs0, **_gsopt)
+        else:
+            gs = mpl.gridspec.GridSpec(*_args, **_gsopt)
+        if sdir is None:
+            sdir = ''
+        if lopt is None:
+            lopt = dict()
+        if mopt is None:
+            mopt = dict()
+        if ropt is None:
+            ropt = dict()
+        ri = self.rloc(1.02 if rloc is None else rloc)
+        if legend_opt is None:
+            legend_opt = dict(handlelength=1, fontsize=8, handletextpad=.4,
+                              columnspacing=.7)
+        _topt = dict(c='k', ha='right', va='top', fontsize=8)
+        if topt is not None:
+            _topt.update(topt)
+        hdf5 = self.am_plot_data(t0, tf, fn=hdf5, sdir=sdir)
+        _opt = dict(zerocent=True, cbopt=dict(orientation='horizontal'), lnorm=True)
+        if hasattr(lbl0, 'lower'):
+            lbl0 = ord(lbl0)
+        else:
+            lbl0 += ord('a')
+        with h5py.File(hdf5, 'a') as f:
+            snap_key = 'snapshot_{:04d}'.format(tsnap)
+            if not snap_key in f:
+                group = f.create_group(snap_key)
+            else:
+                group = f[snap_key]
+            df = self.loadfile('cons', tsnap)
+            for i in ['Rpseudo', 'd_vortensity_0']:
+                if i not in group:
+                    group.create_dataset(i, data=df[i])
+            axs = []
+            caxs = []
+            # left/d_vortensity-stripe panel
+            caxs.append(plt.subplot(gs[0, 0]))
+            axs.append(plt.subplot(gs[1, 0]))
+            if cbl0 is None or cbl0 is True:
+                cbl0 = r'$\omega/\Sigma-\left<\omega/\Sigma\right>_0$'
+            opt = _opt.copy()
+            opt.update(dict(ax=axs[-1], cax=caxs[-1], cbl=cbl0, vmax='95%', r_cut=1.02, rmax=rmax0))
+            opt.update(lopt)
+            df.stripe(group['d_vortensity_0'][()], **opt)
+            # mid/Rpseudo-stripe panel
+            caxs.append(plt.subplot(gs[0, 2:]))
+            axs.append(plt.subplot(gs[1, 2]))
+            cbl1 = helpers.labeler('Rpseudo') if cbl1 is None or cbl1 is True else cbl1
+            opt = _opt.copy()
+            opt.update(dict(ax=axs[-1], cax=caxs[-1], cbl=cbl1, vmax='99%', r_cut=1.0, rmax=rmax1, lnorm=-2))
+            opt.update(mopt)
+            df.stripe(group['Rpseudo'][()], **opt)
+            clim = plt.gci().get_clim()
+            # right/Rpseudo-map panel
+            axs.append(plt.subplot(gs[1, 3]))
+            opt = _opt.copy()
+            opt.update(dict(ax=axs[-1], cb=False, vmin=clim[0], vmax=clim[1],
+                            minmax=False, lnorm=-2))
+            opt.update(ropt)
+            df.plot2d(group['Rpseudo'][()], **opt)
+            axs[-1].xaxis.set_major_locator(mpl.ticker.MultipleLocator(2))
+            # cleanup
+            for cax in caxs:
+                cax.xaxis.set_label_position('top')
+                cax.xaxis.set_ticks_position('top')
+                cax.xaxis.set_minor_locator(mpl.ticker.AutoMinorLocator())
+                cax.tick_params(axis='both', which='both', direction='in')
+            # CS, CA, CL plot
+            group = f['{:04d}_{:04d}/opt3'.format(t0, tf)]
+            axs.append(plt.subplot(gs[3, :]))
+            lntxt = ''
+            lnorm = am_lnorm
+            if lnorm:
+                if lnorm is True:
+                    lnorm = -2
+                if lnorm:
+                    lntxt = '/10^{' + str(lnorm) + '}'
+            else:
+                lnorm = 0
+            norm = 10**-lnorm
+            i95 = self.rloc(.95)
+            cs, ca, cl = [group[key][()] * norm for key in ['cs', 'ca', 'cl']]
+            y = np.array([cs, ca, cl])[:, ri:-5]
+            yl, yu = y.min(), y.max()
+            yl = min(yl, cs[i95:-5].min())
+            dy = (yu - yl) * .05
+            ylim = np.array((yl - dy, max(yu + dy, 2.5 * dy)))
+            plt.plot(self.rc, cs, label='$C_S$', c='k')
+            plt.plot(self.rc, ca, label='$C_A$')
+            plt.plot(self.rc, cl, label='$C_L$')
+            plt.legend(loc=4, ncol=3, **legend_opt)
+            plt.axhline(0, c='.5', ls=':', lw=1)
+            plt.axvline(1, c='.5', ls=':', lw=1)
+            plt.ylim(*ylim)
+            if ylbl:
+                plt.ylabel(r'$C_{[\rm S,A,L]}' + lntxt + '$')
+            plt.setp(axs[-1].get_xticklabels(), visible=False)
+            # CSm plot
+            group = f['{:04d}_{:04d}'.format(t0, tf)]
+            modes = [i for i in group['modes'][()] if i]
+            csm = norm * group['csm'][()]
+            axs.append(plt.subplot(gs[4, :], sharex=axs[-1]))
+            plt.plot(self.rc, cs, 'k-', label='$C_S$')
+            ym = []
+            for m in modes[:nm]:
+                ym.append(csm[m])
+                plt.plot(self.rc, csm[m], label=str(m), lw=1)
+            cs_sum = csm[1:].sum(axis=0)
+            plt.plot(self.rc, cs_sum, c='.5', ls='-', label='sum', lw=1)
+            ym = np.array(ym)
+            plt.legend(loc=4, ncol=nm + 2, **legend_opt)
+            plt.axhline(0, c='.5', ls=':', lw=1)
+            plt.axvline(1, c='.5', ls=':', lw=1)
+            plt.xlim(self.r[0], self.r[-1])
+            # set ylim
+            yl = np.minimum(cs_sum, cs)
+            yl = np.minimum(yl, ym.min(axis=0))[ri:-5].min()
+            yl = min(0, yl, cs[i95:-5].min())
+            yu = np.maximum(csm[1:].sum(axis=0), cs)
+            yu = np.maximum(yu, ym.max(axis=0))[ri:-5].max()
+            yu = max(0, yu)
+            dy = (yu - yl) * .05
+            plt.ylim(min(yl - dy, -2.5 * dy), max(yu + dy, 2.5 * dy))
+            if xlbl:
+                plt.xlabel('$r$')
+            if ylbl:
+                plt.ylabel(r'$C_{\rm S}' + lntxt + r',\;C_{{\rm S},m}' + lntxt + '$')
+            # cleanup
+            for i, ax in enumerate(axs):
+                ax.xaxis.set_ticks_position('both')
+                ax.yaxis.set_ticks_position('both')
+                ax.tick_params(axis='both', which='both', direction='in')
+                ax.xaxis.set_minor_locator(mpl.ticker.AutoMinorLocator())
+                ax.yaxis.set_minor_locator(mpl.ticker.AutoMinorLocator())
+                ax.set_axisbelow(False)
+                if use_txt:
+                    lbl = prefix + chr(lbl0 + i) + ')'
+                    ax.text(tx, ty, lbl, transform=ax.transAxes, **_topt)
+        if save or fn:
+            plt.savefig(fn)
+            plt.close()
+        return
+
+    def am_terms(self, t0, tf, save=False, fn=None, xlbl=True, ax=None, fig=None,
+                 fopt=None, figsize=None, dpi=300, hdf5=None, sdir=None, legend_opt=None,
+                 prefix='', lbl0='a', tx=.97, ty=.94, topt=None, use_txt=True,
+                 legend=True, lnorm=None, ylbl=None):
+        if fig is None and ax is None:
+            _fopt = dict(dpi=dpi, figsize=figsize)
+            if fopt:
+                _fopt.update(fopt)
+            fig = plt.figure(**_fopt)
+        if ax is not None:
+            plt.sca(ax)
+        if sdir is None:
+            sdir = ''
+        ri = self.rloc(1.05)
+        if lnorm:
+            if lnorm is True:
+                lnorm = -2
+            if lnorm:
+                lntxt = '/10^{' + str(lnorm) + '}'
+        else:
+            lnorm = 0
+        norm = 10**-lnorm
+        if legend_opt is None:
+            legend_opt = dict(handlelength=1, fontsize=8, handletextpad=.4,
+                              columnspacing=.7)
+        _topt = dict(c='k', ha='right', va='top', fontsize=10)
+        if topt is not None:
+            _topt.update(topt)
+        hdf5 = self.am_plot_data(t0, tf, fn=hdf5, sdir=sdir)
+        if hasattr(lbl0, 'lower'):
+            lbl0 = ord(lbl0)
+        else:
+            lbl0 += ord('a')
+        with h5py.File(hdf5, 'a') as f:
+            group = f['{:04d}_{:04d}/opt2'.format(t0, tf)]
+            y = [norm * group[i][()] for i in ['ycs', 'ydv2', 'ymdot', 'ydp']]
+        y.append(y[0] + y[1])
+        y = np.array(y)
+        loc = (slice(None), slice(ri, -20))
+        yl, yu = y[loc].min(), y[loc].max()
+        dy = (yu - yl) * .05
+        ylim = np.array((yl - dy, max(yu + dy, 2.5 * dy)))
+        x = self.rc
+        plt.plot(x, y[0], label=r'$\partial_r C_{\rm S}$', lw=1)
+        plt.plot(x, y[1], label=r'$\partial_t v_\phi$', lw=1)
+        plt.plot(x, y[2], label=r'$\dot{M}\partial_r\ell$', c='k')
+        # plt.plot(x, y[3], label=r'$\partial_t\partial_rP$', ls=':', lw=1)
+        plt.plot(x, y[4], label=r'$\partial_r C_{\rm S}\! +\! \partial_t v_\phi$', c='r',
+                lw=1, ls=':')
+        if legend:
+            plt.legend(loc=4, ncol=4, **legend_opt)
+        plt.axhline(0, c='.5', ls=':', lw=1)
+        plt.axvline(1, c='.5', ls=':', lw=1)
+        plt.ylim(*ylim)
+        plt.xlim(1, self.r[-1])
+        if xlbl:
+            plt.xlabel('$r$')
+        else:
+            plt.setp(ax.get_xticklabels(), visible=False)
+        if ylbl:
+            plt.ylabel(r'${\rm AM\;terms}' + lntxt + '$')
+        # cleanup
+        ax = plt.gca()
+        ax.xaxis.set_ticks_position('both')
+        ax.yaxis.set_ticks_position('both')
+        ax.tick_params(axis='both', which='both', direction='in')
+        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
+        ax.yaxis.set_minor_locator(mpl.ticker.AutoMinorLocator())
+        if use_txt:
+            lbl = prefix + chr(lbl0) + ')'
+            ax.text(tx, ty, lbl, transform=ax.transAxes, **_topt)
+        if save or fn:
+            plt.savefig(fn)
+            plt.close()
+        return
 
     def paper_flux_plot(self, t0, tf, flux_data=None, figsize=None, save=False, fn=None,
                         ext='pdf', lopt=None, sdir='', overwrite=True, option=2,
@@ -1879,253 +2237,6 @@ class BLsim(object):
             flux_data = self.paper_flux_plot(t, tf, save=save, sdir=sdir,
                                              flux_data=flux_data, **kwargs)
 
-    def __old_plot_fluxes(self, t0=None, tf=None, nm=5, data=None, figsize=None, save=False,
-                    fn=None, ext='pdf', lopt=None, ff=1, sdir='', progress=True,
-                    overwrite=True):
-        if save or fn:
-            save = True
-            if fn is None:
-                tnorm = tau
-                t0 *= tnorm
-                tf *= tnorm
-                ffts = [i for i in self.fileDict.keys()
-                        if self.inputs.get(i, {}).get('variable') == "FT-Range"]
-                dt = self.inputs[ffts[0]]['dt']
-                ffts = self.sortedFFT()
-                i = int(2 * t0 // dt)
-                i1 = int(min(2 * tf // dt, len(ffts) - 1))
-                t0 = self.loadfile(os.path.split(ffts[i])[-1]).t / tnorm
-                tf = self.loadfile(os.path.split(ffts[i1])[-1]).t / tnorm
-                fn = '_flux_{:.1f}_{:.2f}.'.format(t0, tf - t0)
-                fn = os.path.join(sdir, self.name + fn + ext)
-                if sdir:
-                    if not os.path.isdir(sdir):
-                        os.mkdir(sdir)
-        if parse_not_overwrite(overwrite, fn):
-            return data
-        if lopt is None:
-            lopt = dict(handlelength=1, fontsize=8, handletextpad=.4, columnspacing=.7)
-        if data is None:
-            data = self.fluxes(t0, tf, progress=progress)
-        csm = np.real(data['CSm'])
-        csm[0] = 0
-        cs = data['CS'][0]
-        norm = self.intr(np.abs(csm))
-        modes = sorted(range(norm.shape[0]), key=lambda x: -norm[x])
-        ri = self.rloc(1)
-
-        if figsize is None:
-            figsize = np.array((11, 8.5)) * .8
-        fig = plt.figure(figsize=figsize)
-        gs = mpl.gridspec.GridSpec(3, 2, top=.93, left=.08, right=.98, bottom=.08,
-                                   wspace=.15, hspace=.25)
-        # fig, axs = plt.subplots(3, 2, figsize=figsize, top=.7)
-
-        # C_S, C_S,m
-        ax0 = plt.subplot(gs[0, 0])
-        plt.plot(self.rc, cs, 'k-', label='$C_S$')
-        for m in modes[:nm]:
-            plt.plot(self.rc, csm[m], label=str(m))
-        plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls=':', label='sum')
-        plt.xlim(self.r[0], self.r[-1])
-        # ylim = plt.ylim()
-        plt.legend(ncol=nm + 2, **lopt)
-        plt.axhline(0, c='.5', ls=':', lw=1)
-        plt.axvline(1, c='.5', ls=':', lw=1)
-        # plt.ylim(*ylim)
-        # plt.xlabel('$R$')
-        plt.ylabel('$C_S$')
-        # plt.setp(ax0.get_xticklabels(), fontsize=6)
-
-        # C_S, C_S,m zoom_in
-        ax = plt.subplot(gs[0, 1])
-        for i, m in enumerate(modes[:nm]):
-            plt.plot(self.rc, csm[m], label=str(m), zorder=i + 1)
-        ylim = plt.ylim()
-        plt.plot(self.rc, cs, 'k-', label='$C_S$', zorder=0)
-        plt.plot(self.rc, csm[1:].sum(axis=0), c='.5', ls=':', label='sum', zorder=nm + 2)
-        cs_rmax = max(min(self.rc[cs.argmax()] * 1.01, 2), 1.2)
-        cs_rmax = 2
-        plt.xlim(self.r[0], cs_rmax)
-        tmp = cs[10:self.rloc(2) + 1]
-        tmp = tmp.min(), tmp.max()
-        d = tmp[1] - tmp[0]
-        ylim = tmp[0] - .05 * d, tmp[1] + .05 * d
-        plt.ylim(*ylim)
-        # plt.legend(ncol=nm + 2, **lopt)
-        plt.axhline(0, c='.5', ls=':', lw=1)
-        plt.axvline(1, c='.5', ls=':', lw=1)
-        # plt.ylim(*ylim)
-        # plt.xlabel('$R$')
-        plt.ylabel('$C_S$')
-        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.02))
-        locs, labels = plt.yticks()
-        dy = .2 * (locs[1] - locs[0])
-        ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(dy))
-        # plt.setp(ax0.get_xticklabels(), fontsize=6)
-
-        # C_L, C_A, C_S
-        ax = plt.subplot(gs[1, 0], sharex=ax0)
-        keys = [i for i in data.keys() if i[0] == 'C' and len(i) == 2]
-        yu = []
-        yl = []
-        for k in keys:
-            opt = {'label': '${0:}_{1:}$'.format(*k)}
-            if k == 'CS':
-                opt['c'] = 'k'
-            plt.plot(self.rc, data[k][0], **opt)
-            yu.append(np.real(data[k][0, ri:-5]).max())
-            yl.append(np.real(data[k][0, ri:-5]).min())
-        plt.legend(ncol=3, **lopt)
-        plt.axhline(0, c='.5', ls=':', lw=1)
-        plt.axvline(1, c='.5', ls=':', lw=1)
-        plt.xlim(self.r[0], self.r[-1])
-        yl, yu = np.real(yl).min(), np.real(yu).max()
-        dy = (yu - yl) * .05
-        plt.ylim(yl - dy, yu + dy)
-        # plt.xlabel('R')
-        # plt.setp(ax.get_xticklabels(), visible=False)
-
-        # d-rho, Omega
-        ax = plt.subplot(gs[1, 1], sharex=ax0)
-        handles = list()
-        omega = data['vphi'] / self.rc
-        ok = self.rc ** -1.5
-        yu = [data['drho'][ri:-5].max(), omega[ri:-5].max()]
-        yl = [data['drho'][ri:-5].min(), omega[ri:-5].min()]
-        handles.append(plt.plot(self.rc, data['drho'], label=r'$\delta\rho$', zorder=0))
-        handles.append(plt.plot(self.rc, omega, label=r'$\Omega$', zorder=1))
-        op = self.rc ** -3
-        op += self.mach ** -2 * grad(self.rc, data['dens']) / (data['dens'] * self.rc)
-        op = np.sqrt(op)
-        yu.append(op[ri:-5].max())
-        yl.append(op[ri:-5].min())
-        handles.append(plt.plot(self.rc, op, label=r'$\Omega(P)$', ls='--', zorder=2))
-        handles.append(
-            plt.plot(self.rc, -1e3 * data['vr'] * self.mach, label=r'$-10^3v_r/c_s$',
-                     zorder=4))
-        yu.append((-1e3 * self.mach * data['vr'])[ri:-5].max())
-        yl.append((-1e3 * self.mach * data['vr'])[ri:-5].min())
-        handles.insert(3,
-                       plt.plot(self.rc, ok, label=r'$\Omega_{\rm k}$', lw=1, c='k',
-                                ls=':',
-                                zorder=3))
-        plt.legend(ncol=5, **lopt)
-        plt.xlim(self.r[0], self.r[-1])
-        yu = max(yu) * 1.05
-        yl = min(min(yl) - .1 * yu, 0)
-        plt.ylim(yl, yu)
-        plt.axhline(0, c='.5', ls=':', lw=1)
-        plt.axvline(1, c='.5', ls=':', lw=1)
-        plt.xlabel('$R$')
-        # ax.set_xticklabels([])
-        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
-        plt.text(self.r[-1], yl, r'$\Omega_{\rm max}=${0:.3g}'.format(omega.max),
-                 ha='right', va='bottom')
-
-        # delta omega
-        ax = plt.subplot(gs[2, 1])
-        handles = list()
-        handles.append(
-            plt.plot(self.rc, ok - omega, label=r'$\Omega_{\rm K}-\Omega$', zorder=1))
-        handles.append(
-            plt.plot(self.rc, op - omega, label=r'$\Omega(P)-\Omega$', zorder=2))
-        plt.legend(ncol=2, **lopt)
-        a = 1.05
-        yu = min(max((ok - omega)[ri:-5].max() * a, (op - omega)[ri:-5].max()) * a, .025)
-        yl = max(min((ok - omega)[ri:-5].min() * a, (op - omega)[ri:-5].min()) * a, -.025)
-        plt.ylim(yl, yu)
-        plt.axhline(0, c='.5', ls=':', lw=1)
-        plt.axvline(1, c='.5', ls=':', lw=1)
-        xl = self.rc[np.where(np.isfinite(op))[0][1]] * .99
-        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
-        plt.xlim(xl, 2)
-        plt.xlabel('$R$')
-
-        ax = plt.subplot(gs[2, 0], sharex=ax0)
-        plt.plot(self.rc, - data['Mdot'], label=r'$\dot{M}$', c='k')
-        ri = self.rloc(1.2)
-        ri2 = self.rloc(2)
-        norm = 1 / grad(self.rc, data['vphi'] * self.rc)
-        ycs = norm * grad(self.rc, data['CS'][0])
-        plt.plot(self.rc, ycs, label=r'$C_S$')
-        ydw = norm * self.rc ** 3 * data['dens'] * data['dwdt'] * tau
-        plt.plot(self.rc, ydw, label=r'$\partial_t \Omega$')
-        plt.plot(self.rc, ycs + ydw, label=r'$C_S\! +\! \partial_t \Omega$', c='.5',
-                 ls=':')
-        ydp = np.pi * self.rc ** 3.5 * grad(self.rc, data['drhodt']) * self.mach ** -2
-        ydp /= grad(self.rc, data['vphi'] * self.rc)
-        plt.plot(self.rc, ydp, label=r'$\partial_t\partial_rP$')
-        plt.axhline(0, c='.5', ls=':', lw=1)
-        plt.axvline(1, c='.5', ls=':', lw=1)
-        plt.legend(ncol=5, **lopt)
-        yu = np.maximum(ycs, data['Mdot'])
-        yu = yu[ri:ri2].max() * 1.05
-        yl = np.minimum(ydw, data['Mdot'])
-        yl = min(yl[ri:ri2].min() - .1 * yu, 0)
-        ylim = plt.ylim()
-        ylim = plt.ylim(max(ylim[0], yl), min(ylim[1], yu))
-        yl = 2e-4
-        # plt.ylim(-yl, yl)
-        plt.xlim(self.r[0], self.r[-1])
-        # plt.setp(ax.get_xticklabels(), visible=False)
-        plt.xlabel('$R$')
-
-        print_info = 0
-        if print_info:
-            plt.xticks([], [])
-            plt.yticks([], [])
-            one = self.rloc(1)
-            mdot = data['Mdot']
-            info = [['C_S', data['CS'][0, one]],
-                    ['C_A', data['CA'][0, one]],
-                    ['C_L', data['CL'][0, one]],
-                    [r'\dot{M}', mdot[one]],
-                    [r'\alpha_{\rm eff}', data['CS'][0, one] * self.mach ** 2 /
-                     (tau * self.rc[one] ** 2 * data['dens'][0, one])]
-                    ]
-            info = ['$' + i[0] + '(R=1)=$' + '{0:.3g}'.format(np.real(i[1])) for i in
-                    info]
-            info.append(r'$\dot{M}(R_{\rm min})=$' + '{0:.3g}'.format(mdot[0]))
-            info.append(r'$\dot{M}(R_{\rm max})=$' + '{0:.3g}'.format(mdot[-8:-2].mean()))
-            integrand = data['drho'] * self.rc * self.dr
-            info.append(
-                r'$2\pi\int r\delta\rho dr=$' + '{0:.3g}'.format(tau * np.sum(integrand)))
-            tmp = self.rc[self.rc < 1][np.argmin(np.abs(data['drho'][self.rc < 1]))]
-            tmp = r'$2\pi\int_{' + '{:.2g}'.format(
-                tmp) + r'}^4 r\delta\rho dr=$' + '{0:.3g}'.format(
-                tau * np.sum(integrand[self.rloc(tmp):]))
-            info.append(tmp)
-            ncol = 2
-            for i, s in enumerate(info):
-                ix = i % ncol
-                iy = i // ncol
-                plt.text(.9 / ncol * ix + .05, .88 - .12 * iy, s)
-
-        title = ''
-        try:
-            title = self.name + ' '
-        except:
-            pass
-        title += '$t/ 2 \pi={t0:.1f}-{tf:.1f}$'.format(**data)
-        fig.suptitle(title)
-        # plt.tight_layout()
-        # fig.tight_layout(rect=[0, 0.0, 1, 0.5])
-        # fig.subplots_adjust(top=0.7)
-        # plt.subplots_adjust(left=0.2, wspace=0.8, top=0.5)
-
-        if save or fn:
-            if fn is None:
-                fn = '_flux_{:.1f}_{:.2f}.'.format(data['t0'], data['tf'] - data['t0'])
-                fn = os.path.join(sdir, self.name + fn + ext)
-                if sdir:
-                    if not os.path.isdir(sdir):
-                        os.mkdir(sdir)
-            plt.savefig(fn)
-            plt.close()
-
-        return data
-
     def plot_fluxes(self, t0, tf, nm=5, figsize=None, save=False, fn=None, ext='pdf',
                         lopt=None, ff=1, sdir='', progress=True, overwrite=True):
         if save or fn:
@@ -2238,7 +2349,7 @@ class BLsim(object):
         drho = data['dens'] - self.rho_ref
         yu = [drho[ri:-5].max(), omega[ri:-5].max()]
         yl = [drho[ri:-5].min(), omega[ri:-5].min()]
-        handles.append(plt.plot(self.rc, drho, label=r'$\delta\rho$', zorder=0))
+        handles.append(plt.plot(self.rc, drho, label=r'$\delta\Sigma$', zorder=0))
         handles.append(plt.plot(self.rc, omega, label=r'$\Omega$', zorder=1))
         op = self.rc ** -3
         op += self.mach ** -2 * grad(self.rc, data['dens']) / (data['dens'] * self.rc)
@@ -2311,6 +2422,7 @@ class BLsim(object):
         yl = min(yl[ri:ri2].min() - .1 * yu, 0)
         ylim = plt.ylim()
         ylim = plt.ylim(max(ylim[0], yl), min(ylim[1], yu))
+        # print(ylim)
         yl = 2e-4
         # plt.ylim(-yl, yl)
         plt.xlim(self.r[0], self.r[-1])
@@ -2336,10 +2448,10 @@ class BLsim(object):
             info.append(r'$\dot{M}(R_{\rm max})=$' + '{0:.3g}'.format(mdot[-8:-2].mean()))
             integrand = data['drho'] * self.rc * self.dr
             info.append(
-                r'$2\pi\int r\delta\rho dr=$' + '{0:.3g}'.format(tau * np.sum(integrand)))
+                r'$2\pi\int r\delta\Sigma dr=$' + '{0:.3g}'.format(tau * np.sum(integrand)))
             tmp = self.rc[self.rc < 1][np.argmin(np.abs(data['drho'][self.rc < 1]))]
             tmp = r'$2\pi\int_{' + '{:.2g}'.format(
-                tmp) + r'}^4 r\delta\rho dr=$' + '{0:.3g}'.format(
+                tmp) + r'}^4 r\delta\Sigma dr=$' + '{0:.3g}'.format(
                 tau * np.sum(integrand[self.rloc(tmp):]))
             info.append(tmp)
             ncol = 2
@@ -2882,57 +2994,6 @@ class BLsim(object):
             f.write(string)
         return None
 
-    def _old_r_phase_plotter(self, r, data, ret_m=False, tloc=None, sort=True,
-                             sdata=None, order=None):
-        ir = self.rloc(r)
-        # data = self.mode_phase()
-        modes = []
-        handles = []
-        if len(data.shape) == 3:
-            rdata = data[:, :, ir]
-        else:
-            rdata = data
-        for i in xrange(data.shape[1]):
-            tmp = rdata[:, i].copy()
-            # tmp = tmp[tloc]
-            j = 0
-            # make sure data covers 5 adjacent times
-            while np.isfinite(tmp).any() and j < 5:
-                tmp = np.gradient(tmp)
-                j += 1
-            if np.isfinite(tmp).any():
-                modes.append(i)
-                handles.append(None)
-        if order is None:
-            order = modes[:]
-            if sort:
-                if sdata is None:
-                    sdata = np.abs(self.fft[:, :, ir]).sum(axis=0)
-                order = sorted(modes, key=lambda m: sdata[m])
-        if len(modes) > 9:
-            colors1 = plt.cm.viridis(np.linspace(0., 1, 128))
-            colors2 = plt.cm.plasma(np.linspace(0, 1, 128))
-            colors = np.vstack((colors1, colors2))
-            mymap = mpl.colors.LinearSegmentedColormap.from_list('my_colormap', colors)
-        else:
-            mymap = plt.cm.viridis
-        norm = 1. / (len(modes) - 1.)
-        for m in order:
-            i = modes.index(m)
-            c = mymap(i * norm)
-            handles[i] = plt.plot(self.fft_time / tau, rdata[:, m], lw=1, c=c)[0]
-        opt = {'loc': 0, 'frameon': True, 'handlelength': .7, 'prop': {'size': 8},
-               'ncol': 3}
-        lbls = ['$%d$' % m for m in modes]
-        leg = plt.legend(handles, lbls, **opt)
-        for legobj in leg.legendHandles:
-            legobj.set_linewidth(2.0)
-        plt.xlabel(r'Time/$2\pi$')
-        # plt.ylabel('Phase')
-        plt.title(helpers.sanitize_lbl(self.name) + ' $r={0:.2f}$'.format(r))
-        if ret_m:
-            return modes
-
     def r_phase(self, r, ret_m=False, fig=True):
         if fig is True:
             plt.figure()
@@ -2944,57 +3005,10 @@ class BLsim(object):
         plt.ylabel('Phase')
         return m
 
-    def __old_r_speed(self, r, ret_m=False, fig=True):
-        if fig is True:
-            plt.figure()
-        ir = self.rloc(r)
-        mask = self.mode_mask()[:, :, ir]
-        speed = self.prop_speed(ir=ir)
-        data = speed.copy()
-        data[mask] = np.nan
-        speed = np.ma.array(speed, mask=mask)
-        sdata = speed.mean(axis=0) / speed.std(axis=0)
-        opt = dict(ret_m=ret_m, sdata=sdata)
-        m = self._old_r_phase_plotter(r, data, **opt)
-        ylim = list(plt.ylim())
-        ylim[0] = max(0, ylim[0])
-        ylim[1] = min(1, ylim[1])
-        plt.ylim(*ylim)
-        plt.ylabel('Speed')
-        return m
-
-    def __old_r_amp(self, r, ret_m=False, fig=True):
-        if fig is True:
-            plt.figure()
-        ir = self.rloc(r)
-        mask = self.mode_mask()[:, :, ir]
-        amp = np.abs(self.fft[:, :, ir])
-        data = np.ma.array(amp, mask=mask)
-        # data[mask] = np.nan
-        m = self._old_r_phase_plotter(r, data, ret_m=ret_m)
-        nt = self.fft_time.size
-        m0 = data[:nt // 5].max()
-        m1 = data[nt // 5:].max()
-        plt.ylim(0, None)
-        if m0 > 1.2 * m1:
-            plt.ylim(None, 1.1 * m1)
-        mask = np.logical_not(mask)
-        mask[:, 0] = True
-        tmp = np.ma.array(amp, mask=mask)
-        std = tmp.std(axis=1)
-        mean = tmp.mean(axis=1)
-        ls = '-'
-        for i in self._sigmas:
-            y = mean + i * std
-            plt.plot(self.fft_time / tau, y, c='k', ls=ls, lw=1)
-            ls = ':'
-        plt.ylabel('Amplitude')
-        return m
-
     def _r_phase_plotter(self, r, data, modes=None, nm=5, add_modes=None, std_plot=False,
                          ret_m=None, smooth=False, sw=20, std=None, rsmooth=None, fn=None,
                          save=None, ext='pdf', cout=None, add_max=None, title=True,
-                         xlbl=True, legend=True, log=False, set_ylim=False):
+                         xlbl=True, legend=True, log=False, set_ylim=False, title_y=None):
         ir = self.rloc(r)
         rslice = ir
         r = self.rc[ir]
@@ -3085,8 +3099,9 @@ class BLsim(object):
                 ylim = plt.ylim(yl, yu)
             except ValueError:
                 print("ylim error with:", yl, yu)
+            #print(i0, yl, self.fft_time[i0] / tau, self.fft_time.shape)
         if title:
-            plt.title('$r={0:.2f}$'.format(r))
+            plt.title('$r={0:.2f}$'.format(r), y=title_y)
         plt.xlim(np.floor(self.fft_time[0] / tau), np.ceil(self.fft_time[-1] / tau))
         if cout:
             return cd
@@ -3176,55 +3191,6 @@ class BLsim(object):
         if ylbl:
             plt.ylabel('Amplitude')
         return None
-
-    def _t_phase_plotter(self, data, ret_m=False, sort=True, sdata=None,
-                         modes=None, std=None, nm=None):
-        if modes is None:
-            modes = []
-            for i in xrange(data.shape[0]):
-                tmp = data[i, :].copy()
-                # tmp = tmp[tloc]
-                j = 0
-                # make sure data covers 5 adjacent r
-                while np.isfinite(tmp).any() and j < 5:
-                    tmp = np.gradient(tmp)
-                    j += 1
-                if np.isfinite(tmp).any():
-                    modes.append(i)
-        order = modes[:]
-        if sort:
-            if sdata is None:
-                sdata = data.mean(axis=1)
-            order = sorted(modes, key=lambda m: sdata[m])
-        if not nm is None:
-            order = order[-nm:]
-            modes = [m for m in modes if m in order]
-        handles = [None] * len(modes)
-        if len(modes) > 9:
-            colors1 = plt.cm.viridis(np.linspace(0., 1, 128))
-            colors2 = plt.cm.plasma(np.linspace(0, 1, 128))
-            colors = np.vstack((colors1, colors2))
-            mymap = mpl.colors.LinearSegmentedColormap.from_list('my_colormap', colors)
-        else:
-            mymap = plt.cm.viridis
-        norm = 1. / (len(modes) - 1.)
-        for m in order:
-            i = modes.index(m)
-            c = mymap(i * norm)
-            opt = dict(lw=1, c=c)
-            handles[i] = plt.plot(self.rc, data[m, :], **opt)[0]
-            if not std is None:
-                plt.plot(self.rc, data[m, :] - std[m, :], ls=':', **opt)
-                plt.plot(self.rc, data[m, :] + std[m, :], ls=':', **opt)
-        opt = {'loc': 0, 'frameon': True, 'handlelength': .7, 'prop': {'size': 8},
-               'ncol': 3}
-        lbls = ['$%d$' % m for m in modes]
-        leg = plt.legend(handles, lbls, **opt)
-        for legobj in leg.legendHandles:
-            legobj.set_linewidth(2.0)
-        plt.xlabel('Radius')
-        if ret_m:
-            return modes
 
     def t_amp(self, t='mean', ret_m=False, fig=True, tmin=2e2 * tau, nm=5):
         if fig is True:
@@ -3410,7 +3376,10 @@ class BLsim(object):
         return .5 + .5 * self.r[0]
 
     def compact_diag(self, save=False, **kwargs):
-        gsopt = dict(wspace=0, hspace=0, left=.11, right=.99, bottom=.07, top=.88)
+        gsopt = dict(wspace=0, hspace=0, left=.11, right=.99, bottom=.07, top=.99)
+        if 'gsopt' in kwargs:
+            gsopt.update(kwargs['gsopt'])
+            kwargs['gsopt'] = gsopt
         fn = None
         if save:
             fn = self.name + '_compact_diag.pdf'
@@ -3422,7 +3391,7 @@ class BLsim(object):
     def diagnostic(self, rs=None, save=False, fn=None, ext=None, figsize=None,
                    sdir=None, subsample=None, sz=3.5, xmax=2.5, dpi=300, modes=None,
                    add_modes=None, tmark=None, add_max=None, overwrite=True, log=True,
-                   map=True, gsopt=None, compact=False):
+                   map=True, gsopt=None, compact=False, title_y=None, suptitle=None):
         if ext is None:
             if map:
                 ext = 'png'
@@ -3468,12 +3437,15 @@ class BLsim(object):
         fsx, fsy = figsize
         _gsopt = dict(top=1 - .75 / fsy, bottom=.5 / fsy, left=.75 / fsx,
                       right=1 - .75 / fsx, hspace=.1, wspace=.15)
+        if compact:
+            _gsopt['hspace'], _gsopt['wspace'] = 0, 0
         if gsopt is None:
             gsopt = dict()
         _gsopt.update(gsopt)
         gs = mpl.gridspec.GridSpec(ny, nx, **_gsopt)
 
-        ropt = dict(modes=modes, add_modes=add_modes, add_max=add_max, fig=False)
+        ropt = dict(modes=modes, add_modes=add_modes, add_max=add_max, fig=False,
+                    title_y=title_y)
         ylim = [1e9, -1]
         for i, r in enumerate(rs):
             ylbl = not i
@@ -3490,6 +3462,8 @@ class BLsim(object):
                 lbool = (i == 0)
             self.r_amp(r, xlbl=False, ylbl=ylbl, log=True, legend=lbool, set_ylim=True,
                        **ropt)
+            lbl = '(' + chr(ord('a') + i) + ')'
+            ax.text(.96, .96, lbl, c='k', transform=ax.transAxes, ha='right', fontsize=8)
             tmp = plt.ylim()
             ylim = [min(ylim[0], tmp[0]), max(ylim[1], tmp[1])]
             if compact:
@@ -3513,6 +3487,8 @@ class BLsim(object):
             if compact:
                 lbool = (i == 0)
             self.r_speed(r, ylbl=ylbl, tmark=tmark, title=False, legend=lbool, **ropt)
+            lbl = '(' + chr(ord('a') + i + ny) + ')'
+            ax.text(.96, .96, lbl, c='k', transform=ax.transAxes, ha='right', fontsize=8)
             ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
             if compact:
                 ax.xaxis.set_ticks_position('both')
@@ -3530,7 +3506,7 @@ class BLsim(object):
             ax = plt.subplot(gs[0, nr])
             f = self.loadfile(self.files('cons')[-1])
             txt_opt = dict(x=.99 * xmax, y=1.01 * xmax, va='bottom', ha='right')
-            f.plot2d('Rpseudo', ax=ax, vmin='smart', cbl=r'$rv_r\sqrt{\rho}$',
+            f.plot2d('Rpseudo', ax=ax, vmin='smart', cbl=r'$rv_r\sqrt{\Sigma}$',
                      subsample=subsample, title=r'$t/2\pi={:.2f}$'.format(f.t / tau),
                      txt_opt=txt_opt)
             plt.xlim(-xmax, xmax)
@@ -3574,7 +3550,10 @@ class BLsim(object):
                 ax.text(.00 + .4 * (j % ncol), 1. - .5 * .12 * (j // ncol + 3), txt)
                 j += 1
 
-        fig.suptitle('Diagnostic for ' + helpers.sanitize_lbl(self.name))
+        if suptitle is None:
+            suptitle = 'Diagnostic for ' + helpers.sanitize_lbl(self.name)
+        if suptitle:
+            fig.suptitle(suptitle)
 
         if save:
             plt.savefig(fn)
@@ -3826,7 +3805,7 @@ class BLsim(object):
     def tVort(self, data, t, save=False):
         plt.plot(self.rc, data['dvortensity'][t])
         plt.plot(self.rc, data['dvorticity'][t])
-        plt.legend([r'$\delta\omega_z/\rho$', r'$\delta\omega_z$'])
+        plt.legend([r'$\delta\omega_z/\Sigma$', r'$\delta\omega_z$'])
         plt.xlabel('$r$')
         plt.title(r'$t/2\pi={0:d}$'.format(t))
         plt.axes().xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.1))
@@ -4010,7 +3989,7 @@ class BLsim(object):
         if popt is None:
             popt = {}
         if var_list is None:
-            var_list = ['Rpseudo', 've', 'd_vortensity']
+            var_list = ['Rpseudo', 've', 'd_vortensity', 'vortensity']
         var_list = np.atleast_1d(var_list)
         fopt = {'dpi': 300, 'figsize': (6, 6)}
         # path = self.name + '_maps'
@@ -4176,7 +4155,7 @@ class BLsim(object):
         if popt is None:
             popt = {}
         if var_list is None:
-            var_list = ['Rpseudo', 've', 'd_vortensity']
+            var_list = ['Rpseudo', 've', 'd_vortensity', 'vortensity']
         var_list = np.atleast_1d(var_list)
         fopt = {'dpi': 300, 'figsize': (6, 6)}
         # path = self.name + '_maps'
@@ -4225,7 +4204,7 @@ class BLsim(object):
                     if i % ncol:
                         ax.set_yticklabels([])
                     else:
-                        plt.ylabel(r'$\phi/\pi$')
+                        plt.ylabel(r'$\varphi/\pi$')
                     if i / ncol < nrow - 1:
                         ax.set_xticklabels([])
                     else:
@@ -4240,12 +4219,8 @@ class BLsim(object):
                         os.makedirs(os.path.join(path, var))
                     sdir = os.path.join(path, var)
                     if var == 'd_vortensity':
-                        out = bf.stripe_and_data(var, init=init, sdir=sdir, rho0=rho0,
-                                                     omega0=omega0, vmax=True, **opt)
-                        try:
-                            _, init = out
-                        except TypeError:
-                            init = out
+                        init = bf.plt_vortensity(vmax=True, save=True, init=init,
+                                                 overwrite=overwrite, sdir=sdir)
                     else:
                         bf.stripe_and_data(var, sdir=sdir, rho0=rho0, omega0=omega0, **opt)
         if thumbnail:
@@ -4375,7 +4350,7 @@ class BLsim(object):
 
             lax = plt.subplot(gs[i + 1, 0])
             df.stripe(left, ax=lax, **_lopt)
-            lax.set_ylabel(r'$\phi/\pi$')
+            lax.set_ylabel(r'$\varphi/\pi$')
             if llim is None:
                 llim = plt.gci().get_clim()
                 _lopt['vmin'] = llim[0]
@@ -4421,7 +4396,7 @@ class BLsim(object):
 
         return
 
-    def vortex_evo(self, times, left='Rpseudo', mid='d_vortensity', right='Rpseudo', llim=None,
+    def vortex_evo(self, times, left='Rpseudo', mid='ve', right='Rpseudo', llim=None,
                    mlim=None, rlim=None, lopt=None, mopt=None, ropt=None, fig=None,
                    fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
                    save=False, ext='png', sdir=False, overwrite=True, dropbox=False,
@@ -4460,13 +4435,13 @@ class BLsim(object):
             fopt = {}
         _fopt.update(fopt)
         _hr = [.1] + [1] * nt
-        _gsopt = dict(height_ratios=_hr, width_ratios=[1, .3, .45], top=.90 if title else .94, bottom=.05,
+        _gsopt = dict(height_ratios=_hr, width_ratios=[1, .3, .45], top=.90 if title else .94, bottom=.04,
                       left=.06, right=.95, wspace=0, hspace=0)
         if gsopt is None:
             gsopt = dict()
         _gsopt.update(gsopt)
         _lopt = dict(cb=False, title=False, lbls=False, rmax=4, lnorm=lnorm)
-        _mopt = dict(cb=False, title=False, lbls=False, rmax=1.6, init=True)
+        _mopt = dict(cb=False, title=False, lbls=False, rmax=1.6)
         _ropt = dict(cb=False, title=False, minmax=False, lnorm=lnorm)
         if llim is not None:
             _lopt['vmin'] = llim[0]
@@ -4511,7 +4486,7 @@ class BLsim(object):
 
             lax = plt.subplot(gs[i + 1, 0])
             df.stripe(left, ax=lax, **_lopt)
-            lax.set_ylabel(r'$\phi/\pi$')
+            lax.set_ylabel(r'$\varphi/\pi$')
             if i < nt - 1:
                 yticks = lax.yaxis.get_major_ticks()
                 for k in [0]:
@@ -4650,7 +4625,7 @@ class BLsim(object):
                     lnorm = "10^{" + str(int(lnorm)) + '}'
                 else:
                     lnorm = helpers.eformat(float(norm), prec=2, math=False)
-            _cbl = r'$rv_r\sqrt{\rho}$'
+            _cbl = r'$rv_r\sqrt{\Sigma}$'
             if lnorm:
                 _cbl = _cbl.rstrip('$') + ' / ' + lnorm + '$'
             _vmax = '95%'
@@ -4761,7 +4736,7 @@ class BLsim(object):
             #rax.yaxis.set_label_position('right')
             #rax.yaxis.tick_right()
             if i == 0:
-                rax.set_ylabel(r'$\phi/\pi$')
+                rax.set_ylabel(r'$\varphi/\pi$')
 
             lax.set_xticklabels([])
             if i > 0:
@@ -4801,6 +4776,336 @@ class BLsim(object):
 
 
         lcax.yaxis.set_offset_position('left')
+        if title:
+            fig.suptitle(helpers.sanitize_lbl(self.name))
+
+        if save:
+            plt.savefig(fn)
+            plt.close()
+
+        return
+
+    def map_stripe2(self, times=None, right='Rpseudo', mid='Rpseudo', left='d_vortensity',
+                    rlim=None, mlim=None, llim=None, ropt=True, mopt=None, lopt=None,
+                    fig=None, rmax=None, norm=True, fopt=None, dpi=300, figsize=True,
+                    gsopt=None, inc_time=True, fn=None, save=False, ext='png', sdir=None,
+                    overwrite=True, dropbox=False, xlabelpad=None, title=False,
+                    lxlim=True, lrat=2./3., dv=0, ylabelpad=-6, space=.3):
+        if sdir:
+            dropbox = False
+        if not dropbox and sdir is None:
+            sdir = True
+        mach = int(np.round(self.mach))
+        if rmax is None:
+            rmax = 1.4
+            if mach < 14:
+                rmax = 1.7
+            if mach < 11:
+                rmax = 2.25
+            if mach < 9:
+                rmax = 3
+        if lxlim is True:
+            lxlim = [.95, rmax * 2.0 / 3.0 + 1.0/3.0]
+        if save and fn is None:
+            fn = self.name + '_maps_stripes_2.' + ext
+        if save or fn:
+            save = True
+            if dropbox:
+                sdir = True
+            if sdir is True:
+                sdir = ''
+                if dropbox:
+                    sdir = '~/Dropbox/Research/IAS/rrr/bl_shared/simulation_results/Production'
+                else:
+                    sdir = os.path.join(os.path.split(self.path)[0], 'figs')
+                if mach in [5, 6, 9, 12]:
+                    sdir = os.path.join(sdir, 'M{:02d}'.format(mach))
+                sdir = os.path.join(sdir, self.name + '_plots')
+            if sdir:
+                print(sdir)
+                sdir = os.path.expanduser(sdir)
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+                fn = os.path.join(sdir, fn)
+        if parse_not_overwrite(overwrite, fn):
+            print('Exit on parse_not_overwrite')
+            return None
+        if norm is True:
+            norm = 1e-2 if mach < 12 else 1e-3
+        if ropt is True:
+            tnorm = False
+            if norm:
+                tnorm = np.log10(float(norm))
+                if tnorm == int(tnorm):
+                    tnorm = "10^{" + str(int(tnorm)) + '}'
+                else:
+                    tnorm = helpers.eformat(float(norm), prec=2, math=False)
+            _cbl = r'$rv_r\sqrt{\Sigma}$'
+            if tnorm:
+                _cbl = _cbl.rstrip('$') + ' / ' + tnorm + '$'
+            _vmax = '95%'
+            if mach in [12]:
+                _vmax = 5
+                _vmax = '95%'
+            ropt = {'cbl': _cbl, 'vmax': _vmax}
+
+        if times is None:
+            times = np.array([50, 150, 250, 350, 450, 550])
+            if mach in [12, 15]:
+                times += 25
+        times = np.atleast_1d(times)
+        nt = times.size
+
+        if figsize is True:
+            figsize = [3.2 if nt <= 6 else 7, 7.2]
+            if not title:
+                pass
+                # figsize[1] -= .33
+        _fopt = dict(dpi=dpi, figsize=figsize)
+        if fopt is None:
+            fopt = {}
+        _fopt.update(fopt)
+        _hr = [.1] + [1] * (nt if nt <= 6 else int(nt / 2 + .5))
+        _wr = [lrat, 1, 1] if nt <= 6 else [lrat, 1, 1, space, lrat, 1, 1]
+        _gsopt = dict(height_ratios=_hr, width_ratios=_wr, top=.85, bottom=.05,
+                      left=.1 if nt < 7 else .05, right=.99, wspace=0, hspace=0.02)
+        if not title:
+            _gsopt['top'] = .94
+        if gsopt is None:
+            gsopt = dict()
+        _gsopt.update(gsopt)
+        _ropt = dict(cb=False, title=False, minmax=False)
+        _mopt = dict(cb=False, title=False, lbls=False, rmax=rmax)
+        _lopt = dict(cb=False, title=False, lbls=False, rmax=rmax)
+        if left == 'd_vortensity':
+            _lopt['cbl'] = r'$\omega/\Sigma-\left<\omega/\Sigma\right>$'
+            _lopt['zerocent'] = True
+            _lopt['cmap'] = helpers.NCcmap
+            if dv is not None:
+                left = 'vortensity '
+            if type(dv) == int:
+                _lopt['cbl'] = r'$\omega/\Sigma-\left<\omega/\Sigma\right>_{' + str(dv) + '}$'
+                dv = self.loadfile('cons', dv).vortensity().mean(axis=0)
+            _lopt['dv'] = dv
+            print(dv)
+            if llim is None:
+                _lopt['vmax'] = '99%'
+        if rlim is not None:
+            _ropt['vmin'] = rlim[0]
+            _ropt['vmax'] = rlim[1]
+        if mlim is not None:
+            _mopt['vmin'] = mlim[0]
+            _mopt['vmax'] = mlim[1]
+        if llim is not None:
+            _lopt['vmin'] = llim[0]
+            _lopt['vmax'] = llim[1]
+        if ropt is None:
+            ropt = dict()
+        if mopt is None:
+            mopt = dict()
+        if lopt is None:
+            lopt = dict()
+        _ropt.update(ropt)
+        _mopt.update(mopt)
+        _lopt.update(lopt)
+
+        if not fig:
+            fig = plt.figure(**_fopt)
+        gs = mpl.gridspec.GridSpec(len(_hr), len(_wr), **_gsopt)
+        if right == mid:
+            rcax = plt.subplot(gs[0, 1:3])
+            mcax = None
+        else:
+            rcax = plt.subplot(gs[0, 2])
+            mcax = plt.subplot(gs[0, 1])
+        lcax = plt.subplot(gs[0, 0])
+
+        rcax.xaxis.set_label_position('top')
+        rcax.xaxis.set_ticks_position('top')
+        rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+        lcax.xaxis.set_label_position('top')
+        lcax.xaxis.set_ticks_position('top')
+        lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+
+        if norm is not None:
+            if hasattr(right, 'lower'):
+                right += ' / ' + str(norm)
+            else:
+                right /= norm
+            if hasattr(mid, 'lower'):
+                mid += ' / ' + str(norm)
+            else:
+                mid /= norm
+
+        def add_plbl(n, ax=None):
+            if nt <= 6:
+                lbl = chr(ord('a') + n)
+            else:
+                lbl = chr(ord('A') + n // 3) + chr(ord('a') + n % 3)
+            if ax is None:
+                ax = plt.gca()
+            ax.text(.96, .87, '(' + lbl + ')', c='k', transform=ax.transAxes, ha='right',
+                    fontsize=8)
+
+        d = 0
+        for i, t in enumerate(times):
+            if i == 6:
+                d += 4
+                if right == mid:
+                    rcax = plt.subplot(gs[0, d+1:d+3])
+                    mcax = rcax
+                else:
+                    rcax = plt.subplot(gs[0, d+2])
+                    mcax = plt.subplot(gs[0, d+1])
+                lcax = plt.subplot(gs[0, d])
+            df = t if hasattr(t, 'name') else self.loadfile('cons', t)
+            if i == nt - 1 or i == 5 or 1:
+                _ropt['cb'] = True
+                _ropt['cax'] = rcax
+                _ropt['cbopt'] = dict(orientation='horizontal')
+                if right != mid or rlim != mlim:
+                    _mopt['cb'] = True
+                    _mopt['cax'] = mcax
+                    _mopt['cbopt'] = dict(orientation='horizontal')
+                else:
+                    _mopt['cb'] = False
+                _lopt['cb'] = True
+                _lopt['cax'] = lcax
+                _lopt['cbopt'] = dict(orientation='horizontal')
+            rcax.xaxis.set_label_position('top')
+            rcax.xaxis.set_ticks_position('top')
+            rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+            lcax.xaxis.set_label_position('top')
+            lcax.xaxis.set_ticks_position('top')
+            lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+
+
+            r_ax = plt.subplot(gs[(i % 6) + 1, 2 + d])
+            df.plot2d(right, ax=r_ax, **_ropt)
+            add_plbl(3 * i + 2)
+            #lax.set_ylabel(r'$y$')
+            if rlim is None:
+                rlim = plt.gci().get_clim()
+                _ropt['vmin'] = rlim[0]
+                _ropt['vmax'] = rlim[1]
+            if inc_time:
+                lbl = r'{:.3g}$'.format(df.orbit)
+                if i >= 0 and False:
+                    lbl = r't/2\pi=' + lbl
+                lbl = '$' + lbl
+                #plt.text(1.03, .5, lbl, c='k', transform=r_ax.transAxes, va='center',
+                #         rotation='vertical')
+                bbox = dict(edgecolor='none', facecolor='white', pad=0.3)
+                plt.text(.05, .87, lbl, c='k', transform=r_ax.transAxes, bbox=bbox,
+                         ha='left', fontsize=8)
+
+            if mlim is None:
+                if right == mid:
+                    mlim = rlim
+                    _mopt['vmin'] = mlim[0]
+                    _mopt['vmax'] = mlim[1]
+            m_ax = plt.subplot(gs[(i % 6) + 1, 1+d])
+            _mopt['cb'] = False
+            df.stripe(mid, ax=m_ax, **_mopt)
+            add_plbl(3 * i + 1)
+            #rax.yaxis.set_label_position('right')
+            #rax.yaxis.tick_right()
+
+            l_ax = plt.subplot(gs[(i % 6) + 1, 0+d])
+            df.stripe(left, ax=l_ax, **_lopt)
+            if lxlim is not None:
+                l_ax.set_xlim(*lxlim)
+            add_plbl(3 * i)
+            # rax.yaxis.set_label_position('right')
+            # rax.yaxis.tick_right()
+            l_ax.set_ylabel(r'$\varphi/\pi$', labelpad=ylabelpad)
+            if llim is None:
+                llim = plt.gci().get_clim()
+                print(llim)
+                _lopt['vmin'] = llim[0]
+                _lopt['vmax'] = llim[1]
+
+            r_ax.set_yticklabels([])
+            m_ax.set_yticklabels([])
+            if i < nt - 1 and i != 5:
+                r_ax.set_xticklabels([])
+                m_ax.set_xticklabels([])
+                l_ax.set_xticklabels([])
+            else:
+                xticks = r_ax.xaxis.get_major_ticks()
+                xticks[-1].label1.set_visible(False)
+
+            rcax.xaxis.set_label_position('top')
+            rcax.xaxis.set_ticks_position('top')
+            rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+            lcax.xaxis.set_label_position('top')
+            lcax.xaxis.set_ticks_position('top')
+            lcax.xaxis.set_minor_locator(
+                mpl.ticker.MultipleLocator(.5 if llim[1] < 4 else 1))
+
+
+            r_ax.xaxis.set_ticks_position('both')
+            r_ax.yaxis.set_ticks_position('both')
+            r_ax.tick_params(axis='both', which='both', direction='in')
+            r_ax.set_axisbelow(False)
+            #lax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(2))
+
+            m_ax.xaxis.set_ticks_position('both')
+            m_ax.yaxis.set_ticks_position('both')
+            m_ax.tick_params(axis='both', which='both', direction='in')
+            m_ax.set_axisbelow(False)
+            m_ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+            if rmax < 2:
+                m_ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
+                m_ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(.25))
+            m_ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+            m_ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(.5))
+
+            l_ax.xaxis.set_ticks_position('both')
+            l_ax.yaxis.set_ticks_position('both')
+            l_ax.tick_params(axis='both', which='both', direction='in')
+            l_ax.set_axisbelow(False)
+            l_ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+            if rmax < 2:
+                l_ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.05))
+                l_ax.xaxis.set_major_locator(mpl.ticker.MultipleLocator(.25))
+            l_ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+            l_ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(.5))
+            if i > 0 or i == 0:
+                yticks = l_ax.yaxis.get_major_ticks()
+                yticks[0].label1.set_visible(False)
+                yticks[1].label1.set_visible(False)
+                yticks[3].label1.set_visible(False)
+                yticks[-2].label1.set_visible(False)
+                yticks[-1].label1.set_visible(False)
+
+            rcax.xaxis.set_label_position('top')
+            rcax.xaxis.set_ticks_position('top')
+            rcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+            lcax.xaxis.set_label_position('top')
+            lcax.xaxis.set_ticks_position('top')
+            lcax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
+
+            if i == nt - 1 or i == 5:
+                if xlabelpad:
+                    l_ax.set_xlabel('$r$', labelpad=xlabelpad)
+                else:
+                    l_ax.set_xlabel('$r$')
+                m_ax.set_xlabel('$r$')
+                r_ax.set_xlabel('$x$')
+                try:
+                    mcax.xaxis.set_label_position('top')
+                    mcax.xaxis.set_ticks_position('top')
+                except (NameError, AttributeError):
+                    pass
+
+                xticks = lcax.xaxis.get_major_ticks()
+                xt = xticks[int(len(xticks) // 2)]
+                xt.label1.set_visible(False)
+                xt.label2.set_visible(False)
+
+                rcax.yaxis.set_offset_position('left')
+
         if title:
             fig.suptitle(helpers.sanitize_lbl(self.name))
 
@@ -4876,7 +5181,8 @@ class BLsim(object):
         return op
 
     def ratio_Mdot(self, r=1, dt=5, lim_coef=-1e-2, lim_pow=-2.6):
-        fd = self.load_flux_data()
+        self._flux_data = None
+        fd = self.load_flux_data(option=3)
         rl = self.rloc(r)
         CS = fd['CS'][:, rl].cumsum()
         md = fd['Mdot'][:, rl].cumsum()
@@ -4891,7 +5197,7 @@ class BLsim(object):
         return self.mach, out
 
     def Mdot_CS(self, dt0=10, coef=.5, r=1, overwrite=True, save=False, fn=None, sdir='',
-                ext='pdf', hline=None):
+                ext='pdf', hline=None, ax=None, legend=True, option=3, title=True):
         if save or fn:
             save = True
             if fn is None:
@@ -4902,11 +5208,16 @@ class BLsim(object):
         if parse_not_overwrite(overwrite, fn):
             return
 
-        fd = self.load_flux_data()
+        fd = self.load_flux_data(option=option)
         rl = self.rloc(r)
         CS = fd['CS'][:, rl].cumsum()
         md = fd['Mdot'][:, rl].cumsum()
-        dt = np.array([1, 5, 10, 50, 100])
+        if ax is None:
+            top_only = False
+            dt = np.array([1, 5, 10, 50, 100])
+        else:
+            top_only = True
+            dt = np.array([5, 10])
         ns = np.round(fd['t'][-1] / (tau * dt)).astype(int)
         out = dict()
         for n, nbin in enumerate(ns):
@@ -4915,16 +5226,20 @@ class BLsim(object):
                     in range(nbin)]
             data = np.array(data).T / np.diff(bins)[None, :]
             out[dt[n]] = data[::-1]
-        plt.figure(figsize=(8.5, 11), dpi=300)
-        gs = mpl.gridspec.GridSpec(2, 2, width_ratios=[1, .05],
-                                   top=.95, bottom=.09, left=.13, right=.85, wspace=.01,
-                                   hspace=.2)
-        ax = plt.subplot(gs[0, 0])
+        if ax is None:
+            plt.figure(figsize=(8.5, 11), dpi=300)
+            gs = mpl.gridspec.GridSpec(2, 2, width_ratios=[1, .05],
+                                       top=.95, bottom=.09, left=.13, right=.85, wspace=.01,
+                                       hspace=.2)
+            ax = plt.subplot(gs[0, 0])
+        else:
+            plt.sca(ax)
         for i in out:
-            plt.plot(*out[i], marker='o', linewidth=0)
-        plt.xscale('symlog', linthreshx=1e-6)
-        plt.yscale('symlog', linthreshy=1e-6)
-        plt.legend(list(map(str, dt)))
+            plt.plot(-out[i][0], *out[i][1:], marker='o', linewidth=0)
+        plt.xscale('symlog', linthreshx=1e-6, subs=[2,3,4,5,6,7,8,9])
+        plt.yscale('symlog', linthreshy=1e-6, subs=[2,3,4,5,6,7,8,9])
+        if legend:
+            plt.legend(list(map(str, dt)))
         x_ = 10 ** -np.linspace(1, 6, 100)
         x = np.array(list(-x_) + list(np.linspace(-1e-6, 1e-6, 100)) + list(x_[::-1]))
         xl = plt.xlim()
@@ -4935,12 +5250,18 @@ class BLsim(object):
         plt.ylim(*yl)
         plt.xlabel(r'$\dot{M}$')
         plt.ylabel(r'$C_{\rm S}$')
-        plt.title(self.name)
+        ax.xaxis.set_ticks_position('both')
+        ax.yaxis.set_ticks_position('both')
+        ax.tick_params(axis='both', which='both', direction='in')
+        if title:
+            plt.title(self.name if title is True else title)
         if hline:
             if hline is True:
                 hline = -1e-2 * self.mach**-2.6
             for h in np.atleast_1d(hline):
                 plt.axhline(h, c='k', lw=1, ls=':')
+        if top_only:
+            return
 
         # 2nd panel
         ax = plt.subplot(gs[1,0])
@@ -4951,8 +5272,8 @@ class BLsim(object):
         c = cmap(norm(c))
         for j in js:
             plt.plot(*out[dt0][:, j], marker='o', linewidth=0, mfc=c[j], mec=c[j])
-        plt.xscale('symlog', linthreshx=1e-6)
-        plt.yscale('symlog', linthreshy=1e-6)
+        plt.xscale('symlog', linthreshx=1e-6, subs=[2,3,4,5,6,7,8,9])
+        plt.yscale('symlog', linthreshy=1e-6, subs=[2,3,4,5,6,7,8,9])
         plt.title('$dt={:d}$'.format(dt0))
         xl = plt.xlim()
         yl = plt.ylim()
@@ -4962,6 +5283,9 @@ class BLsim(object):
         plt.ylim(*yl)
         plt.xlabel(r'$\dot{M}$')
         plt.ylabel(r'$C_{\rm S}$')
+        ax.xaxis.set_ticks_position('both')
+        ax.yaxis.set_ticks_position('both')
+        ax.tick_params(axis='both', which='both', direction='in')
         if hline:
             for h in np.atleast_1d(hline):
                 plt.axhline(h, c='k', lw=1, ls=':')
@@ -5083,6 +5407,7 @@ class BLsim(object):
                 if not quiet: print('    Vortensity profiles')
                 try:
                     self.vortensity_profiles(save=True, overwrite=overwrite)
+                    self.alt_vortensity_profiles(save=True, overwrite=overwrite)
                 except Exception as e:
                     print('Vortensity profiles FAILED.')
                     print(e)
@@ -5170,7 +5495,7 @@ class BLsim(object):
         plt.ylim(ylim[0] - dy, ylim[1] + dy)
         plt.xlim(self.r[0], self.r[-1])
         plt.xlabel('$R$')
-        lbl = r'$R^2\left(\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_{'
+        lbl = r'$R^2\left(\omega/\Sigma-\left.\left<\omega/\Sigma\right>_\phi\right|_{'
         lbl += str(t0) + r'}\right)$'
         plt.ylabel(lbl)
         plt.title(helpers.sanitize_lbl(self.name))
@@ -5179,10 +5504,84 @@ class BLsim(object):
             plt.close()
         return
 
-    def evo_prof(self, times=None, files=None, cmap=None, popt=None, fn=None, cb=False,
+    def alt_vortensity_profiles(self, times=None, files=None, cmap=None, popt=None,
+                                fn=None, data=None, t0=None, save=False, ax=None,
+                                fig=None, sdir=None, overwrite=True, ext='pdf',
+                                legend=True, figsize=None, dpi=300, xlim=None, ylim=None,
+                                rmax=None, title=True, lopt=None):
+        if save or fn:
+            save = True
+            if sdir is None:
+                sdir = ''
+            if fn is None:
+                fn = helpers.sanitize_lbl(self.name) + '_alt_vortensity_prof.' + ext
+                fn = os.path.join(sdir, fn)
+            if sdir:
+                if not os.path.isdir(sdir):
+                    os.mkdir(sdir)
+        if parse_not_overwrite(overwrite, fn):
+            return None
+        if lopt is None:
+            lopt = dict()
+        if files is None:
+            if times is None:
+                times = np.arange(0, 601, 50, dtype=int)
+            files = [self.files('FT')[t * 10] for t in times]
+        if t0 is None:
+            t0 = times[0]
+        if data is None:
+            data = self.map_files(files, 'vortensity_prof')
+        data = np.array(data)
+        if cmap is None:
+            cmap = plt.get_cmap()
+        elif hasattr(cmap, 'lower'):
+            cmap = plt.get_cmap(cmap)
+        colors = cmap(np.linspace(0, 1, times.size))
+
+        if popt is None:
+            popt = dict()
+        _popt = dict(lw=1, ls='-')
+        _popt.update(popt)
+
+        if fig is None and ax is None:
+            fig = plt.figure(figsize=figsize, dpi=dpi)
+        if ax is not None:
+            plt.sca(ax)
+
+        for i, d in enumerate(data):
+            lbl = r'$t/2\pi={:d}$'.format(times[i])
+            plt.plot(self.rc, d, c=colors[i], label=lbl, **_popt)
+        if legend:
+            plt.legend(**lopt)
+        ax = plt.gca()
+        il = self.rloc(1.05)
+        ir = self.rloc(3.5)
+        if ylim is None:
+            ylim = data[:, il:ir].min(), data[:, il:ir].max()
+            dy = (ylim[1] - ylim[0]) * .05
+            plt.ylim(ylim[0] - dy, ylim[1] + dy)
+        else:
+            plt.ylim(*ylim)
+        if rmax is not None and xlim is None:
+            xlim = [self.r[0], rmax]
+        if xlim is None:
+            plt.xlim(self.r[0], self.r[-1])
+        else:
+            plt.xlim(*xlim)
+        plt.xlabel('$r$')
+        lbl = r'$\left<\omega/\Sigma\right>$'
+        plt.ylabel(lbl)
+        if title:
+            plt.title(helpers.sanitize_lbl(self.name))
+        if save:
+            plt.savefig(fn)
+            plt.close()
+        return
+
+    def evo_prof(self, times=None, files=None, cmap=None, popt=None, fn=None, cb=True,
                  init=None, data=None, t0=0, save=False, fig=None, var_list=None,
                  sdir=None, overwrite=True, ext='pdf', rmax=None, dpi=300, figsize=None,
-                 lopt=None):
+                 lopt=None, use_maps=None):
         if save or fn:
             save = True
             if sdir is None:
@@ -5201,25 +5600,47 @@ class BLsim(object):
             rmax = self.r[-1]
         if var_list is None:
             var_list = ['omega', 'dens', 'vortensity']
-        if files is None:
-            if times is None:
-                times = np.array([0, 20, 25, 30, 40, 50] +
-                                 list(range(100, int(self.fft_time[-1] / tau) + 2, 100)))
+
+        if times is None:
+            times = np.array([0, 20, 25, 30, 40, 50] +
+                             list(range(100, int(self.fft_time[-1] / tau) + 2, 100)))
                 #times = np.arange(t0, 601, 50, dtype=int)
-            files = [self.files('cons')[t] for t in times]
         if t0 is None:
             t0 = times[0]
-        if init is None:
-            df0 = self.loadfile('cons', t0)
-            init = {i: df0[i].mean(axis=0) for i in var_list}
-        if data is None:
-            def grabber(df):
-                return [df[i].mean(axis=0) for i in var_list]
+        if use_maps is None:
+            try:
+                fd = self.flux_data
+            except:
+                use_maps = True
+        if use_maps:
+            if files is None:
+                files = [self.files('cons')[t] for t in times]
+            if init is None:
+                df0 = self.loadfile('cons', t0)
+                init = {i: df0[i].mean(axis=0) for i in var_list}
+            if data is None:
+                def grabber(df):
+                    return [df[i].mean(axis=0) for i in var_list]
 
-            data = self.map_files(files, grabber)
-        data = np.array(data)
+                data = self.map_files(files, grabber)
+                data = np.array(data)
+        else:
+            tlist = np.array([fd.tloc(t * tau) for t in times])
+            if data is None:
+                data = np.array([fd[var][tlist] for var in var_list])
+                data = np.rollaxis(data, 0, -1)
+                print(data.shape)
         if cmap is None:
-            cmap = plt.get_cmap()
+            #cmap = plt.get_cmap()
+            # sample the colormaps that you want to use. Use 128 from each so we get 256
+            # colors in total
+            n0 = int(np.ceil(51. / 600 * 256))
+            colors1 = plt.cm.cividis(np.linspace(0., 1, n0))
+            colors2 = plt.cm.viridis_r(np.linspace(0, .7, 256 - n0))
+
+            # combine them and build a new colormap
+            colors = np.vstack((colors1, colors2))
+            cmap = mpl.colors.LinearSegmentedColormap.from_list('my_colormap', colors)
         elif hasattr(cmap, 'lower'):
             cmap = plt.get_cmap(cmap)
         if cb:
@@ -5233,32 +5654,46 @@ class BLsim(object):
         _popt = dict(lw=1, ls='-')
         _popt.update(popt)
 
-        _v = r'$R^2\left(\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_{'
+        _v = r'$R^2\left(\omega/\Sigma-\left.\left<\omega/\Sigma\right>_\phi\right|_{'
         _v += str(t0) + r'}\right)$'
-        lbls = {'dens': r'$\rho$',
+        lbls = {'dens': r'$\Sigma$',
                 'vortensity': _v,
                 'omega': r'$\Omega$'}
 
-        fig = plt.figure(dpi=dpi, figsize=figsize)
         nvar = len(var_list)
+        if figsize is None:
+            if nvar >= 3:
+                figsize = 3.5, 6
+            else:
+                figsize = 3.5, 4
+        fig = plt.figure(dpi=dpi, figsize=figsize)
         nrow = nvar
-        hr = []
+        ncol = 1
+        wr = [1]
         if cb:
-            nrow += 1
-            hr += [.1]
-        hr += [1] * nvar
-        gs = mpl.gridspec.GridSpec(nrow, 1, height_ratios=hr,
-                                   top=.92, bottom=.12, left=.14, right=.95, wspace=.01,
-                                   hspace=.1)
-        axs = [plt.subplot(i) for i in gs]
+            ncol += 1
+            wr += [.05]
+        gs = mpl.gridspec.GridSpec(nrow, ncol, width_ratios=wr,
+                                   top=.94, bottom=.1, left=.12, right=.85, wspace=0,
+                                   hspace=0)
+        axs = [plt.subplot(gs[i, 0]) for i in range(nvar)]
 
         if cb:
-            cb = mpl.colorbar.ColorbarBase(axs[0], cmap=cmap, norm=norm, orientation='horizontal')
-            axs.pop(0).xaxis.set_ticks_position('top')
-            plt.title(r'$t/2\pi$')
+            cax = plt.subplot(gs[:, 1])
+            cb = mpl.colorbar.ColorbarBase(cax, cmap=cmap, norm=norm,
+                                           orientation='vertical')
+            cax.xaxis.set_ticks_position('top')
+            cb.set_label(r'$t/2\pi$')
+
+        def add_plbl(lbl, ax=None):
+            if ax is None:
+                ax = plt.gca()
+            ax.text(.97, .97, '(' + lbl + ')', c='k', transform=ax.transAxes, ha='right',
+                    va='top', fontsize=10)
 
         for n, var in enumerate(var_list):
-            plt.sca(axs[n])
+            ax = axs[n]
+            plt.sca(ax)
             for i, d in enumerate(data[:, n]):
                 lbl = r'${:d}$'.format(times[i])
                 plt.plot(self.rc, d, c=colors[i], label=lbl, **_popt)
@@ -5272,13 +5707,23 @@ class BLsim(object):
             if n < 2:
                 ylim[0] = 0
             ylim = plt.ylim(*ylim)
+            #print(ylim)
             plt.xlim(self.r[0], rmax)
             plt.ylabel(lbls[var])
             if n < nvar - 1:
-                axs[n].set_xticklabels([])
+                ax.set_xticklabels([])
             if var == 'omega':
                 _, ymax = plt.ylim()
                 plt.ylim(None, max(ymax, 1))
+            ax.yaxis.set_ticks_position('both')
+            ax.xaxis.set_ticks_position('both')
+            ax.tick_params(axis='both', which='both', direction='in')
+            add_plbl(chr(ord('a') + n), ax)
+            if n > 0:
+                yticks = ax.yaxis.get_major_ticks()
+                yticks[-1].label1.set_visible(False)
+                yticks[-2].label1.set_visible(False)
+
         if not cb:
             if lopt is None:
                 lopt = dict(handlelength=1, fontsize=8, handletextpad=.4,
@@ -5427,7 +5872,7 @@ class auxBLsim(BLsim):
         d1 = t1.get2d(var)
         d2 = t2.get2d(var)
         out = np.empty(d1.shape)
-        for ir in xrange(d1.shape[1]):
+        for ir in range(d1.shape[1]):
             # out[:,ir] = helpers.fftcorrelate(d2[:,ir], d1[:,ir])
             out[:, ir] = helpers.c_correlate(d2[:, ir], d1[:, ir])
         # if norm:

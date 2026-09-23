@@ -159,7 +159,7 @@ class BLfileBase(dict):
     def _parse_self(self, key):
         try:
             out = self._special_keys(key)
-            if not out is None:
+            if out is not None:
                 return out
         except NotImplementedError:
             pass
@@ -233,8 +233,11 @@ class BLfile(BLfileBase):
                ax=None, log=False, aspect=1, sdir=None, smooth=None, cax=None,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1, lnorm=None,
                overwrite=True, display=False, minmax=True, txt_opt=None, printvmax=False,
-               figsize=None, dpi=300):
+               figsize=None, dpi=300, rp=None, phi0=None, draw_opt=None,
+               axis_labels=False, tight=False, tight_opt=None, subplots_adjust=None):
         """Plot 2D sim data"""
+        if draw_opt is None:
+            draw_opt = dict()
         _fopt = dict(figsize=figsize, dpi=dpi)
         if fopt:
             _fopt.update(fopt)
@@ -380,6 +383,11 @@ class BLfile(BLfileBase):
             if 'vmax' in _popt:
                 print(_popt['vmax'])
         pcm = plt.pcolormesh(x, y, data, **_popt)
+        if axis_labels:
+            plt.xlabel('$x$')
+            plt.ylabel('$y$')
+        if rp is not None:
+            self.draw_spiral(rp, phi0=phi0, opt=draw_opt)
         if minmax:
             if r_cut is None:
                 r_cut = 1.03
@@ -421,6 +429,15 @@ class BLfile(BLfileBase):
         plt.sca(ax)
         if printvmax:
             print(plt.clim())
+        if subplots_adjust is not None:
+            print('subplots_adjust')
+            print(subplots_adjust)
+            plt.subplots_adjust(**subplots_adjust)
+        if tight:
+            if tight_opt is None:
+                tight_opt = dict()
+            print('Tight')
+            plt.tight_layout(*tight_opt)
         # save fig
         if save:
             plt.savefig(fn)
@@ -436,7 +453,9 @@ class BLfile(BLfileBase):
                ax=None, log=False, aspect=None, sdir=None, smooth=None, rmin=None, rmax=None, lbls=True,
                phi_shift=0, r_cut=None, phi_dot=0, ret_fn=False, rplot=1, dpi=300,
                figsize=None, overwrite=True, display=False, minmax=False, txt_opt=None,
-               ps=None, mode=1, phi_norm=True, rm_last=False, printvmax=False, lnorm=False):
+               ps=None, mode=1, phi_norm=True, rm_last=False, printvmax=False, lnorm=False,
+               dv=None, op=None, rl=None, ru=None, phi0=0, draw_opt=None, rp=None,
+               xminor=True):
         """Plot 2D sim data"""
         _fopt = dict(dpi=dpi, figsize=figsize)
         if fopt is None:
@@ -450,6 +469,10 @@ class BLfile(BLfileBase):
             rmin = self.r[0]
         if rmax is None:
             rmax = r_main(self.mach)
+        elif rmax == 'p2':
+            tmp = 7 / self.mach
+            rmax = 1 + .8 * min(tmp, tmp ** 2)
+            rmax = min(rmax, 3)
         rmax = min(rmax, self.r[-1])
         r = self.r[np.newaxis, :]
         phi = self.phi[:, np.newaxis] + phi_shift
@@ -511,6 +534,8 @@ class BLfile(BLfileBase):
             print('    Map of t/orb={:d}'.format(int(self.orbit + .5)))
 
         data = self._parse_data(data)
+        if dv is not None:
+            data -= dv
         if type(data) != np.ndarray:
             raise TypeError('Data has type "{:}", not ndarray.'.format(type(data)))
         data = data * 10**-lnorm
@@ -583,14 +608,15 @@ class BLfile(BLfileBase):
             if 'vmax' in _popt:
                 print(_popt['vmax'])
         pcm = plt.pcolormesh(self.r, self.phi / phi_norm, data, **_popt)
-        ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
+        if xminor:
+            ax.xaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
         ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.25))
         plt.xlim(rmin, rmax)
         plt.ylim(0, self.phi[-1] / phi_norm)
         if lbls:
             plt.xlabel('$r$')
             if phi_norm == np.pi:
-                plt.ylabel(r'$\phi/\pi$')
+                plt.ylabel(r'$\varphi/\pi$')
             elif phi_norm == 1:
                 plt.ylabel(r'$\phi$')
             elif phi_norm == 2 * np.pi:
@@ -616,11 +642,19 @@ class BLfile(BLfileBase):
                 plt.axvline(r, lw=1, color='1', ls=':')
         if ps is not None:
             if ps is True:
-                raise NotImplementedError
+                raise NotImplementedError # TODO
             tmp = lindblad_loc(ps, mode)
-            plt.axvline(tmp[0], lw=1, color='1', ls='--')
+            plt.axvline(tmp[0], lw=1, color='1', ls='-.')
             plt.axvline(tmp[1], lw=1, color='1', ls='-')
-            plt.axvline(tmp[2], lw=1, color='1', ls='--')
+            plt.axvline(tmp[2], lw=1, color='1', ls='-.')
+        if op is not None:
+            if op is True:
+                raise NotImplementedError # TODO
+            if draw_opt is None:
+                draw_opt = dict()
+            self.sim.draw_mode_curve(op, mode, rl=rl, ru=ru, phi0=phi0, norm=np.pi, zorder=10, **draw_opt)
+        if rp is not None:
+            self.draw_spiral(rp, phi0=phi0, cart=False, opt=draw_opt)
         if title:
             plt.title(helpers.sanitize_lbl(title.format(**self.__dict__)))
         if cb:
@@ -697,7 +731,7 @@ class BLfile(BLfileBase):
         pcm = self.stripe(var, ax=ax0, cax=cax, lbls=False, **kwargs)
         xlim = ax0.get_xlim()
         #print(xlim)
-        plt.ylabel(r'$\phi/\pi$')
+        plt.ylabel(r'$\varphi/\pi$')
         ax0.set_xticklabels([])
 
         ax = plt.subplot(gs[1, 0])
@@ -718,8 +752,8 @@ class BLfile(BLfileBase):
         plt.plot(self.rc, dens, 'k')
         if rho0 is not None:
             plt.plot(self.rc, rho0, lw=1, c='.5', ls=':')
-            #plt.legend([r'$\rho$', r'$\rho_0$'])
-        plt.ylabel(r'$\rho$')
+            #plt.legend([r'$\Sigma$', r'$\Sigma_0$'])
+        plt.ylabel(r'$\Sigma$')
         plt.xlabel(r'$r$')
         plt.ylim(0, 3)
         ax.yaxis.set_minor_locator(mpl.ticker.MultipleLocator(.5))
@@ -757,7 +791,7 @@ class BLfile(BLfileBase):
         drho = self.rhobar() - ref
         plt.plot(self.rc, drho)
         plt.xlabel('$r$')
-        plt.ylabel(r'$\left<\rho({:.1f}\times 2\pi)\right>-\left<\rho(0)\right>$'.format(
+        plt.ylabel(r'$\left<\Sigma({:.1f}\times 2\pi)\right>-\left<\Sigma(0)\right>$'.format(
             self.t / tau))
 
 
@@ -905,22 +939,17 @@ class BL3Dfile(BLfile):
         y *= self.rc[np.newaxis, :]
         return (grad(self.rc, y, axis=1) - self.ddphi(x)) / self.rc[np.newaxis, :]
 
-    def draw_spiral(self, rp, phi0=0, opt=None):
-        if opt is None:
-            opt = {}
-        if 'ls' not in opt:
-            opt['ls'] = ':'
-        if 'lw' not in opt:
-            opt['lw'] = 1
-        if 'c' not in opt:
-            opt['c'] = '1'
-        r = np.array([i for i in self.rc if i >= rp])
-        phi = spiral(r, rp, 1. / self.mach) + phi0
-        print(phi)
-        plt.plot(r * np.cos(phi), r * np.sin(phi), **opt)
+    def draw_spiral(self, rp, phi0=0, cart=True, opt=None):
+        self.sim.draw_spiral(rp, phi0=phi0, cart=cart, opt=opt)
 
 
 class BLConsPrim(BL3Dfile):
+    def __getitem__(self, key):
+        if key.startswith('d_vortensity_'):
+            t0 = int(key.split('d_vortensity_')[-1])
+            return self.d_vortensity(t0)
+        return super(BLConsPrim, self).__getitem__(key)
+
     def rhobar(self):
         return self['dens'].mean(axis=0)
 
@@ -943,6 +972,16 @@ class BLConsPrim(BL3Dfile):
 
     def vortensity(self, dvphi=False):
         return self.vorticity(dvphi=dvphi) / self['dens']
+
+    def d_vortensity(self, t0=None):
+        ve = self.vortensity()
+        if t0 is None:
+            mean = ve.mean(axis=0)
+        else:
+            if type(t0) == int:
+                t0 = self.sim.loadfile('cons', t0)
+            mean = t0.vortensity().mean(axis=0)
+        return ve - mean
 
     def plt_vortensity(self, init=None, fopt=None, vmax=None, fig=None, sdir=None,
                        fn=None, save=False, overwrite=True, ext='png'):
@@ -981,7 +1020,7 @@ class BLConsPrim(BL3Dfile):
         pcm = self.plot2d(dv, fig=fig, ax=ax0, vmax=vmax, cb=False, name=True,
                           zerocent=True)
         cb = plt.colorbar(pcm, ax=ax0, cax=cax)
-        lbl = r'$R^2\left(\omega/\rho-\left.\left<\omega/\rho\right>_\phi\right|_0\right)$'
+        lbl = r'$R^2\left(\omega/\Sigma-\left.\left<\omega/\Sigma\right>_\phi\right|_0\right)$'
         cb.set_label(lbl)
         pos0 = np.array(ax0.get_position())
         posc = np.array(cax.get_position())
@@ -1238,6 +1277,9 @@ class BLConsPrim(BL3Dfile):
         delta[self.rc > 3.9] = 0
         return self.intr(mean ** 2) - self.intr(delta)
 
+    def vortensity_prof(self):
+        return self.vortensity().mean(axis=0)
+
     def d_vortensity_prof(self, init=None):
         if init is None:
             if self.t == 0:
@@ -1247,15 +1289,16 @@ class BLConsPrim(BL3Dfile):
         dv = (self.vortensity() - init[np.newaxis, :]) * self.rc[np.newaxis, :] ** 2
         return dv.mean(axis=0)
 
-    def flux_est(self, i=0, p=1, phase=0, total=True):
+    def flux_est(self, i=0, p=1, phase=0, rpow=-3, total=True):
         flux = self['dens']**p
         flux *= np.diff(self.phi)[:, None] * self.rc[None, :] * np.diff(self.r)[None, :]
         x = np.cos(self.phic - phase)[:, None] * self.rc[None, :]
         y = np.sin(self.phic - phase)[:, None] * self.rc[None, :]
-        rloc = np.where(self.rc <= 1)[0].max()
+        rloc = np.where(self.rc < 1)[0].max()
         flux[:, :rloc+1] = 0
         rho = np.sqrt(1 - np.minimum(y**2, 1)) / np.cos(i)
         flux[np.logical_and(x > 0, x < rho)] = 0
+        flux *= self.rc[None, :] ** rpow
         if total:
             return flux.sum()
         return flux
@@ -1471,6 +1514,9 @@ class BLFT(BLfile):
         data = np.real(self['FT-vel1'][0])
         data[self.rc <= 1] = 0
         return self.intr(data ** 2)
+
+    def vortensity_prof(self):
+        return np.real(self['FT-vortensity-Re'][0])
 
 def _parse_file(fn, file_handle=None):
     ext = fn.split('.')[-1]
