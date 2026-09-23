@@ -1428,13 +1428,13 @@ class BLsim(object):
         except AttributeError:
             pass
         if tnorm == tau:
-            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
+            title += r'$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
         t0 *= tnorm
         tf *= tnorm
         ts *= tnorm
         invdt = 1 / (tf - t0 - ts)
         if tnorm != tau:
-            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0 / tau, tf / tau)
+            title += r'$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0 / tau, tf / tau)
         t = s1data['t']
         i0, il = np.searchsorted(t, [t0, tf])
         if il < t.size - 1:
@@ -1583,13 +1583,13 @@ class BLsim(object):
         except AttributeError:
             pass
         if tnorm == tau:
-            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
+            title += r'$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
         t0 *= tnorm
         tf *= tnorm
         ts *= tnorm
         invdt = 1 / (tf - t0 - ts)
         if tnorm != tau:
-            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0 / tau, tf / tau)
+            title += r'$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0 / tau, tf / tau)
         times = flux_data['t']
         i0, il = np.searchsorted(times, [t0, tf])
         if il < times.size - 1:
@@ -2074,13 +2074,13 @@ class BLsim(object):
         except AttributeError:
             pass
         if tnorm == tau:
-            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
+            title += r'$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
         t0 *= tnorm
         tf *= tnorm
         #ts *= tnorm
         #invdt = 1 / (tf - t0 - ts)
         if tnorm != tau:
-            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0 / tau, tf / tau)
+            title += r'$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0 / tau, tf / tau)
         times = flux_data['t']
         i0, il = np.searchsorted(times, [t0, tf])
         if il < times.size - 1:
@@ -2465,7 +2465,7 @@ class BLsim(object):
             title = self.name + ' '
         except:
             pass
-        title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
+        title += r'$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
         fig.suptitle(title)
         # plt.tight_layout()
         # fig.tight_layout(rect=[0, 0.0, 1, 0.5])
@@ -2644,7 +2644,7 @@ class BLsim(object):
             plt.plot(self.rc, (a - b) / np.maximum(np.abs(a), np.abs(b)), lw=1)
         plt.ylim(-5e-3, 5e-3)
         plt.legend(varlist)
-        plt.title('Time/$2\pi={0:.1f}$'.format(bf.t / tau))
+        plt.title(r'Time/$2\pi={0:.1f}$'.format(bf.t / tau))
 
     def intr(self, data, axis=-1):
         return intr(self.dr, data, axis=axis)
@@ -3845,7 +3845,7 @@ class BLsim(object):
         bmin = tmp.min()
 
         if title is None:
-            title = helpers.sanitize_lbl(self.name) + " $t/2\pi={0:g}\pm{1:g}$".format(t,
+            title = helpers.sanitize_lbl(self.name) + r" $t/2\pi={0:g}\pm{1:g}$".format(t,
                                                                                        dt)
 
         if log and norm is None:

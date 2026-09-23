@@ -180,7 +180,7 @@ class BLholder(blc.DataContainer):
             lbl = lbl + ')'
             topt = dict(c='k', ha='right', va='top', fontsize=10)
             ax.text(.98, .94, lbl, transform=ax.transAxes, **topt)
-        plt.xlabel('$\mathcal{M}$')
+        plt.xlabel(r'$\mathcal{M}$')
         plt.ylabel(name)
         if save:
             plt.savefig(fn)

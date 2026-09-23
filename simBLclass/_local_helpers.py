@@ -21,7 +21,7 @@ import os
 try:
     from astropy.convolution import convolve, convolve_fft, Gaussian1DKernel, Box1DKernel
 except ImportError:
-    pass
+    from scipy.signal import fftconvolve
 # from scipy.ndimage.filters import convolve1d
 # import time
 # import tarfile
@@ -249,4 +249,3 @@ def phi_visible(_r, i, b=1):
     out[rloc] = np.pi + 2 * np.arctan(_a / b * np.sqrt((rsq - b**2) / (_a**2 - rsq)))
     out[nanloc] = np.pi + 2 * np.arctan(np.sqrt(r[nanloc]**2 - b**2) / b)
     return out
-

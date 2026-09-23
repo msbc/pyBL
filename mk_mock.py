@@ -51,7 +51,7 @@ class _time_step(_base):
 
     def _gen_patern(self):
         out = 0
-        for i in xrange(self.modes.size):
+        for i in range(self.modes.size):
             out += self.modes[i] * self.unitwave(i, self.phases[i] + self.t * self.speeds[i] / float(i))
         if self.noise:
             out += self.noise * np.random.randn(self.nphi, self.nr)
@@ -121,10 +121,10 @@ class gen_mock(_base):
             dt = self.dt
         if tmax is None:
             tmax = tmin + 10 * dt
-        print dt
+        print(dt)
         t = np.arange(tmin, tmax + dt, dt)
         opts = np.resize(np.atleast_1d(opts), t.size)
-        for i in xrange(t.size):
+        for i in range(t.size):
             self.time_step(t[i], fn=i, dt=dt, **opts[i])
 
     def spiral(self, dphidr=1):
@@ -147,7 +147,7 @@ class mock_sim(bl.BLsim):
         plt.plot(r * np.cos(th), r * np.sin(th), 'w', lw=1)
         r = self.r
         one = np.ones(r.shape)
-        for i in xrange(t1.data['modes'].size):
+        for i in range(t1.data['modes'].size):
             if t1.data['modes'][i]:
                 th = dt * t1.data['speeds'][i] * one
                 plt.plot(r * np.cos(th), r * np.sin(th), 'k:', lw=1)

@@ -85,9 +85,9 @@ def comp_wrapper(func, simlist=None, include=None, tmin=200, T=False, args=None,
 
     # if not simlist: simlist = simlist4
 
-    if tmin == None: tmin = 200
+    if tmin is None: tmin = 200
 
-    if include == None:
+    if include is None:
         def include(sim):
             return sim.fft_time[-1] >= tmin
     elif include == True:
@@ -400,8 +400,8 @@ def CS_both(dpi=300, figsize=None, save=False, dropbox=False, **kwargs):
     axs[1].set_yticklabels([])
     x, y = 2e-4, 3
     opt = dict(bbox=dict(edgecolor='none', facecolor='white', alpha=.7), fontsize=6)
-    axs[0].text(x, y, "a) mean $\pm$ standard-deviation", **opt)
-    axs[1].text(x, y, "b) median $\pm$ quartile", **opt)
+    axs[0].text(x, y, r"a) mean $\pm$ standard-deviation", **opt)
+    axs[1].text(x, y, r"b) median $\pm$ quartile", **opt)
 
     if save:
         fn = 'CS_Mdot_plot.pdf'
@@ -1510,7 +1510,7 @@ def multi_flux(sims=None, save=False, figsize=None, dpi=300, fopt=None, fn=None,
                 ylim = plt.ylim(max(ylim[0], yl), min(ylim[1], yu))
                 plt.xlim(rmin, rmax)
                 if ns ==0:
-                    plt.ylabel(pre + '\dot{M}' + suf)
+                    plt.ylabel(pre + r'\dot{M}' + suf)
                 ax.yaxis.set_ticks_position('both')
                 ax.xaxis.set_ticks_position('both')
                 ax.tick_params(axis='both', which='both', direction='in')

@@ -1048,12 +1048,12 @@ class FluxData(object):
         except AttributeError:
             pass
         if tnorm == tau:
-            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
+            title += r'$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0, tf)
         t0 *= tnorm
         tf *= tnorm
         ts *= tnorm
         if tnorm != tau:
-            title += '$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0 / tau, tf / tau)
+            title += r'$t/ 2 \pi={:.1f}-{:.1f}$'.format(t0 / tau, tf / tau)
         t = self['t']
         invdt = 1 / (tf - t0 - ts)
         i0, il = np.searchsorted(t, [t0, tf])
@@ -1287,8 +1287,8 @@ class FluxData(object):
         ]
         plt.plot(self.rc, lines[0], label=r'$-\partial_r P$')
         plt.plot(self.rc, lines[1], label=r'$-R$')
-        plt.plot(self.rc, lines[2], label='\#2')
-        plt.plot(self.rc, lines[3], label='\#1-\#4')
+        plt.plot(self.rc, lines[2], label=r'\#2')
+        plt.plot(self.rc, lines[3], label=r'\#1-\#4')
         plt.plot(self.rc, np.asarray(lines).sum(axis=0), lw=1, c='k', label='Sum')
         if extras:
             plt.axhline(0, c='.5', ls=':', lw=1)
