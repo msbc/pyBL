@@ -1,4 +1,13 @@
 #! /usr/bin/env python
+"""Analysis tools for two-dimensional boundary-layer simulations.
+
+The primary public entry point is :class:`BLsim`, which discovers Athena++
+outputs in a simulation directory and provides access to derived flux,
+Fourier, mode, and plotting data.  The module contains a large historical
+analysis surface; methods that are not part of the common loading and
+inspection workflow remain intentionally undocumented until their behavior
+can be described accurately.
+"""
 
 # from __future__ import absolute_import, division, print_function
 # from builtins import (bytes, str, open, super, range, zip, round, input, int, pow, object)
@@ -60,6 +69,30 @@ tau = 2 * np.pi
 
 
 class BLsim(object):
+    """Represent an Athena++ boundary-layer simulation.
+
+    Parameters
+    ----------
+    path : str or path-like
+        Simulation directory, or a directory name discoverable through the
+        configured search paths.
+    fmts : sequence of str, optional
+        Output filename formats.  Defaults to the formats in ``rc``.
+    coarse_data, fft_time, mode_mask, main_modes, sfd, phase_angle : optional
+        Previously computed analysis data used to avoid repeating expensive
+        processing.
+    athinput : str or path-like, optional
+        Athena++ input file.  If omitted, it is inferred from ``path``.
+    skip_data_gen : bool, optional
+        Skip automatic Fourier-data generation when false would otherwise
+        trigger it through the configured defaults.
+
+    Notes
+    -----
+    The simulation must contain a readable Athena++ input file.  The
+    constructor derives the radial and azimuthal grids and indexes available
+    output files; it does not load every output into memory immediately.
+    """
     def __init__(self, path, fmts=None, coarse_data=None, fft_time=None,
                  athinput=None, mode_mask=None, main_modes=None, sfd=None,
                  phase_angle=None, rho_ref=None, mode_detect=None, flux_data=None,
@@ -209,10 +242,12 @@ class BLsim(object):
         raise KeyError('Unable to parse {0:}'.format(key))
 
     def bl_stats(self, t=600):
+        """Return boundary-layer statistics at the requested averaging time."""
         return BLstats(self, t)
 
     @property
     def lightcurve(self):
+        """Return the lazily constructed :class:`Lightcurves` object."""
         try:
             return self._lightcurve
         except AttributeError:
@@ -220,6 +255,7 @@ class BLsim(object):
         return self._lightcurve
 
     def get_lightcurve(self, **kwargs):
+        """Construct a light-curve analysis object from flux outputs."""
         return Lightcurves(self.files('flux'), sim=self, **kwargs)
 
     def _old_upper_omega(self, m, n=0, r=1.1, t0=2000, tf=None):
@@ -245,6 +281,7 @@ class BLsim(object):
         return kep - tmp
 
     def upper_omega(self, m, n=0, r=1.1, t0=2000, tf=None):
+        """Estimate the upper pattern-frequency branch for mode ``m``."""
         vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
         omega = vphi / self.rc
         if r is None:
@@ -286,6 +323,7 @@ class BLsim(object):
         return np.sqrt((do * kappa**2 * r**2 - 2 * s**2 * omega) / (do**3 * r**2 - s**2 * do))
 
     def upper_m(self, op=None, n=0, r=None, t0=2000, tf=None):
+        """Estimate azimuthal mode numbers for a range of pattern speeds."""
         vphi = self.flux_data['vphi'][t0:tf].mean(axis=0)
         omega = vphi / self.rc
         if r is None:
@@ -313,6 +351,7 @@ class BLsim(object):
         return np.sqrt((do * kappa**2 * r**2 - 2 * s**2 * omega) / (do**3 * r**2 - s**2 * do)), op
 
     def info_row(self):
+        """Return a compact list of identifying simulation properties."""
         M, res, seed, suffix = self.name.split('.')
         seed = rc('seed_type').get(seed, seed)
         return [str(i) for i in [self.name, int(self.mach), '%.3g' % self.r[0],
@@ -336,6 +375,7 @@ class BLsim(object):
         return out
 
     def map_files(self, files, func, *args, imin=None, imax=None, ll=False, **kwargs):
+        """Apply a function to selected output files, optionally in parallel."""
         try:
             if str(files) == files:
                 if files == 'ffts':
@@ -371,6 +411,7 @@ class BLsim(object):
         return data
 
     def CS_RRR_data(self, ll=True):
+        """Return cached or newly computed Fourier stress data."""
         if self._cs_rrr_data is None:
             try:
                 self._cs_rrr_data = np.load(self._cs_rrr_fn)['data']
@@ -390,6 +431,7 @@ class BLsim(object):
         return fn
 
     def load_flux_data(self, ll=True, overwrite=False, data=None, option=None):
+        """Load the simulation's cached or computed flux-data representation."""
         if self._flux_data is not None:
             return self._flux_data
         fn = self._get_flux_fn(1, 2, 0)
@@ -422,18 +464,22 @@ class BLsim(object):
         return npz_wrapper(np.load(fn), self.rc)
 
     def alpha_eff(self):
+        """Return the effective stress alpha parameter over time and radius."""
         data = self.load_flux_data()
         return self.mach**2 * data['CS'] / (tau * self.rc[None, :]**2 * data['dens'])
 
     def acc_mach(self):
+        """Return the dimensionless accretion Mach number over time and radius."""
         data = self.load_flux_data()
         return - self.mach * data['Mdot'] / (tau * self.rc[None, :] * data['dens'])
 
     def acc_alpha(self):
+        """Return the accretion alpha parameter over time and radius."""
         data = self.load_flux_data()
         return - self.mach**2 * data['Mdot'] * data['vphi'] / (tau * self.rc[None, :] * data['dens'])
 
     def peak_alpha(self, dt=True, dr=5):
+        """Return smoothed peak stress and accretion alpha values."""
         a_stress = self.alpha_eff()
         a_acc = self.acc_alpha()
         if dt:
@@ -451,6 +497,7 @@ class BLsim(object):
         return a_stress, a_acc
 
     def write_peak_alpha(self, fn=None, sdir=True, overwrite=True):
+        """Write the peak alpha values to a small CSV file."""
         if sdir is True:
             sdir = self.path
         if not sdir:
@@ -632,18 +679,21 @@ class BLsim(object):
         return pcm
 
     def stress_st(self, **kwargs):
+        """Plot the stress alpha parameter as a time-radius diagram."""
         data = 'alpha_eff'
         opt = dict(data=data, cbl=r'$\alpha_{\rm stress}$', slog=True, name='alpha_stress')
         opt.update(kwargs)
         return self._st_plot(**opt)
 
     def acc_st(self, **kwargs):
+        """Plot the accretion alpha parameter as a time-radius diagram."""
         data = 'acc_alpha'
         opt = dict(data=data, cbl=r'$\alpha_{\rm acc}$', slog=True, name='alpha_acc')
         opt.update(kwargs)
         return self._st_plot(**opt)
 
     def rho_st(self, delta=False, **kwargs):
+        """Plot surface density, optionally normalized to its initial value."""
         def dens(sim):
             data = sim.load_flux_data()['dens']
             if delta:
@@ -665,6 +715,7 @@ class BLsim(object):
 
     def multi_st(self, opts=None, save=False, figsize=None, dpi=300, fopt=None,
                  fn=None, sdir=None, rmin=1.0, rmax=2.0, overwrite=True):
+        """Create a stacked density, stress, and accretion diagnostic figure."""
         if save or fn:
             save = True
             if not fn:
@@ -740,6 +791,7 @@ class BLsim(object):
         return
 
     def gen_fft_times(self, ll=True):
+        """Return simulation times associated with the Fourier output files."""
         if self._new_fft_time is None:
             def _get_t(fn):
                 with h5py.File(fn) as f:
@@ -754,6 +806,7 @@ class BLsim(object):
 
     @property
     def flux_data(self):
+        """Return the lazily loaded flux-data object."""
         return self.load_flux_data()
 
     def _smooth_flux_data(self, data=None, dt=101, dr=21):
@@ -782,27 +835,32 @@ class BLsim(object):
 
     @property
     def smooth_flux_data(self):
+        """Return cached flux data smoothed in time and radius."""
         if self._sfd is None:
             self._sfd = self._smooth_flux_data()
         return self._sfd
 
     def get_alpha(self):
+        """Return the stress alpha computed from smoothed flux data."""
         sd = self.smooth_flux_data
         return self.mach ** 2 * sd['CS'] / (tau * self.rc ** 2 * sd['dens'])
 
     def r_cavity(self):
+        """Return the radius of the minimum stress near the cavity."""
         i1 = self.rloc(1)
         i3 = self.rloc(3)
         i = i1 + np.abs(self.smooth_flux_data['CS'][:, i1:i3]).argmin(axis=-1)
         return self.rc[i]
 
     def r_peak(self):
+        """Return the radius of peak stress outside the cavity."""
         i1 = self.rloc(1)
         i3 = self.rloc(3.9)
         i = i1 + self.smooth_flux_data['CS'][:, i1:i3].argmax(axis=-1)
         return self.rc[i]
 
     def bl_in_out(self):
+        """Return inner and outer boundary-layer radii for each time."""
         omega = np.nan_to_num(self.smooth_flux_data['vr'] / self.rc[np.newaxis, :])
         i_out = omega[:, :self.rloc(2)].argmax(axis=1)
         i_in = np.array([np.abs(.1 - omega[i, 5:i_out[i] + 1]).argmin() + 5
@@ -810,21 +868,25 @@ class BLsim(object):
         return self.rc[i_in], self.rc[i_out]
 
     def mean_bl(self, data=None):
+        """Return time-averaged inner, outer, and width boundary radii."""
         if data is None:
             data = self.bl_in_out()
         out = [i[:1000].mean() for i in data]
         return out + [out[1] - out[0]]
 
     def mach_and_bl(self):
+        """Return the Mach number together with mean boundary-layer measures."""
         return [self.mach] + self.mean_bl()
 
     # for backwards compatibility
     def my_flux_plot(self, **kwargs):
+        """Backward-compatible alias for :meth:`flux_vs_time`."""
         return self.flux_vs_time(**kwargs)
 
     def flux_vs_time(self, data=None, rlist=None, lopt=None, overwrite=True, save=False,
                      fn=None, sdir='', ext='pdf', fig=None, fopt=None, dt=5,
                      figsize=None, hide_first_ylbl=None):
+        """Plot selected flux quantities as functions of time at radii."""
         if save or fn:
             save = True
             if fn is None:
@@ -966,6 +1028,7 @@ class BLsim(object):
             plt.close()
 
     def run(self, athinput=None, args=None, rundir=None):
+        """Run the Athena++ executable for this simulation directory."""
         if athinput is None:
             athinput = self.athinput
         if args is None:
@@ -986,6 +1049,7 @@ class BLsim(object):
 
     @property
     def rho_ref(self):
+        """Return the reference surface-density profile."""
         if self._rho_ref is None:
             try:
                 self._rho_ref = np.real(self.loadfile('FT', 0)['FT-dens'][0])
@@ -994,6 +1058,7 @@ class BLsim(object):
         return self._rho_ref
 
     def drho_plot(self, *args):
+        """Plot a density perturbation from a selected output file."""
         try:
             args[0].drho_plot()
         except AttributeError:
@@ -1003,6 +1068,7 @@ class BLsim(object):
                 self.loadfile('cons', args[0]).drho_plot()
 
     def draw_spiral(self, rp, phi0=0, cart=True, norm=np.pi, opt=None):
+        """Draw a logarithmic spiral beginning at radius ``rp``."""
         if opt is None:
             opt = {}
         if 'ls' not in opt:
@@ -1032,6 +1098,7 @@ class BLsim(object):
             plt.plot(x, y, **opt)
 
     def kr_sqr(self, op, m, t0=None, tf=None):
+        """Return the squared radial wavenumber for pattern speed ``op``."""
         if t0 is None:
             t0 = 2000
         omega = self.flux_data['vphi'][t0:tf].mean(axis=0) / self.rc
@@ -1039,6 +1106,7 @@ class BLsim(object):
 
     def draw_mode_curve(self, op, m, rl=None, ru=None, phi0=0, opt=None, norm=1, polar=False,
                         t0=None, tf=None, reflect=None, zorder=None):
+        """Draw a mode-propagation curve for pattern speed ``op`` and mode ``m``."""
         if opt is None:
             opt = {}
         if 'ls' not in opt:
@@ -1117,11 +1185,13 @@ class BLsim(object):
 
     @property
     def fft_dt(self):
+        """Return the Fourier-output cadence in orbital-time units."""
         ffts = [i for i in self.fileDict.keys()
                 if self.inputs.get(i, {}).get('variable') == "FT-Range"]
         return self.inputs[ffts[0]]['dt'] / tau
 
     def fluxes(self, t0, tf, tnorm=tau, nsmooth=True, progress=True):
+        """Average Fourier-derived flux terms over a time interval."""
         if not tnorm or tnorm is True:
             tnorm = 1
         t0 *= tnorm
@@ -1184,6 +1254,7 @@ class BLsim(object):
 
     def new_fluxes(self, t0, tf, tnorm=tau, nsmooth=True, csm=False, plt_data=False,
                    options=None):
+        """Compute time-averaged flux diagnostics from cached flux data."""
         fdata = self.load_flux_data()
         isnew = 'mom2' in fdata.npz.keys() or 'lc' in self.name
         if options is None:
@@ -1290,6 +1361,7 @@ class BLsim(object):
 
     def time_fluxes(self, csm=False, options=True, cumsum=False, ts=False, ns=False,
                     sopt=1):
+        """Return flux diagnostics as time series over the complete dataset."""
         rc = self.rc
         fdata = self.load_flux_data()
         t = fdata['t']
@@ -1406,6 +1478,7 @@ class BLsim(object):
     def smooth_flux_comp(self, t0, tf, tnorm=tau, figsize=None, save=False, fn=None,
                          ext='pdf', lopt=None, sdir='', overwrite=True, dpi=300,
                          s1data=None, s2data=None, ts=False, dtf=None, ydp=1, ns=100):
+        """Compare smoothed flux-balance terms over a time interval."""
         if save or fn:
             save = True
             if fn is None:
@@ -1551,6 +1624,7 @@ class BLsim(object):
     def flux_compare(self, t0, tf, tnorm=tau, figsize=None, save=False, fn=None,
                      ext='pdf', lopt=None, sdir='', overwrite=True, dpi=300,
                      flux_data=None, ts=False, dtf=None, ydp=1, ns=100):
+        """Plot the radial contributions to the flux balance."""
         if save or fn:
             save = True
             if fn is None:
@@ -1676,6 +1750,7 @@ class BLsim(object):
         return flux_data
 
     def compare_series(self, t0=None, delta_t=100, dt0=50, save=True, sdir=None, **kwargs):
+        """Generate a sequence of flux-comparison plots over time windows."""
         if sdir is True:
             # sdir = self.name + '_fluxes'
             sdir = 'compare_fluxes'
@@ -1690,6 +1765,7 @@ class BLsim(object):
 
     def am_plot_data(self, t0, tf, flux_data=None, fn=None, sdir='', overwrite=False,
                      tnorm=tau, nm=5, s=1):
+        """Compute and optionally save angular-momentum plot data."""
         if fn is None:
             fn = self.full_name + '_am_plot_data.hdf5'
         if sdir:
@@ -1797,6 +1873,7 @@ class BLsim(object):
                     legend_opt=None, prefix='', lbl0='a', tx=.98, ty=.94, topt=None,
                     use_txt=True, nm=5, cbl1=None, rmax0=None, rmax1=None, am_lnorm=0,
                     rloc=None):
+        """Draw one angular-momentum-balance diagnostic panel."""
         if fig is None and gs0 is None:
             _fopt = dict(dpi=dpi, figsize=figsize)
             if fopt:
@@ -1962,6 +2039,7 @@ class BLsim(object):
                  fopt=None, figsize=None, dpi=300, hdf5=None, sdir=None, legend_opt=None,
                  prefix='', lbl0='a', tx=.97, ty=.94, topt=None, use_txt=True,
                  legend=True, lnorm=None, ylbl=None):
+        """Plot angular-momentum balance terms over a time interval."""
         if fig is None and ax is None:
             _fopt = dict(dpi=dpi, figsize=figsize)
             if fopt:
@@ -2038,6 +2116,7 @@ class BLsim(object):
                         ext='pdf', lopt=None, sdir='', overwrite=True, option=2,
                         tnorm=tau, dpi=300, nm=5, plt_ydp=False, axs=None, use_txt=True,
                         lnorm=True, o=2, s=1, norm=1):
+        """Create the publication-style flux-balance figure."""
         if save or fn:
             save = True
             if fn is None:
@@ -2224,6 +2303,7 @@ class BLsim(object):
 
     def paper_flux_series(self, t0=None, delta_t=100, dt0=50, save=True, sdir=None,
                           **kwargs):
+        """Generate publication-style flux plots for successive time windows."""
         if sdir is True:
             # sdir = self.name + '_fluxes'
             sdir = 'paper_fluxes'
@@ -2239,6 +2319,7 @@ class BLsim(object):
 
     def plot_fluxes(self, t0, tf, nm=5, figsize=None, save=False, fn=None, ext='pdf',
                         lopt=None, ff=1, sdir='', progress=True, overwrite=True):
+        """Plot radial flux profiles and their derived balance terms."""
         if save or fn:
             save = True
             if fn is None:
@@ -2485,6 +2566,7 @@ class BLsim(object):
         return
 
     def flux_series(self, t0=None, delta_t=100, dt0=50, save=True, sdir=None, **kwargs):
+        """Generate a sequence of flux-balance plots over time windows."""
         if sdir is True:
             # sdir = self.name + '_fluxes'
             sdir = 'fluxes'
@@ -2495,6 +2577,7 @@ class BLsim(object):
             self.plot_fluxes(t, tf, save=save, sdir=sdir, **kwargs)
 
     def sortedFFT(self):
+        """Return Fourier output filenames ordered by output time."""
         ffts = [out for out in self.fileDict.keys()
                 if self.inputs.get(out, {}).get('variable') == "FT-Range"]
         ffts.sort(key=lambda x: self.inputs.get(x, {}).get('start_time', 0))
@@ -2509,6 +2592,7 @@ class BLsim(object):
         return [os.path.join(self.path, i) for i in out]
 
     def ensure_fft_data_exists(self, vars=None, kinds=None):
+        """Create missing cached Fourier and stress-data products."""
         self.write_modes()
         if vars is None:
             vars = ['FT', 'CS']
@@ -2533,10 +2617,12 @@ class BLsim(object):
             self.CS_RRR_data(ll=True)
 
     def gen_fft_file(self, var='FT'):
+        """Generate the cached Fourier-data file for ``var``."""
         handler = IncrementalFFThdf5(self.sortedFFT(), var=var, sim=self)
         handler.process()
 
     def load_fft_data(self, var='FT', fine=False):
+        """Load or generate a coarse or fine cached Fourier-data wrapper."""
         _type = 'coarse'
         if fine:
             _type = 'fine'
@@ -2559,6 +2645,7 @@ class BLsim(object):
 
     @property
     def coarse_data(self):
+        """Return the coarse Fourier-data wrapper, loading it on demand."""
         try:
             return self._coarse_data['FT']
         except KeyError:
@@ -2567,6 +2654,7 @@ class BLsim(object):
 
     @property
     def fine_data(self):
+        """Return the fine Fourier-data wrapper, loading it on demand."""
         try:
             return self._fine_data['FT']
         except KeyError:
@@ -2627,6 +2715,7 @@ class BLsim(object):
         return data
 
     def verify_ft(self, orbit=100):
+        """Plot a comparison between direct and Fourier-derived quantities."""
         bf = self.loadfile('cons', orbit)
         ft = self.loadfile('FT', orbit * 10)
         varlist = ['pseudo', 'vel1', 'vel2', 'dens', 'dens**2', 'CL', 'v1v2', 'Mdot',
@@ -2647,6 +2736,7 @@ class BLsim(object):
         plt.title(r'Time/$2\pi={0:.1f}$'.format(bf.t / tau))
 
     def intr(self, data, axis=-1):
+        """Integrate ``data`` over the simulation's radial grid."""
         return intr(self.dr, data, axis=axis)
 
     @property
@@ -2657,6 +2747,7 @@ class BLsim(object):
 
     @property
     def fft_data(self):
+        """Return the preferred Fourier-data wrapper."""
         try:
             return self._fine_data['FT']
         except KeyError:
@@ -2664,29 +2755,36 @@ class BLsim(object):
 
     @property
     def fft(self):
+        """Return the complex Fourier coefficients."""
         return self.fft_data.FT
 
     @property
     def amp(self):
+        """Return Fourier amplitudes."""
         return self.fft_data.amp
 
     @property
     def phase(self):
+        """Return unwrapped Fourier phases."""
         return self.fft_data.phase
 
     @property
     def speed(self):
+        """Return mode-pattern speeds derived from Fourier data."""
         return self.fft_data.speed
 
     @property
     def fft_time(self):
+        """Return times associated with the Fourier data."""
         return self.fft_data.t
 
     @property
     def filenames(self):
+        """Return all indexed output filenames."""
         return sum(self.fileDict.values(), [])
 
     def files(self, key=None):
+        """Return filenames associated with an output id, variable, or key."""
         if key is None:
             return self.filenames
         if key in self.idDict:
@@ -2737,18 +2835,22 @@ class BLsim(object):
         return self._phase_angle
 
     def rloc(self, r, subsample=None):
+        """Return the radial-cell index nearest to ``r``."""
         rc = self.rc[::subsample]
         return np.abs(r - rc).argmin()
 
     def tloc(self, t):
+        """Return the Fourier-time index nearest to ``t``."""
         return np.abs(t - self.fft_time).argmin()
 
     def extract_tar(self):
+        """Extract archived Fourier files into the simulation directory."""
         print('Extract')
         self._tar.extractall(self.path)
         self._tfiles = None
 
     def loadfile(self, fn, index=None):
+        """Load one indexed output file into its concrete data wrapper."""
         if not index is None:
             fn = self.files(fn)[index]
         if fn in self.filenames:
@@ -2859,6 +2961,7 @@ class BLsim(object):
     def mt_plot(self, r, fn=None, save=False, ext='pdf', sdir=None, fig=None, ax=None,
                 fopt={}, vmin='smart',
                 vmax='max', cb=True, cbl=None, popt={}, log=True, mmax=None):
+        """Plot the mode-time spectrum at radius ``r``."""
         if mmax is None:
             mmax = self.fft.shape[1] - 1
         # ir = np.abs(self.rc - r).argmin()
@@ -2919,6 +3022,7 @@ class BLsim(object):
 
     def main_modes(self, nm=None, skip_zero=True, rmin=None, rmax=2.2, save=True,
                    tmin=100):
+        """Return dominant modes averaged over a radial range."""
         if self._main_modes is None or not save:
             if rmin is None:
                 rmin = self.r[0]
@@ -2948,6 +3052,7 @@ class BLsim(object):
         return modes[:nm]
 
     def star_disk_global_modes(self, fn=None, overwrite=False):
+        """Compute global mode amplitudes for the star-disk system."""
         if fn is None:
             fn = os.path.join(self.path, self.name + '_star_disk_global_modes.csv')
         if parse_not_overwrite(overwrite, fn):
@@ -2974,9 +3079,11 @@ class BLsim(object):
         return data
 
     def dict_sdg_modes(self):
+        """Return star-disk global modes keyed by simulation name."""
         return {self.name: self.star_disk_global_modes()}
 
     def write_modes(self, fn=None, sdir=True, overwrite=False):
+        """Write computed global-mode data to a NumPy archive."""
         if sdir is True:
             sdir = self.path
         if fn is None:
@@ -2995,6 +3102,7 @@ class BLsim(object):
         return None
 
     def r_phase(self, r, ret_m=False, fig=True):
+        """Plot or return mode phase as a function of radius."""
         if fig is True:
             plt.figure()
         ir = self.rloc(r)
@@ -3108,6 +3216,7 @@ class BLsim(object):
 
     def r_speed(self, r, fig=True, save=None, fn=None, ext='pdf', tmark=None,
                 overwrite=True, ylbl=True, **kwarg):
+        """Plot or return mode-pattern speed as a function of radius."""
         if fn and save is None:
             save = True
         if save and fn is None:
@@ -3162,6 +3271,7 @@ class BLsim(object):
         return None
 
     def r_amp(self, r, fig=True, ylbl=True, log=False, set_ylim=False, **kwarg):
+        """Plot Fourier mode amplitude as a function of radius."""
         if not 'smooth' in kwarg:
             kwarg['smooth'] = 'flat'
             if not 'sw' in kwarg:
@@ -3193,6 +3303,7 @@ class BLsim(object):
         return None
 
     def t_amp(self, t='mean', ret_m=False, fig=True, tmin=2e2 * tau, nm=5):
+        """Plot or return mode amplitude as a function of time."""
         if fig is True:
             plt.figure()
         if t == 'mean':
@@ -3210,6 +3321,7 @@ class BLsim(object):
         return m
 
     def t_speed(self, t='mean', ret_m=False, fig=True, nm=5, tmin=2e2 * tau):
+        """Plot or return mode-pattern speed as a function of time."""
         if fig is True:
             plt.figure()
         speed = self.speed()
@@ -3237,6 +3349,7 @@ class BLsim(object):
         return m
 
     def plot2d(self, data, *args, **kwargs):
+        """Plot a two-dimensional field in simulation coordinates."""
         phi_dot = kwargs.pop('phi_dot', [0])
         pop_title = False
         if not type(data) == list:
@@ -3292,6 +3405,7 @@ class BLsim(object):
         return out
 
     def plot2d(self, data, *args, **kwargs):
+        """Plot a two-dimensional field with optional azimuthal shifting."""
         phi_dot = kwargs.pop('phi_dot', [0])
         pop_title = False
         if not type(data) == list:
@@ -3349,6 +3463,7 @@ class BLsim(object):
     def speed_shift(self, phi_dot=.1 * np.arange(10), data=None, base='cons', t0=None,
                     t1=None,
                     mkmov=False, add_phi_dot=None, dpi=300, **kwargs):
+        """Compare mode speeds in frames with different azimuthal shifts."""
         if data is None:
             data = ['Rpseudo', 'vorticity', 'vortensity', 'vi', 've']
         phi_dot = np.atleast_1d(phi_dot)
@@ -3373,9 +3488,11 @@ class BLsim(object):
         return None
 
     def mid_star(self):
+        """Return the radius halfway between the domain edge and stellar surface."""
         return .5 + .5 * self.r[0]
 
     def compact_diag(self, save=False, **kwargs):
+        """Create a compact multi-panel diagnostic figure."""
         gsopt = dict(wspace=0, hspace=0, left=.11, right=.99, bottom=.07, top=.99)
         if 'gsopt' in kwargs:
             gsopt.update(kwargs['gsopt'])
@@ -3392,6 +3509,7 @@ class BLsim(object):
                    sdir=None, subsample=None, sz=3.5, xmax=2.5, dpi=300, modes=None,
                    add_modes=None, tmark=None, add_max=None, overwrite=True, log=True,
                    map=True, gsopt=None, compact=False, title_y=None, suptitle=None):
+        """Create the standard radial, mode, and map diagnostic figure."""
         if ext is None:
             if map:
                 ext = 'png'
@@ -3562,12 +3680,14 @@ class BLsim(object):
         return None
 
     def effective_m(self, tmin=100, mmin=0):
+        """Return the power-weighted effective mode number by radius."""
         power = (self.amp ** 2)[tmin:].mean(axis=0)
         power[:mmin + 1, :] = 0
         modes = np.arange(power.shape[0])[:, np.newaxis] * np.ones_like(power)
         return np.average(modes, axis=0, weights=power)
 
     def effective_m2(self, tmin=100, mmin=0):
+        """Return the power-weighted effective mode number by time and radius."""
         power = (self.amp ** 2)[tmin:]
         power[:, :mmin + 1, :] = 0
         na = np.newaxis
@@ -3576,6 +3696,7 @@ class BLsim(object):
         return np.mean(np.sum(modes * power, axis=1) / power.sum(axis=1), axis=0)
 
     def m_eff_plot(self, tmin=100, fig=True, save=None, fn=None, overwrite=True):
+        """Plot the effective mode number as a function of radius."""
         if fn and save is None:
             save = True
         if save and fn is None:
@@ -3603,6 +3724,7 @@ class BLsim(object):
                   dpi=None, log=True, vmin='3oom', vmax='99.9%', norm=None, cmap=None,
                   t_cut=None, cb=True, cbl=True, cbopt=None, popt=None, sdir=None,
                   interpolation='nearest', title=True, xlbl=True):
+        """Plot mode power as a function of time at radius ``r``."""
         if r == -1:
             r = self.mid_star()
         ir = self.rloc(r)
@@ -3668,6 +3790,7 @@ class BLsim(object):
 
     def mulit_mode_time(self, rlist=None, save=None, fn=None, overwrite=True,
                         figsize=None, dpi=None, sdir=None, sz=3.5):
+        """Plot mode-time spectra for several radii."""
         if fn and save is None:
             save = True
         if save and fn is None:
@@ -3707,6 +3830,7 @@ class BLsim(object):
         return None
 
     def gatherVort(self):
+        """Collect vortensity and vorticity diagnostics from all snapshots."""
         out = {i: [] for i in ['vorticity', 'vortensity', 'dvorticity', 'dvortensity']}
         i = 0
         for f in self.files('cons'):
@@ -3727,6 +3851,7 @@ class BLsim(object):
     def stVort(self, data=None, var=None, vmin=None, vmax='smart', zerocent=None,
                log=False, cmap=None, popt=None,
                r_cut=None, fig=None, ax=None, fopt=None, interpolation='nearest'):
+        """Plot a vortensity or vorticity field."""
         if fopt is None:
             fopt = {}
         if popt is None:
@@ -3803,6 +3928,7 @@ class BLsim(object):
         plt.ylabel('$r$')
 
     def tVort(self, data, t, save=False):
+        """Plot vorticity and vortensity perturbations at snapshot ``t``."""
         plt.plot(self.rc, data['dvortensity'][t])
         plt.plot(self.rc, data['dvorticity'][t])
         plt.legend([r'$\delta\omega_z/\Sigma$', r'$\delta\omega_z$'])
@@ -3900,6 +4026,7 @@ class BLsim(object):
     def mr_speed(self, ts, log=False, norm=None, dt=5, dr=.01, ext='pdf', fig=None,
                  ax=None, save=False, fn=None,
                  cbl=None, sdir=None, overwrite=True, **kwargs):
+        """Plot mode-pattern speed as a function of radius and time."""
         if sdir is True:
             sdir = 'mr_speed'
         if sdir:
@@ -3926,6 +4053,7 @@ class BLsim(object):
     def mr_amp(self, ts, log=True, norm=None, dt=5, dr=.01, ext='pdf', fig=None, ax=None,
                save=False, fn=None,
                cbl=None, sdir=None, overwrite=True, **kwargs):
+        """Plot mode amplitude as a function of radius and time."""
         if sdir is True:
             sdir = 'mr_speed'
         if sdir:
@@ -3950,6 +4078,7 @@ class BLsim(object):
             self._mr_plot(t, self.amp, self.fft_data.amp_std, **opt)
 
     def my_fft_plots(self, save=True, quiet=False, diag=True, sdir=None, overwrite=True):
+        """Generate the standard Fourier diagnostic plots."""
         if diag:
             self.diagnostic(save=save, ext='png', overwrite=overwrite)
         self.mr_speed(range(100, int(self.fft_time[-1] / tau + .5) + 10, 100), save=1,
@@ -3963,6 +4092,7 @@ class BLsim(object):
 
     def speed_plots(self, modes, rin=-1, rout=1.2, save=True, tmark=None,
                     overwrite=True):
+        """Generate mode-speed plots for the requested mode numbers."""
         if rin == -1:
             rin = self.rc[0] * .5 + .5
         opt = dict(modes=modes, tmark=tmark)
@@ -3975,6 +4105,7 @@ class BLsim(object):
             self.r_speed(rout, **opt)
 
     def get_speed(self, m, t0, dt=50, r=-1, dr=10, fmt='.3f'):
+        """Return a formatted mode speed near radius ``r`` and time ``t0``."""
         if r == -1:
             r = self.mid_star()
         rl = self.rloc(r)
@@ -3986,6 +4117,7 @@ class BLsim(object):
 
     def mk_maps(self, var_list=None, dt=25, base_dir=None, file='cons',
                 overwrite=True, popt=None, thumbnail=True):
+        """Generate map images and optional thumbnails for selected fields."""
         if popt is None:
             popt = {}
         if var_list is None:
@@ -4049,6 +4181,7 @@ class BLsim(object):
                    popt=None, var=None, save=False, fn=None, dpi=300, figsize=None,
                    path='.', stripes=False, rmax=None, vmaxlist=None, printvmax=False,
                    lnorm=True, minmax=False, vmax=None, overwrite=True):
+        """Create a thumbnail grid of selected snapshot fields."""
         if popt is None:
             popt = {}
         if var is None:
@@ -4152,6 +4285,7 @@ class BLsim(object):
 
     def mk_stripes(self, var_list=None, dt=25, base_dir=None, file='cons',
                    overwrite=True, popt=None, thumbnail=True, rmax=None):
+        """Generate time-radius stripe plots for selected variables."""
         if popt is None:
             popt = {}
         if var_list is None:
@@ -4231,6 +4365,7 @@ class BLsim(object):
 
     def mode_detect(self, r=None, save=True, fn=None, dt=10, nbin=3, emax=1e-4, smax=2e-4,
                     dr=5, data_only=False, dw=.05, overlap=10, nskip=3, out_mult=2):
+        """Detect coherent mode features from the Fourier data."""
         if (not data_only) and (self._mode_detect is not None):
             return self._mode_detect
         if r is None:
@@ -4281,6 +4416,7 @@ class BLsim(object):
                      lopt=None, ropt=None, fig=None, fopt=None, dpi=300, figsize=True,
                      gsopt=None, inc_time=True, fn=None, save=False, ext='png',
                      sdir=False, overwrite=True, dropbox=False):
+        """Create a multi-panel stripe view for selected snapshots."""
         if dropbox and not sdir:
             sdir = '~/Dropbox/Research/IAS/rrr/BL_shared/simulation_results/Production'
             mach = int(np.round(self.mach))
@@ -4401,6 +4537,7 @@ class BLsim(object):
                    fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
                    save=False, ext='png', sdir=False, overwrite=True, dropbox=False,
                    lnorm=None, title=False):
+        """Plot the evolution of a vortex across three radial panels."""
         if dropbox and not sdir:
             sdir = '~/Dropbox/Research/IAS/rrr/BL_shared/simulation_results/Production'
             mach = int(np.round(self.mach))
@@ -4578,6 +4715,7 @@ class BLsim(object):
                    fopt=None, dpi=300, figsize=True, gsopt=None, inc_time=True, fn=None,
                    save=False, ext='png', sdir=None, overwrite=True, dropbox=False,
                    labelpad=None, title=False):
+        """Create a time map from left and right snapshot stripe panels."""
         if sdir:
             dropbox = False
         if not dropbox and sdir is None:
@@ -4791,6 +4929,7 @@ class BLsim(object):
                     gsopt=None, inc_time=True, fn=None, save=False, ext='png', sdir=None,
                     overwrite=True, dropbox=False, xlabelpad=None, title=False,
                     lxlim=True, lrat=2./3., dv=0, ylabelpad=-6, space=.3):
+        """Create a three-panel time map including a middle diagnostic field."""
         if sdir:
             dropbox = False
         if not dropbox and sdir is None:
@@ -5117,6 +5256,7 @@ class BLsim(object):
 
     def cc_op_plots(self, i0, var='Rpseudo', save=True, sdir=None, dropbox=False,
                     rmin=None):
+        """Plot cross-correlation pattern speeds for a selected snapshot."""
         if dropbox and not sdir:
             sdir = '~/Dropbox/Research/IAS/rrr/BL_shared/simulation_results/Production'
             mach = int(np.round(self.mach))
@@ -5181,6 +5321,7 @@ class BLsim(object):
         return op
 
     def ratio_Mdot(self, r=1, dt=5, lim_coef=-1e-2, lim_pow=-2.6):
+        """Return selected stress-to-accretion ratios at radius ``r``."""
         self._flux_data = None
         fd = self.load_flux_data(option=3)
         rl = self.rloc(r)
@@ -5198,6 +5339,7 @@ class BLsim(object):
 
     def Mdot_CS(self, dt0=10, coef=.5, r=1, overwrite=True, save=False, fn=None, sdir='',
                 ext='pdf', hline=None, ax=None, legend=True, option=3, title=True):
+        """Plot mass accretion and stress profiles over time."""
         if save or fn:
             save = True
             if fn is None:
@@ -5300,6 +5442,7 @@ class BLsim(object):
             plt.close()
 
     def read_mode_csv(self, fn=None):
+        """Read a mode summary CSV into a dictionary of arrays."""
         if fn is None:
             fn = self.name + '_modes.csv'
         with open(fn, 'r') as f:
@@ -5317,11 +5460,13 @@ class BLsim(object):
         return out
 
     def default_sdir(self):
+        """Return the default directory for generated simulation figures."""
         return os.path.join(os.path.split(self.path)[0], 'figs', self.name + '_plots')
 
     def main_plots(self, maps=False, fluxes=True, working_dir=None, quiet=False,
                    sub_dir=False, overwrite=True, stripes=False, vort_prof=True,
                    prof=True, lightcurves=True):
+        """Run the configured collection of standard analysis plots."""
         if working_dir is True:
             working_dir = self.name + '_plots'
         if not working_dir:
@@ -5445,11 +5590,13 @@ class BLsim(object):
             os.chdir(pwd)
 
     def parse_func(self, func, *args, **kwargs):
+        """Call a named :class:`BLsim` method with the supplied arguments."""
         return getattr(self, func)(*args, **kwargs)
 
     def vortensity_profiles(self, times=None, files=None, cmap=None, popt=None, fn=None,
                             init=None, data=None, t0=None, save=False, fig=None,
                             sdir=None, overwrite=True, ext='pdf'):
+        """Plot radial vortensity profiles for selected snapshots."""
         if save or fn:
             save = True
             if sdir is None:
@@ -5509,6 +5656,7 @@ class BLsim(object):
                                 fig=None, sdir=None, overwrite=True, ext='pdf',
                                 legend=True, figsize=None, dpi=300, xlim=None, ylim=None,
                                 rmax=None, title=True, lopt=None):
+        """Plot an alternate set of vortensity profiles."""
         if save or fn:
             save = True
             if sdir is None:
@@ -5582,6 +5730,7 @@ class BLsim(object):
                  init=None, data=None, t0=0, save=False, fig=None, var_list=None,
                  sdir=None, overwrite=True, ext='pdf', rmax=None, dpi=300, figsize=None,
                  lopt=None, use_maps=None):
+        """Plot the evolution of selected radial profiles across snapshots."""
         if save or fn:
             save = True
             if sdir is None:
@@ -5737,9 +5886,11 @@ class BLsim(object):
         return
 
 class auxBLsim(BLsim):
+    """Simulation subclass with auxiliary mode-plotting helpers."""
     def mode_plot(self, data=None, cb=True, title=None, cbl=None, vmin=0,
                   vmax=20, main_plots=False, mpopt={}, save=False, fn=None,
                   ext='pdf', sdir=None, fig=None, fopt={}, ax=None):
+        """Plot a mode-amplitude field with optional colorbar and labels."""
         _mpopt = {'ext': ext, 'sdir': sdir}
         _mpopt.update(mpopt)
         if data is None:
@@ -5794,6 +5945,7 @@ class auxBLsim(BLsim):
     def mt_plot(self, r, fn=None, mmax=30, save=False, ext='pdf', sdir=None,
                 fig=None, ax=None, fopt={}, vmin='smart', vmax='max', cb=True,
                 cbl=None, popt={}, log=True):
+        """Plot auxiliary mode-time data at radius ``r``."""
         ir = np.abs(self.rc - r).argmin()
         r = self.rc[ir]
         _amp = self.mode_phase()[0]
@@ -5851,6 +6003,7 @@ class auxBLsim(BLsim):
 
     def cross_corr(self, t1, t2=None, var='pseudo', dt=None, plot=False,
                    norm=True, save=False, ext='png'):
+        """Compute or plot the cross-correlation between two snapshots."""
         if t2 is None:
             t2 = t1 + 1
         try:
@@ -5914,6 +6067,7 @@ class auxBLsim(BLsim):
 
 
 def refreshSim(sim):
+    """Reconstruct a simulation while preserving cached analysis state."""
     attr = ['coarse_data', 'fft_time', 'mode_detect', 'sfd', 'flux_data']
     opt = {i: getattr(sim, '_' + i, None) for i in attr}
     return BLsim(sim.path, **opt)

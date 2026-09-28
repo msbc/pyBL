@@ -9,3 +9,7 @@ mov
 .idea
 *.png
 *.pdf
+build/
+site/
+*.egg-info/
+.venv/

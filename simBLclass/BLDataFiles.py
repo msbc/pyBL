@@ -1,3 +1,11 @@
+"""Lazy data wrappers and derived diagnostics for Athena++ output files.
+
+The wrapper classes expose simulation variables through dictionary-like
+access while computing commonly used derived fields on demand.  The main
+entry points are :class:`BLfile`, :class:`BLcons`, :class:`BLprim`, and
+:class:`BLFT`; :func:`loadBLfile` selects an appropriate wrapper for a file.
+"""
+
 import h5py
 # from mayavi import mlab
 import argparse
@@ -38,6 +46,30 @@ from .defaults import rc
 from ._local_helpers import *
 
 class BLfileBase(dict):
+    """Base dictionary-like wrapper around one Athena++ output file.
+
+    Parameters
+    ----------
+    fn : str or path-like
+        Output filename.
+    sim_path : str or path-like, optional
+        Simulation directory used to resolve a relative filename.
+    t : float, optional
+        Explicit simulation time.  If omitted, it is read from the data or
+        inferred from the filename.
+    trim : bool, optional
+        Remove singleton dimensions from returned arrays.
+    data : mapping, optional
+        Already-loaded data object, useful when constructing wrappers without
+        rereading a file.
+    sim : object, optional
+        Parent simulation object supplying metadata such as the Mach number.
+
+    Notes
+    -----
+    Variables are loaded lazily where the underlying data object supports it.
+    Derived variables are resolved by the concrete wrapper classes.
+    """
     def __init__(self, fn, sim_path=None, t=None, trim=True, data=None, num_ghost=0,
                  defvar=None, ai_data=None, sim=None, file_handle=None, x2_face=None):
         self.t = t
@@ -184,23 +216,28 @@ class BLfileBase(dict):
         return out
 
     def load_all(self):
+        """Load all deferred variables from the underlying data object."""
         return self.data.load_all()
 
     def intr(self, data, axis=-1):
+        """Integrate ``data`` over the radial grid along ``axis``."""
         data = self._parse_data(data)
         return intr(self.dr, data, axis=axis)
 
     def ddphi(self, data, axis=0):
+        """Estimate the periodic azimuthal derivative of ``data``."""
         data = self._parse_data(data)
         return (np.roll(data, -1, axis=axis) - np.roll(data, 1, axis=axis)) / (
                 self.phic[2] - self.phic[0])
 
     def rloc(self, r, subsample=None):
+        """Return the radial-cell index nearest to coordinate ``r``."""
         rc = self.rc[::subsample]
         return np.abs(r - rc).argmin()
 
 
 class BLfile(BLfileBase):
+    """General two-dimensional output wrapper with expression evaluation."""
     def __getitem__(self, item):
         assert(item != "FT-FT-test-Re-Re")
         try:
@@ -209,6 +246,11 @@ class BLfile(BLfileBase):
             return self.expr_eval(item)
 
     def expr_eval(self, expr):
+        """Evaluate a symbolic expression built from stored data fields.
+
+        ``expr`` may be a field name or a NumPy-compatible SymPy expression,
+        such as ``"dens * vel1"``.
+        """
         if expr in self:
             return self[expr]
         expr = sp.sympify(expr)
@@ -218,6 +260,7 @@ class BLfile(BLfileBase):
         return sp.lambdify(sym, expr, "numpy")(*data)
 
     def fft(self, data, axis=-2, mag=False):
+        """Return the real Fourier transform of a field along ``axis``."""
         try:
             data.shape
         except AttributeError:
@@ -796,6 +839,7 @@ class BLfile(BLfileBase):
 
 
 class BLaux(BLfile):
+    """Output wrapper providing auxiliary phase and mode diagnostics."""
 
     def channel_map(self, var=None, save=False, fn=None, mmax=30, log=True,
                     fig=None, ax=None, aspect=None, fopt={}, popt={}, cbl=None,
@@ -932,6 +976,7 @@ class BLaux(BLfile):
 
 
 class BL3Dfile(BLfile):
+    """Base wrapper for three-dimensional simulation output."""
     def curl(self, data):
         if hasattr(data, 'lower'):
             data = self[data + '1'], self[data + '2']
@@ -944,6 +989,7 @@ class BL3Dfile(BLfile):
 
 
 class BLConsPrim(BL3Dfile):
+    """Shared derived quantities for conservative and primitive outputs."""
     def __getitem__(self, key):
         if key.startswith('d_vortensity_'):
             t0 = int(key.split('d_vortensity_')[-1])
@@ -1364,6 +1410,7 @@ class BLConsPrim(BL3Dfile):
 
 
 class BLcons(BLConsPrim):
+    """Wrapper for Athena++ conservative-variable output."""
     def _special_keys(self, key):
         if key[:3] == 'vel' and len(key) == 4:
             return self.vel(key[3])
@@ -1379,6 +1426,7 @@ class BLcons(BLConsPrim):
 
 
 class BLprim(BLConsPrim):
+    """Wrapper for Athena++ primitive-variable output."""
     def _special_keys(self, key):
         if key[:3] == 'mom' and len(key) == 4:
             return self.mom(key[3])
@@ -1394,6 +1442,7 @@ class BLprim(BLConsPrim):
 
 
 class BLFT(BLfile):
+    """Wrapper for Fourier-transformed simulation output."""
     def rhobar(self):
         return self['FT-dens'][0]
 
@@ -1527,6 +1576,12 @@ def _parse_file(fn, file_handle=None):
     raise IOError('Cannot identify file type of "{0:}"'.format(fn))
 
 def loadBLfile(fn, **kwargs):
+    """Load an Athena++ output file into its appropriate data wrapper.
+
+    The wrapper type is inferred from the Athena++ input metadata when
+    available, and otherwise from variable names present in the file.
+    Additional keyword arguments are forwarded to the selected wrapper.
+    """
     fn = findAbsPath(fn, kwargs.get('sim_path', None))
     #data = _parse_file(fn, file_handle=kwargs.get('file_handle', None))
     _fn = fn
