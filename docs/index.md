@@ -1,6 +1,6 @@
-# bl_reader
+# pyBL
 
-`bl_reader` provides readers and analysis helpers for Athena++ simulation
+`pyBL` provides readers and analysis helpers for Athena++ simulation
 outputs, with a focus on boundary-layer calculations.
 
 ## Getting started

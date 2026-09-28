@@ -1,4 +1,4 @@
-site_name: bl_reader documentation
+site_name: pyBL documentation
 site_description: Readers and analysis tools for Athena++ boundary-layer simulations
 
 theme:
